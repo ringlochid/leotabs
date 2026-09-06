@@ -50,9 +50,13 @@ export async function checkOverlay({
     ),
     'Floating switcher leaves the current page visible on every side',
   );
-  for (let i = 0; i < 30 && !(await read('return !!root.querySelector(".preview-image img")')); i++)
+  for (
+    let i = 0;
+    i < 30 && !(await read('return !!root.querySelector(".preview-image > :is(img, canvas)")'));
+    i++
+  )
     await delay(100);
-  if (!(await read('return !!root.querySelector(".preview-image img")'))) {
+  if (!(await read('return !!root.querySelector(".preview-image > :is(img, canvas)")'))) {
     // The UI intentionally doesn't wait indefinitely for Chrome's compositor.
     // Capture explicitly with the action's grant, then verify displaying it.
     await read('globalThis.__neoCloseOverlay()');
@@ -61,13 +65,13 @@ export async function checkOverlay({
     await triggerSwitcher(pin);
     for (
       let i = 0;
-      i < 100 && !(await read('return !!root?.querySelector(".preview-image img")'));
+      i < 100 && !(await read('return !!root?.querySelector(".preview-image > :is(img, canvas)")'));
       i++
     )
       await delay(100);
   }
   assert(
-    await read('return !!root?.querySelector(".preview-image img")'),
+    await read('return !!root?.querySelector(".preview-image > :is(img, canvas)")'),
     'Actual captured page screenshot is displayed',
   );
   const nativePage = await connect(
@@ -147,9 +151,16 @@ export async function checkOverlay({
       );
     for (let i = 0; i < 30; i++) {
       await delay(100);
-      if (await inspect('return !!root?.querySelector(".group-tile .preview-image img")')) break;
+      if (
+        await inspect(
+          'return !!root?.querySelector(".group-tile .preview-image > :is(img, canvas)")',
+        )
+      )
+        break;
     }
-    assert(await inspect('return !!root.querySelector(".group-tile .preview-image img")'));
+    assert(
+      await inspect('return !!root.querySelector(".group-tile .preview-image > :is(img, canvas)")'),
+    );
     assert(
       await inspect(
         'const p=root.querySelector(".group-tile .preview-image");return p.clientHeight>150&&p.clientWidth>250;',

@@ -23,7 +23,7 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
       ),
     );
   // Observe real loaded images continuously across more than three poll cycles.
-  await read(`globalThis.__uxImages=[...root.querySelectorAll('.preview-image img')];globalThis.__uxMissing=0;
+  await read(`globalThis.__uxImages=[...root.querySelectorAll('.preview-image > :is(img, canvas)')];globalThis.__uxMissing=0;
     globalThis.__uxTimer=setInterval(()=>{if(globalThis.__uxImages.some(n=>!n.isConnected||!n.complete))globalThis.__uxMissing++;},30);`);
   await rpc('settings', { settings: { theme: 'dark' } });
   await waitFor(`return getComputedStyle(root.host).colorScheme==='dark';`);

@@ -26,7 +26,7 @@ function closedRows(operation) {
 }
 export function openDB() {
   return (connection ||= new Promise((resolve, reject) => {
-    const request = indexedDB.open('neo-library', 3);
+    const request = indexedDB.open('neo-library', 4);
     request.onupgradeneeded = () => {
       for (const name of [
         'state',
@@ -36,6 +36,7 @@ export function openDB() {
         'journalMeta',
         'closed',
         'timeline',
+        'favicons',
       ]) {
         if (!request.result.objectStoreNames.contains(name))
           request.result.createObjectStore(name, { keyPath: 'id' });
@@ -116,6 +117,25 @@ export async function remove(store, id) {
     if (store === 'journal') tx.objectStore('journalMeta').delete(id);
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
+  });
+}
+// Check a capture's generation inside the transaction, after earlier queued
+// writes finish. A stale capture leaves the existing cached image untouched.
+export async function writeIf(store, value, allowed) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    let written = false;
+    const request = tx.objectStore(store).get(value.id);
+    request.onsuccess = () => {
+      if (allowed()) {
+        tx.objectStore(store).put(value);
+        written = true;
+      }
+    };
+    tx.oncomplete = () => resolve(written);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || Error('Write cancelled.'));
   });
 }
 export async function getState() {

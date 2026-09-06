@@ -22,6 +22,7 @@ import { createSearchController } from './search-controller.js';
 import { createActionDialogs } from './action-dialogs.js';
 import { sessionList } from './session-list.js';
 import { createTabTools, orderedTabs } from './tab-tools.js';
+import { rasterCanvas } from './raster.js';
 
 export async function startQuick() {
   const searchOnly =
@@ -42,6 +43,7 @@ export async function startQuick() {
   const selected = new Set(),
     tiles = new Map(),
     previews = new Map(),
+    previewLoads = new Map(),
     observers = new Set();
   theme(data.state.settings.theme);
   const close = () =>
@@ -626,25 +628,38 @@ export async function startQuick() {
         el('small', {}, 'Preview available after visiting'),
       ),
     );
-    // Request once per URL per session; don't blank loaded images on refresh.
+    // Keep successful previews, but retry misses/failures on later refreshes.
+    let nextAttempt = 0;
     const load = async () => {
+      if (disposed || Date.now() < nextAttempt) return;
+      nextAttempt = Date.now() + 2500;
       if (!previews.has(url))
         previews.set(
           url,
           rpc('preview', { url }).catch(() => null),
         );
       const image = await previews.get(url);
-      if (disposed || !image) return;
-      const img = el('img', { src: image.data, alt: '' });
-      await img.decode().catch(() => {});
-      if (!disposed) frame.replaceChildren(img);
+      if (disposed) return;
+      if (!image) {
+        previews.delete(url);
+        return;
+      }
+      try {
+        const canvas = await rasterCanvas(image.data);
+        if (!disposed) frame.replaceChildren(canvas);
+        previewLoads.delete(frame);
+        observer.disconnect();
+        observers.delete(observer);
+      } catch {
+        previews.delete(url);
+      }
     };
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries.some((e) => e.isIntersecting)) return;
-        observer.disconnect();
-        observers.delete(observer);
-        load();
+        if (entries.some((e) => e.isIntersecting)) {
+          previewLoads.set(frame, load);
+          load();
+        } else previewLoads.delete(frame);
       },
       { root: results },
     );
@@ -1030,6 +1045,10 @@ export async function startQuick() {
   let generation = 0,
     lastData = JSON.stringify(data);
   async function refresh() {
+    for (const [frame, load] of previewLoads) {
+      if (!frame.isConnected) previewLoads.delete(frame);
+      else load();
+    }
     const g = ++generation,
       next = await rpc('load');
     if (disposed || g !== generation) return;
@@ -1061,6 +1080,7 @@ export async function startQuick() {
     observers.forEach((o) => o.disconnect());
     tiles.clear();
     previews.clear();
+    previewLoads.clear();
     backdrop.remove();
   };
 }

@@ -55,7 +55,11 @@ const server = http.createServer(async (req, res) => {
       ),
     );
   }
-  res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+  res.writeHead(200, {
+    'Content-Type': 'text/html',
+    'Cache-Control': 'no-store',
+    ...(req.url === '/media-strict' ? { 'Content-Security-Policy': "img-src 'none'" } : {}),
+  });
   res.end(
     `<!doctype html>${process.argv.includes('--parked-identity') ? '<link rel="icon" href="/identity-icon.png">' : ''}<title>${req.url.includes('research') ? 'Research paper' : 'Project brief'}</title><style>body{font:24px system-ui;padding:50px;background:#f3f5ef}h1{color:#426b61}</style><h1>${req.url}</h1><p>Local integration-test page.</p>`,
   );
@@ -526,6 +530,10 @@ try {
       results,
       delay,
     });
+    if (process.argv.includes('--media-stability'))
+      await (
+        await import('./check-media-stability.mjs')
+      ).checkMediaStability({ app, rpc, results, out, delay, origin, triggerSwitcher });
   }
   if (process.argv.includes('--library-search'))
     await (
@@ -655,6 +663,10 @@ try {
       origin,
       extensionOrigin,
     });
+  if (process.argv.includes('--favicon-stability'))
+    await (
+      await import('./check-favicon-stability.mjs')
+    ).checkFaviconStability({ app, results, origin, delay });
   if (process.argv.includes('--group-cleanup'))
     await (
       await import('./check-group-cleanup.mjs')

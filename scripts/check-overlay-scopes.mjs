@@ -248,7 +248,7 @@ export async function checkOverlayScopes({
       'const n=root.querySelector(".native-group-card[data-group-color=blue]");return getComputedStyle(n).boxShadow==="none" && getComputedStyle(n).backgroundColor!==getComputedStyle(root.querySelector(".task-view")).backgroundColor',
     ),
   );
-  await wait(() => read('return !!root.querySelector(".preview-image img")'));
+  await wait(() => read('return !!root.querySelector(".preview-image > :is(img, canvas)")'));
   await shot('overlay-scopes-dark');
   await read('root.querySelector("#select-mode").click()');
   const activeBefore = await app.evaluate(

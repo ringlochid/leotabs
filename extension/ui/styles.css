@@ -938,7 +938,7 @@
     justify-content: center;
     overflow: hidden;
   }
-  .preview-image img {
+  .preview-image > :is(img, canvas) {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -1158,7 +1158,11 @@ dialog .row-title {
 .favicon {
   position: relative;
 }
-.favicon img {
+.favicon.has-icon {
+  background: transparent;
+  color: transparent;
+}
+.favicon :is(img, canvas) {
   position: absolute;
   width: 18px;
   height: 18px;
@@ -1504,7 +1508,7 @@ progress {
   aspect-ratio: 16 / 10;
   background: var(--side);
 }
-.task-view .preview-image img {
+.task-view .preview-image > :is(img, canvas) {
   object-fit: cover;
   object-position: top;
 }
@@ -3088,11 +3092,11 @@ progress {
   width: 30px;
   height: 30px;
 }
-.preview-missing .favicon:has(img) {
+.preview-missing .favicon:is(:has(img), .has-icon) {
   background: transparent;
   color: transparent;
 }
-.preview-missing .favicon img {
+.preview-missing .favicon :is(img, canvas) {
   width: 100%;
   height: 100%;
   object-fit: contain;

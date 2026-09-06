@@ -49,18 +49,19 @@ export async function capture(tabId) {
   bitmap.close();
   const image = await canvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
   if (!current(await chrome.tabs.get(tabId))) return;
-  await db.write('previews', {
-    id: tab.url,
-    blob: image,
-    bytes: image.size,
-    width: size.width,
-    height: size.height,
-    at: Date.now(),
-  });
-  if (started !== epoch) {
-    await db.remove('previews', tab.url);
-    return;
-  }
+  const written = await db.writeIf(
+    'previews',
+    {
+      id: tab.url,
+      blob: image,
+      bytes: image.size,
+      width: size.width,
+      height: size.height,
+      at: Date.now(),
+    },
+    () => started === epoch,
+  );
+  if (!written) return;
   const limit = (await db.getState()).settings.previewLimitMB * 1024 * 1024;
   await trimPreviews(limit);
 }

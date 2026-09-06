@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import { PALETTE } from '../lib/model.js';
 import { PROTOCOL } from '../lib/version.js';
+import { rasterCanvas } from './raster.js';
 export const surface = () => globalThis.__neoSurface || document;
 export const $ = (selector, root = surface()) => root.querySelector(selector);
 export const $$ = (selector, root = surface()) => [...root.querySelectorAll(selector)];
@@ -132,6 +133,7 @@ export function domain(url) {
     return '';
   }
 }
+const iconImages = new Map();
 export function favicon(item) {
   const pageURL = item.resourceUrl || item.url;
   const mark = el(
@@ -143,24 +145,48 @@ export function favicon(item) {
     String(domain(pageURL) || item.title || '?')[0].toUpperCase(),
   );
   if (/^https?:/.test(pageURL || '')) {
-    if (globalThis.__neoSurface) {
-      if (/^(https?:|data:image\/png;base64,)/.test(item.favIconUrl || ''))
-        mark.append(
-          el('img', { src: item.favIconUrl, alt: '', onerror: (e) => e.target.remove() }),
-        );
-      return mark;
+    const draw = (source) => {
+      const image = el('canvas', {
+        width: source.width,
+        height: source.height,
+        'aria-hidden': 'true',
+      });
+      image.getContext('2d').drawImage(source, 0, 0);
+      mark.replaceChildren(image);
+      mark.classList.add('has-icon');
+    };
+    const ready = iconImages.get(pageURL)?.canvas;
+    if (ready) draw(ready);
+    else {
+      const load = async (attempt = 0) => {
+        let entry = iconImages.get(pageURL);
+        if (!entry) {
+          entry = {};
+          entry.promise = rpc('favicon', { url: pageURL })
+            .then(async (data) => {
+              if (!data) return null;
+              entry.canvas = await rasterCanvas(data);
+              return entry.canvas;
+            })
+            .catch(() => null);
+          iconImages.set(pageURL, entry);
+          if (iconImages.size > 512) iconImages.delete(iconImages.keys().next().value);
+        }
+        const image = entry.canvas || (await entry.promise);
+        if (image) draw(image);
+        else {
+          if (iconImages.get(pageURL) === entry) iconImages.delete(pageURL);
+          if (attempt < 3)
+            setTimeout(
+              () => {
+                if (mark.isConnected) load(attempt + 1);
+              },
+              1500 * (attempt + 1),
+            );
+        }
+      };
+      load();
     }
-    const url = new URL(chrome.runtime.getURL('_favicon/'));
-    url.searchParams.set('pageUrl', pageURL);
-    url.searchParams.set('size', '32');
-    const image = el('img', {
-      src: url.href,
-      alt: '',
-      loading: 'lazy',
-      decoding: 'async',
-      onerror: () => image.remove(),
-    });
-    mark.append(image);
   }
   return mark;
 }

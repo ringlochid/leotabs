@@ -26,6 +26,7 @@ import { prepareNotion, notionStep } from './lib/notion.js';
 import { sanitizeSettings } from './lib/settings.js';
 import { recoveryLog } from './lib/portable.js';
 import { capture, preview, invalidatePreviews, trimPreviews } from './lib/previews.js';
+import { favicon } from './lib/favicons.js';
 import { openSwitcher, isOverlaySender, forgetOverlay } from './lib/overlay.js';
 import { PROTOCOL } from './lib/version.js';
 import { editSavedSelection } from './lib/selection.js';
@@ -337,6 +338,8 @@ async function dispatch(action, data = {}) {
     }
     case 'preview':
       return preview(data.url);
+    case 'favicon':
+      return favicon(data.url);
     case 'capture': {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab) await capture(tab.id);
@@ -928,6 +931,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         ![
           'load',
           'preview',
+          'favicon',
           'capture',
           'parked-info',
           'history',
