@@ -1,0 +1,8 @@
+Already installed Neo? Reload its existing card at chrome://extensions, then refresh your Neo library tabs.
+
+For a first installation, choose Load unpacked and select:
+C:\Users\ring_\Desktop\Neo tab manger\extension
+
+Do not select this project root. The extension subfolder contains manifest.json.
+The release ZIP can also be extracted into a fresh folder; its manifest is at the ZIP root.
+Keep the existing installed path to retain your saved library and shortcut settings.

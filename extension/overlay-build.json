@@ -1,0 +1,20 @@
+{
+  "lib/model.js": "83288152379f4da1928dc7c188ea6b8a67edb6baeae7bc4b2cba0874f72ba931",
+  "lib/version.js": "35e2ce084e817b611f2458965fd3b158c27ad31c8636c4ac454a72b7e5f0e6e8",
+  "ui/shared.js": "73e13c0d74d63e2da03352801460fed8954e88b3ab5d13b7444af48a916e65b2",
+  "lib/collection-workflow.js": "e4b5493b54d16d68fa461d1d78aaee6d937b6b840347661e2559614e9f811ae4",
+  "lib/search.js": "ac10fc58ea77a791c8899bfee2430c40d90b68e0df9565f50d5f8b38398687be",
+  "ui/search-controller.js": "1929dc89aff116830fa060c76202a6c75b433d671738fd30457a9f03d2b3a164",
+  "lib/providers.js": "50bc8496d0332d00c5da07c6e5ed52153cdb1cd8e83748e27ba1a4e997b117dc",
+  "lib/integrations.js": "fbd563f3e49ff192bdaaf3dc4f4dfe93d30fb5b86ddf4c7a8bc885eab22366a1",
+  "lib/settings.js": "dee0de611225df4a23b9546768f3f447a9d5a25c4326fe1d3d0bfde45f399e3e",
+  "lib/portable.js": "4cbe38eec5df23a27f06a16cdd944b1df5514dbbca55211189e7a6654266359e",
+  "ui/link-picker.js": "595e189addc8e39bb0989dcae99e53a40a5def1798dc32605d965150b5c1d8b3",
+  "ui/action-dialogs.js": "1ecd713a6d12b5fdd310290c4a235b18d33d8b3181a6251cc3482ef3bef37987",
+  "ui/session-list.js": "31dfff3f65c3e7b7902dac744a556237be77ee15ee8a3f12debc1194059ea97e",
+  "ui/tab-tools.js": "8f306cd77a7259b8ada74cc147b211ab7906b34153e2ad8881de427e1f1ae0b1",
+  "ui/quick.js": "a1ad6c9aedef90a6b86388b2a5bf979fb77a02bf87849cd9df5e16bdc8152e0d",
+  "ui/styles.css": "93a3398c6f6d144f9d041e6b00558dca17dd32deea839911d19054678ed01dc6",
+  "ui/overlay-entry.js": "85e7f5a5261ff43a49f8bf81c42b683c721d6fcaebba779d9d6f014a578167fa",
+  "overlay.js": "37e48cf712d941ad50f1a31e87ddb956b8d5a403716e263dc95516ea337e4378"
+}

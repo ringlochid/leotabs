@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: MPL-2.0
+import { initialState, text, uid } from './model.js';
+import { endpointOrigin } from './integrations.js';
+
+// Explicit allowlist shared by Settings and portable backups. Credentials never enter state.
+export function sanitizeSettings(input = {}, base = initialState().settings) {
+  if (!input || typeof input !== 'object' || Array.isArray(input))
+    throw new Error('Invalid saved preferences.');
+  const next = { ...base };
+  delete next.obsidianVault;
+  for (const [key, values] of Object.entries({
+    theme: ['system', 'light', 'dark'],
+    tabSort: ['recent', 'position', 'reverse'],
+    view: ['board', 'list'],
+    provider: ['openai', 'claude', 'gemini', 'deepseek', 'compatible'],
+  }))
+    if (values.includes(input[key])) next[key] = input[key];
+  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash'])
+    if (typeof input[key] === 'boolean') next[key] = input[key];
+  for (const key of ['model', 'notionParent'])
+    if (input[key] !== undefined) next[key] = text(input[key], 200);
+  if (input.aiEndpoint !== undefined) {
+    if (input.aiEndpoint) endpointOrigin(input.aiEndpoint);
+    next.aiEndpoint = text(input.aiEndpoint, 1000);
+  }
+  if (input.rules !== undefined) {
+    if (!Array.isArray(input.rules) || input.rules.length > 50)
+      throw new Error('Use at most 50 rules.');
+    next.rules = input.rules
+      .map((r) => ({
+        id: uid(),
+        domain: text(r?.domain, 200).trim().toLowerCase(),
+        group: text(r?.group, 100).trim(),
+      }))
+      .filter((r) => r.domain && r.group);
+  }
+  return next;
+}
+export function portableSettings(settings) {
+  const clean = sanitizeSettings(settings),
+    keys = Object.keys(initialState().settings);
+  return Object.fromEntries(keys.map((key) => [key, clean[key]]));
+}

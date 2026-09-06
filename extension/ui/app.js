@@ -1,0 +1,2247 @@
+// SPDX-License-Identifier: MPL-2.0
+import {
+  $,
+  $$,
+  el,
+  icon,
+  button,
+  theme,
+  toast,
+  task,
+  rpc,
+  currentWindow,
+  favicon,
+  domain,
+  modal,
+  field,
+  download,
+  retainFocus,
+  noteButton,
+  popover,
+  menu,
+  collectionChoice,
+} from './shared.js';
+import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
+import { parseImport, jsonExport, markdownExport, htmlExport } from '../lib/portable.js';
+import { orderedCollections, collectionAge } from '../lib/collection-workflow.js';
+import { highlightMatches, matchesPage } from './library-search.js';
+import { createActionDialogs } from './action-dialogs.js';
+import { createSearchController } from './search-controller.js';
+import { createTabTools, orderedTabs } from './tab-tools.js';
+let libraryScope = null;
+let tabTools,
+  selectingTabs = false;
+const savedSelections = new Map();
+const foldedNativeGroups = new Map();
+try {
+  for (const [key, value] of JSON.parse(sessionStorage.getItem('neo-folded-tab-groups') || '[]'))
+    foldedNativeGroups.set(key, !!value);
+} catch {
+  /* Ignore stale view preferences. */
+}
+let nativeGroupDragImage;
+function clearNativeGroupDrag() {
+  nativeGroupDragImage?.remove();
+  nativeGroupDragImage = null;
+  document
+    .querySelectorAll('.open-tab-group.dragging')
+    .forEach((n) => n.classList.remove('dragging'));
+}
+
+const noteDrafts = new Map();
+let actions,
+  data,
+  win,
+  activeCollection = null,
+  activeSpace = localStorage.getItem('neo-space') || 'main',
+  editingName = null,
+  selected = new Set(),
+  anchor = null,
+  tabLimit = 120,
+  collectionLimit = 60,
+  refreshTimer,
+  searchController;
+const linkLimits = new Map();
+let refreshGeneration = 0;
+let rendering = 0;
+let draggingCollection = null;
+let reorderBefore;
+let reorderMarker;
+function clearCollectionDrag() {
+  draggingCollection = null;
+  reorderMarker?.remove();
+  reorderMarker = null;
+  document.querySelectorAll('.collection.dragging').forEach((n) => n.classList.remove('dragging'));
+}
+function markCollectionDrop(c, card, e) {
+  if (c.id === draggingCollection) return;
+  const rect = card.getBoundingClientRect();
+  const list = $('#board').classList.contains('list-view');
+  const after = list
+    ? e.clientY > rect.top + rect.height / 2
+    : e.clientX > rect.left + rect.width / 2;
+  const visible = data.state.collections.filter(
+    (x) => x.spaceId === activeSpace && x.id !== draggingCollection,
+  );
+  reorderBefore = after ? visible[visible.findIndex((x) => x.id === c.id) + 1]?.id : c.id;
+  if (!reorderMarker) {
+    reorderMarker = el('div', { class: 'collection-insertion', 'aria-hidden': 'true' });
+    document.body.append(reorderMarker);
+  }
+  Object.assign(
+    reorderMarker.style,
+    list
+      ? {
+          left: rect.left + 'px',
+          top: (after ? rect.bottom + 8 : rect.top - 8) + 'px',
+          width: rect.width + 'px',
+          height: '3px',
+        }
+      : {
+          left: (after ? rect.right + 10 : rect.left - 10) + 'px',
+          top: rect.top + 'px',
+          width: '3px',
+          height: Math.min(rect.height, 100) + 'px',
+        },
+  );
+}
+const act = (fn) => task(fn);
+async function refresh() {
+  const generation = ++refreshGeneration,
+    next = await rpc('load');
+  if (generation !== refreshGeneration) return;
+  data = next;
+  theme(data.state.settings.theme);
+  renderTabs();
+  renderBoard();
+  renderRecent();
+  searchController?.update();
+}
+async function change(action, payload) {
+  if (action === 'save' || action === 'switch') payload.spaceId ||= activeSpace;
+  const result = await rpc(action, payload);
+  await refresh();
+  const op = result?.operation || result;
+  if (op?.id && action !== 'settings')
+    toast(
+      op.skipped?.length
+        ? `${op.label}: ${op.skipped.length} changed tabs stayed open.`
+        : op.label || 'Saved',
+      {
+        undo:
+          action !== 'undo-action' && (op.before || op.closed?.length)
+            ? () => change('undo-action', { id: op.id, windowId: win })
+            : undefined,
+      },
+    );
+  return result;
+}
+function findCollection(id = activeCollection) {
+  return data.state.collections.find((c) => c.id === id);
+}
+function eligibleTabs() {
+  return data.tabs.filter(
+    (t) =>
+      (libraryScope ? libraryScope === 'all' : !data.state.settings.currentWindowOnly) ||
+      t.windowId === win,
+  );
+}
+function selectedIds() {
+  return selectingTabs || selected.size
+    ? [...selected]
+    : eligibleTabs()
+        .filter((t) => !t.pinned)
+        .map((t) => t.id);
+}
+function visibleTabs() {
+  const query = $('#tab-search').value;
+  const tabs = eligibleTabs().filter((t) => matchesPage(t, query));
+  return orderedTabs(tabs, data.state.settings.tabSort);
+}
+function chooseTab(event, tab) {
+  const visible = [...$('#tabs').querySelectorAll('.tab-row')]
+    .map((row) => data.tabs.find((t) => t.id === Number(row.dataset.tabId)))
+    .filter(Boolean);
+  if (event.shiftKey && anchor !== null) {
+    const a = visible.findIndex((t) => t.id === anchor),
+      b = visible.findIndex((t) => t.id === tab.id);
+    if (a >= 0 && b >= 0) {
+      if (!event.ctrlKey && !event.metaKey) selected.clear();
+      for (const t of visible.slice(Math.min(a, b), Math.max(a, b) + 1)) selected.add(t.id);
+    }
+  } else if (selectingTabs || event.ctrlKey || event.metaKey) {
+    selected.has(tab.id) ? selected.delete(tab.id) : selected.add(tab.id);
+    anchor = tab.id;
+  } else {
+    selected.clear();
+    anchor = tab.id;
+    rpc('activate', { tabId: tab.id }).catch((e) => toast(e.message, { error: true }));
+  }
+  renderTabs();
+}
+function renderTabs() {
+  rendering++;
+  try {
+    renderTabsContent();
+    highlightMatches($('#tabs'), $('#tab-search').value);
+  } finally {
+    rendering--;
+  }
+}
+function renderTabsContent() {
+  const currentScope = libraryScope || (data.state.settings.currentWindowOnly ? 'window' : 'all');
+  const scopes = $('#sidebar-scopes');
+  const restoreScopeFocus = retainFocus(scopes);
+  scopes.replaceChildren(
+    ...[
+      ['window', 'This window'],
+      ['all', 'All windows'],
+    ].map(([id, label]) => {
+      const b = button(label, () => {
+        libraryScope = id;
+        selected.clear();
+        selectingTabs = false;
+        renderTabs();
+      });
+      b.dataset.focusKey = 'sidebar-scope:' + id;
+      b.setAttribute('aria-pressed', String(id === currentScope));
+      return b;
+    }),
+  );
+  restoreScopeFocus();
+  $('#tab-search').placeholder = 'Search tabs, history & collections…';
+  const restoreFocus = retainFocus($('#tabs'));
+  const all = visibleTabs(),
+    tabs = all.slice(0, tabLimit);
+  selected = new Set([...selected].filter((id) => data.tabs.some((t) => t.id === id)));
+  $('#tab-count').textContent = libraryQuery()
+    ? `${all.length} of ${eligibleTabs().length}`
+    : eligibleTabs().length;
+  tabTools?.update();
+  $('#tabs').classList.toggle('selecting', selectingTabs);
+  const selectMode = $('#library-select-mode');
+  if (selectMode) {
+    selectMode.removeAttribute('aria-pressed');
+    selectMode.textContent = selectingTabs ? 'Done' : 'Select';
+    selectMode.title = selectingTabs ? 'Done selecting' : 'Select tabs';
+    selectMode.setAttribute('aria-label', selectMode.title);
+  }
+  const nodes = [];
+  const groupContainers = new Map();
+  for (const t of tabs) {
+    let groupContainer;
+    if (t.groupId >= 0) {
+      const key = t.windowId + ':' + t.groupId;
+      groupContainer = groupContainers.get(key);
+      if (!groupContainer) {
+        const g = data.groups.find((g) => g.id === t.groupId);
+        const name = g?.title || 'Group';
+        const members = eligibleTabs().filter(
+          (tab) => tab.windowId === t.windowId && tab.groupId === t.groupId,
+        );
+        const folded = foldedNativeGroups.has(key) ? foldedNativeGroups.get(key) : !!g?.collapsed;
+        const expanded = !!libraryQuery() || !folded;
+        const color =
+          {
+            blue: 'blue',
+            red: 'rose',
+            green: 'mint',
+            yellow: 'yellow',
+            pink: 'rose',
+            purple: 'lavender',
+            cyan: 'teal',
+            orange: 'peach',
+            grey: 'grey',
+          }[g?.color] || 'grey';
+        const body = el('div', {
+          class: 'open-group-tabs',
+          id: 'open-group-' + t.groupId,
+          hidden: !expanded,
+        });
+        const fold = button(
+          (expanded ? 'Fold ' : 'Unfold ') + name,
+          () => {
+            foldedNativeGroups.set(key, expanded);
+            sessionStorage.setItem(
+              'neo-folded-tab-groups',
+              JSON.stringify([...foldedNativeGroups]),
+            );
+            renderTabs();
+          },
+          { glyph: expanded ? 'down' : 'chevron', quiet: true, className: 'open-group-fold' },
+        );
+        fold.disabled = !!libraryQuery();
+        if (fold.disabled) fold.title = 'Groups expand to show search matches';
+        fold.setAttribute('aria-expanded', String(expanded));
+        fold.setAttribute('aria-controls', body.id);
+        fold.dataset.focusKey = 'fold:' + key;
+        const groupCheck = selectingTabs
+          ? el('input', {
+              type: 'checkbox',
+              'aria-label': 'Select group ' + name,
+              dataset: { focusKey: 'select-group:' + key },
+              checked: members.every((tab) => selected.has(tab.id)),
+              onchange: (e) => {
+                members.forEach((tab) =>
+                  e.target.checked ? selected.add(tab.id) : selected.delete(tab.id),
+                );
+                renderTabs();
+              },
+            })
+          : null;
+        if (groupCheck)
+          groupCheck.indeterminate =
+            members.some((tab) => selected.has(tab.id)) &&
+            !members.every((tab) => selected.has(tab.id));
+        const header = el(
+          'div',
+          {
+            class: 'group-label open-group-header',
+            draggable: true,
+            dataset: { groupId: t.groupId },
+            title: 'Drag ' + name + ' (' + members.length + ' tabs) to a collection',
+          },
+          fold,
+          editableName(name, 'native:' + t.groupId, (name) =>
+            change('rename-tab-group', { groupId: t.groupId, name }),
+          ),
+          el('small', { class: 'open-group-count' }, members.length),
+          groupCheck,
+        );
+        const container = el(
+          'section',
+          {
+            class: 'open-tab-group',
+            role: 'group',
+            'aria-label': name + ' (' + members.length + ' tabs)',
+            dataset: { groupId: t.groupId },
+            style: '--native-color:var(--' + color + ')',
+          },
+          header,
+          body,
+        );
+        header.ondragstart = (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.closest('.open-group-fold')) {
+            e.preventDefault();
+            return;
+          }
+          clearNativeGroupDrag();
+          e.dataTransfer.setData(
+            'application/x-neo',
+            JSON.stringify({ type: 'tabs', ids: members.map((tab) => tab.id) }),
+          );
+          e.dataTransfer.effectAllowed = 'copy';
+          nativeGroupDragImage = el(
+            'div',
+            {
+              class: 'open-tab-group native-group-drag-image',
+              style: '--native-color:var(--' + color + ')',
+            },
+            el('strong', {}, name + ' · ' + members.length + ' tabs'),
+            ...members
+              .slice(0, 4)
+              .map((tab) =>
+                el(
+                  'div',
+                  { class: 'native-drag-row' },
+                  favicon(tab),
+                  el('span', {}, tab.title || domain(tab.url)),
+                ),
+              ),
+            members.length > 4 ? el('small', {}, '+' + (members.length - 4) + ' more') : null,
+          );
+          document.body.append(nativeGroupDragImage);
+          e.dataTransfer.setDragImage(nativeGroupDragImage, 18, 18);
+          container.classList.add('dragging');
+        };
+        header.ondragend = clearNativeGroupDrag;
+        groupContainer = { body, container, expanded };
+        groupContainers.set(key, groupContainer);
+        nodes.push(container);
+      }
+    }
+    const check = el('input', {
+      type: 'checkbox',
+      class: 'tab-select',
+      checked: selected.has(t.id),
+      'aria-label': `Select ${t.title}`,
+      onchange: () => {
+        check.checked ? selected.add(t.id) : selected.delete(t.id);
+        anchor = t.id;
+        renderTabs();
+      },
+    });
+    const row = el(
+      'div',
+      {
+        class: 'tab-row' + (selected.has(t.id) ? ' selected' : ''),
+        draggable: true,
+        dataset: { tabId: t.id },
+        ondragstart: (e) => {
+          e.dataTransfer.setData(
+            'application/x-neo',
+            JSON.stringify({ type: 'tabs', ids: selected.has(t.id) ? [...selected] : [t.id] }),
+          );
+          e.dataTransfer.effectAllowed = 'copy';
+        },
+      },
+      check,
+      favicon(t),
+      el(
+        'button',
+        { class: 'tab-open', title: t.title, onclick: (e) => chooseTab(e, t) },
+        el('span', { class: 'row-title' }, t.title || domain(t.url)),
+      ),
+      t.pinned
+        ? icon('pin')
+        : button(
+            `Close ${t.title}`,
+            act(() => change('close', { tabIds: [t.id] })),
+            { glyph: 'close', quiet: true, className: 'row-close' },
+          ),
+    );
+    if (t.parked) row.title = 'Parked · loads when opened';
+    if (groupContainer) {
+      if (groupContainer.expanded) groupContainer.body.append(row);
+    } else nodes.push(row);
+  }
+  if (!tabs.length)
+    nodes.push(
+      el(
+        'p',
+        { class: 'empty' },
+        libraryQuery() ? 'No matching open tabs.' : 'No open pages in this window.',
+      ),
+    );
+  if (all.length > tabLimit)
+    nodes.push(
+      button(`Show ${Math.min(120, all.length - tabLimit)} more`, () => {
+        tabLimit += 120;
+        renderTabs();
+      }),
+    );
+  $('#tabs').replaceChildren(...nodes);
+  for (const row of $('#tabs').querySelectorAll('[data-tab-id]'))
+    for (const node of row.querySelectorAll('button,input'))
+      node.dataset.focusKey =
+        row.dataset.tabId + ':' + (node.getAttribute('aria-label') || node.className);
+  restoreFocus();
+  const selection = $('#selection');
+  selection.hidden = !selectingTabs && !selected.size;
+  const members = eligibleTabs().filter((t) => selected.has(t.id));
+  const groupId =
+    members.length &&
+    members[0].groupId >= 0 &&
+    members.every((t) => t.groupId === members[0].groupId)
+      ? members[0].groupId
+      : null;
+  const control = (label, fn, disabled, glyph) => {
+    const b = button(label, act(fn), {
+      glyph: glyph || (label === 'Clear' ? 'clear' : label === 'Move to…' ? 'arrow' : 'select'),
+      quiet: label !== 'Close tabs',
+      className: label === 'Close tabs' ? 'close-selected' : '',
+    });
+    if (label === 'Close tabs') b.replaceChildren('Close tabs');
+    b.disabled = disabled;
+    return b;
+  };
+  selection.replaceChildren(
+    el('strong', {}, selected.size + ' selected'),
+    button(
+      'Select all',
+      () => {
+        visibleTabs().forEach((t) => selected.add(t.id));
+        renderTabs();
+      },
+      { glyph: 'select', quiet: true },
+    ),
+    control(
+      'Clear',
+      () => {
+        selected.clear();
+        renderTabs();
+      },
+      !selected.size,
+    ),
+    control('Save tabs', () => actions.save(), !members.some((t) => !t.pinned), 'tray'),
+    control(
+      'Group',
+      async () => {
+        const result = await change('group-tabs', { tabIds: [...selected] });
+        beginName('native:' + result.groupId);
+      },
+      !members.some((t) => !t.pinned) ||
+        new Set(members.filter((t) => !t.pinned).map((t) => t.windowId)).size > 1,
+      'group',
+    ),
+    control(
+      'Ungroup',
+      () => change('ungroup-tabs', { tabIds: [...selected] }),
+      !members.some((t) => t.groupId >= 0),
+      'ungroup',
+    ),
+    control('Rename group', () => beginName('native:' + groupId), groupId === null, 'rename'),
+    control(
+      'Close tabs',
+      async () => {
+        await change('close', { tabIds: [...selected] });
+        selected.clear();
+        renderTabs();
+      },
+      !members.some((t) => !t.pinned),
+      'close',
+    ),
+  );
+  const controls = [...selection.children];
+  selection.replaceChildren(
+    el('div', { class: 'selection-summary' }, controls.slice(0, 3)),
+    el('div', { class: 'selection-actions' }, controls.slice(3)),
+  );
+}
+let recentMode = 'pages';
+let historyPages = [],
+  historyAccess = false,
+  historyError = '',
+  historyBusy = false;
+let historyGeneration = 0,
+  historyTimer,
+  recentLimit = 6,
+  visitLimit = 8;
+const libraryQuery = () => $('#tab-search').value.trim();
+async function loadHistory() {
+  const generation = ++historyGeneration;
+  const query = libraryQuery();
+  historyBusy = true;
+  historyError = '';
+  try {
+    const allowed = await chrome.permissions.contains({ permissions: ['history'] });
+    const pages = allowed ? await rpc('history', { query }) : [];
+    if (generation !== historyGeneration) return;
+    historyAccess = allowed;
+    historyPages = pages
+      .filter((p) => safeURL(p.url))
+      .sort((a, b) => b.lastVisitTime - a.lastVisitTime);
+  } catch (error) {
+    if (generation !== historyGeneration) return;
+    historyError = error.message;
+  } finally {
+    if (generation === historyGeneration) {
+      historyBusy = false;
+      renderRecent();
+    }
+  }
+}
+function renderRecent() {
+  const root = $('#recent');
+  const restoreFocus = retainFocus(root);
+  root.replaceChildren(
+    el(
+      'div',
+      { class: 'recent-heading' },
+      el('h2', {}, recentMode === 'pages' ? 'Recent & history' : 'Timeline'),
+      button(
+        recentMode === 'pages' ? 'Timeline' : 'Recent & history',
+        () => {
+          recentMode = recentMode === 'pages' ? 'sessions' : 'pages';
+          renderRecent();
+        },
+        { glyph: recentMode === 'pages' ? 'history' : 'back', className: 'recent-mode' },
+      ),
+    ),
+  );
+  root.querySelector('.recent-mode').dataset.focusKey = 'recent-mode';
+  if (recentMode === 'sessions') {
+    renderSessionTimeline(root);
+    root.querySelectorAll('button,select').forEach((node, index) => {
+      node.dataset.focusKey ||= 'session-control:' + index;
+    });
+    restoreFocus();
+    return;
+  }
+  const query = libraryQuery();
+  const seen = new Set();
+  const recent = (data.recentSessions || [])
+    .flatMap((session) =>
+      session.tabs.map((tab) => ({ ...tab, sessionId: session.id, at: session.at })),
+    )
+    .sort((a, b) => b.at - a.at)
+    .filter((tab) => {
+      if (!matchesPage(tab, query) || seen.has(tab.url)) return false;
+      seen.add(tab.url);
+      return true;
+    });
+  const pageButton = (page, closed) => {
+    const live = data.tabs.find((t) => (t.resourceUrl || t.url) === page.url);
+    const label = live ? 'Switch to tab' : closed ? 'Reopen tab' : 'Open tab';
+    const b = button(
+      page.title || domain(page.url),
+      act(async () => {
+        if (live) await rpc('activate', { tabId: live.id });
+        else if (closed)
+          await rpc('restore-recent-tab', {
+            sessionId: page.sessionId,
+            url: page.url,
+            windowId: win,
+          });
+        else await rpc('open-url', { url: page.url, windowId: win });
+        await refresh();
+      }),
+      {
+        className: 'recent-page',
+        title: label + ': ' + (page.title || page.url) + '\n' + page.url,
+      },
+    );
+    b.replaceChildren(
+      favicon(page),
+      el(
+        'span',
+        { class: 'recent-page-copy' },
+        el('span', { class: 'row-title' }, page.title || page.url),
+        el('small', {}, domain(page.url)),
+      ),
+      el('span', { class: 'recent-page-verb' }, live ? 'Switch' : closed ? 'Reopen' : 'Open'),
+    );
+    b.dataset.focusKey = 'recent-page:' + page.url;
+    b.setAttribute('aria-label', label + ': ' + (page.title || page.url));
+    return b;
+  };
+  root.append(el('h3', { class: 'recent-section-label' }, 'Recently closed'));
+  const closedList = el(
+    'div',
+    { class: 'recent-pages' },
+    recent.slice(0, recentLimit).map((p) => pageButton(p, true)),
+  );
+  root.append(closedList);
+  if (!recent.length)
+    root.append(
+      el(
+        'p',
+        { class: 'hint' },
+        query ? 'No recently closed matches.' : 'No recently closed tabs.',
+      ),
+    );
+  if (recent.length > recentLimit)
+    root.append(
+      button(
+        'Show more recently closed',
+        () => {
+          recentLimit += 12;
+          renderRecent();
+        },
+        { className: 'recent-more' },
+      ),
+    );
+  root.append(el('h3', { class: 'recent-section-label history-divider' }, 'History'));
+  if (!historyAccess) {
+    root.append(
+      el('p', { class: 'hint' }, 'Find pages you visited in the last 30 days.'),
+      button(
+        'Enable history search',
+        act(async () => {
+          const granted = await chrome.permissions.request({ permissions: ['history'] });
+          if (granted) await loadHistory();
+        }),
+        { className: 'enable-history', glyph: 'history' },
+      ),
+    );
+  } else if (historyBusy)
+    root.append(el('p', { class: 'hint', role: 'status' }, 'Searching history…'));
+  else if (historyError)
+    root.append(
+      el('p', { class: 'hint', role: 'status' }, historyError),
+      button('Retry history', loadHistory),
+    );
+  else {
+    const pages = historyPages.filter((p) => matchesPage(p, query) && !seen.has(p.url));
+    root.append(
+      el(
+        'div',
+        { class: 'history-pages' },
+        pages.slice(0, visitLimit).map((p) => pageButton(p, false)),
+      ),
+    );
+    if (!pages.length)
+      root.append(
+        el(
+          'p',
+          { class: 'hint' },
+          query ? 'No other history matches.' : 'No other recent history.',
+        ),
+      );
+    if (pages.length > visitLimit)
+      root.append(
+        button(
+          'Show more history',
+          () => {
+            visitLimit += 12;
+            renderRecent();
+          },
+          { className: 'recent-more' },
+        ),
+      );
+  }
+  highlightMatches(root, query);
+  restoreFocus();
+}
+let historyId = null;
+function renderSessionTimeline(root) {
+  const snapshots = data.timeline || [];
+  const native = (data.recentSessions || []).map((r) => ({ ...r, native: true, reason: r.name }));
+  const rows = [...snapshots, ...native]
+    .filter(
+      (r) =>
+        !libraryQuery() ||
+        matchesPage({ title: r.name }, libraryQuery()) ||
+        (r.native ? r.tabs : r.snapshot.links).some((p) => matchesPage(p, libraryQuery())),
+    )
+    .sort((a, b) => b.at - a.at);
+  let index = rows.findIndex((r) => r.id === historyId);
+  if (index < 0) index = 0;
+  const row = rows[index];
+  if (!row) {
+    root.append(
+      el('p', { class: 'hint' }, 'Snapshots appear here as you browse and switch collections.'),
+    );
+    return;
+  }
+  const navigate = (offset) => {
+    historyId = rows[index + offset].id;
+    renderRecent();
+  };
+  root.append(
+    el(
+      'div',
+      { class: 'history-navigation' },
+      button('Older snapshot', () => navigate(1), {
+        glyph: 'back',
+        quiet: true,
+        disabled: index >= rows.length - 1,
+      }),
+      el(
+        'time',
+        { dateTime: new Date(row.at).toISOString() },
+        new Date(row.at).toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      ),
+      button('Newer snapshot', () => navigate(-1), {
+        glyph: 'chevron',
+        quiet: true,
+        disabled: index === 0,
+      }),
+    ),
+  );
+  const links = row.native ? row.tabs : row.snapshot.links;
+  if (row.name && row.name !== 'Browsing session')
+    root.append(el('strong', { class: 'history-name' }, row.name));
+  const restore = async (link) => {
+    const result = row.native
+      ? link
+        ? await rpc('restore-recent-tab', { sessionId: row.id, url: link.url, windowId: win })
+        : await rpc('restore-session', { sessionId: row.id })
+      : await rpc('timeline-restore', {
+          id: row.id,
+          linkIds: link ? [link.id] : undefined,
+          windowId: win,
+        });
+    if (result?.failed?.length || result?.groupFailures?.length)
+      throw Error('Some tabs could not be restored. This snapshot is still available.');
+    await refresh();
+  };
+  const list = el('div', { class: 'history-tabs' });
+  let lastGroup;
+  for (const link of links) {
+    if (link.groupId && link.groupId !== lastGroup) {
+      const group = row.snapshot?.groups.find((g) => g.id === link.groupId);
+      if (group) list.append(el('small', { class: 'history-group' }, group.name));
+    }
+    lastGroup = link.groupId;
+    const live = data.tabs.find((t) => (t.resourceUrl || t.url) === link.url);
+    const verb = live ? 'Switch' : 'Reopen';
+    const page = button(
+      verb + ': ' + (link.title || link.url),
+      act(async () => {
+        if (live) await rpc('activate', { tabId: live.id });
+        else await restore(link);
+      }),
+      { className: 'recent-page timeline-page', title: (link.title || link.url) + '\n' + link.url },
+    );
+    page.dataset.focusKey = 'timeline-page:' + (link.id || link.url);
+    page.replaceChildren(
+      favicon(link),
+      el(
+        'span',
+        { class: 'recent-page-copy' },
+        el('span', { class: 'row-title' }, link.title || link.url),
+        el('small', {}, domain(link.url)),
+      ),
+      el('span', { class: 'recent-page-verb' }, verb),
+    );
+    list.append(page);
+  }
+  root.append(
+    list,
+    button(
+      row.native && row.name === 'Closed window'
+        ? 'Restore window'
+        : 'Restore ' + links.length + (links.length === 1 ? ' tab' : ' tabs'),
+      act(() => restore()),
+      { className: 'history-restore', glyph: 'history' },
+    ),
+    el('p', { class: 'hint history-footnote' }, 'Saved on this device · 30 days'),
+  );
+  highlightMatches(root, libraryQuery());
+}
+
+function beginName(key) {
+  $('#dialog')?.close();
+  editingName = key;
+  renderTabs();
+  renderBoard();
+  const input = [...document.querySelectorAll('.inline-name')].find(
+    (x) => x.dataset.focusKey === key,
+  );
+  input?.focus();
+  input?.select();
+  input?.scrollIntoView({ block: 'nearest' });
+}
+function editableName(value, key, save, className = '') {
+  if (editingName !== key) {
+    const node = button(value, () => beginName(key), { className: 'editable-name ' + className });
+    node.title = 'Rename ' + value;
+    node.dataset.focusKey = key;
+    return node;
+  }
+  const input = el('input', {
+    class: 'inline-name ' + className,
+    value,
+    maxLength: 500,
+    'aria-label': 'Name',
+    dataset: { focusKey: key },
+  });
+  input.onblur = act(async () => {
+    if (editingName !== key || !input.isConnected || rendering) return;
+    editingName = null;
+    await save(input.value.trim() || value);
+  });
+  input.onkeydown = (e) => {
+    if (e.isComposing) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      editingName = null;
+      renderTabs();
+      renderBoard();
+    }
+  };
+  return input;
+}
+async function createCollection() {
+  const id = uid();
+  activeCollection = null;
+  const beforeId = data.state.collections.filter((c) => c.spaceId === activeSpace)[collectionLimit]
+    ?.id;
+  collectionLimit++;
+  await change('edit', {
+    kind: 'create',
+    id,
+    beforeId,
+    name: 'New collection',
+    spaceId: activeSpace,
+  });
+  beginName(id + ':name');
+}
+async function createGroup(c) {
+  await change('edit', { kind: 'create-group', collectionId: c.id, name: 'Group' });
+  beginName(findCollection(c.id).groups.at(-1).id + ':name');
+}
+function confirmRemoveWorkspace(space) {
+  const collections = data.state.collections.filter((c) => c.spaceId === space.id);
+  const tabs = collections.reduce((n, c) => n + c.links.length, 0);
+  const revision = data.state.revision;
+  const status = el('p', { role: 'alert', class: 'hint' });
+  const cancel = button('Cancel', () => close());
+  const remove = button(
+    'Remove workspace',
+    async () => {
+      remove.disabled = true;
+      try {
+        await change('edit', {
+          kind: 'delete-space',
+          spaceId: space.id,
+          confirmed: true,
+          expectedRevision: revision,
+          label: 'Remove workspace',
+        });
+        close();
+      } catch (error) {
+        status.textContent = error.message;
+        remove.disabled = false;
+      }
+    },
+    { className: 'danger' },
+  );
+  const { close } = modal(
+    'Remove workspace?',
+    el(
+      'div',
+      {},
+      el(
+        'p',
+        {},
+        `Remove “${space.name}” and its ${collections.length} ${collections.length === 1 ? 'collection' : 'collections'}, ${tabs} saved ${tabs === 1 ? 'tab' : 'tabs'}, and notes?`,
+      ),
+      el(
+        'p',
+        { class: 'hint' },
+        data.state.spaces.length === 1
+          ? 'A new empty workspace will be created. Open browser tabs stay open.'
+          : 'Open browser tabs stay open.',
+      ),
+      status,
+    ),
+    [cancel, remove],
+  );
+  cancel.focus();
+}
+
+function renderSpaces() {
+  const spaces = data.state.spaces;
+  if (!spaces.some((s) => s.id === activeSpace)) activeSpace = spaces[0].id;
+  const restore = retainFocus($('#spaces'));
+  $('#spaces').replaceChildren(
+    ...spaces.map((s) =>
+      el(
+        'div',
+        { class: 'space-tab' + (s.id === activeSpace ? ' active' : '') },
+        s.id === activeSpace
+          ? editableName(s.name, 'space:' + s.id, (name) =>
+              change('edit', { kind: 'space', spaceId: s.id, name }),
+            )
+          : button(s.name, () => {
+              activeSpace = s.id;
+              activeCollection = null;
+              collectionLimit = 60;
+              localStorage.setItem('neo-space', activeSpace);
+              renderBoard();
+            }),
+        button(
+          'Workspace options for ' + s.name,
+          (event) =>
+            menu(
+              s.name,
+              [
+                [
+                  'Rename workspace',
+                  () => {
+                    activeSpace = s.id;
+                    activeCollection = null;
+                    localStorage.setItem('neo-space', activeSpace);
+                    renderBoard();
+                    beginName('space:' + s.id);
+                  },
+                  'rename',
+                ],
+                [
+                  'Add collection',
+                  () => {
+                    activeSpace = s.id;
+                    activeCollection = null;
+                    localStorage.setItem('neo-space', activeSpace);
+                    return createCollection();
+                  },
+                  'plus',
+                ],
+                null,
+                ['Remove workspace', () => confirmRemoveWorkspace(s), 'close'],
+              ],
+              { anchor: event.currentTarget },
+            ),
+          { glyph: 'more', quiet: true, className: 'space-options' },
+        ),
+      ),
+    ),
+    button(
+      'Add space',
+      act(async () => {
+        await change('edit', { kind: 'create-space' });
+        activeSpace = data.state.spaces.at(-1).id;
+        activeCollection = null;
+        localStorage.setItem('neo-space', activeSpace);
+        beginName('space:' + activeSpace);
+      }),
+      { glyph: 'plus', quiet: true },
+    ),
+  );
+  restore();
+}
+function collectionStyle(c) {
+  return `--color:var(--${PALETTE.includes(c.color) ? c.color : 'blue'})`;
+}
+function renderBoard() {
+  if (draggingCollection) return;
+  rendering++;
+  try {
+    renderBoardContent();
+    highlightMatches($('#board'), libraryQuery());
+  } finally {
+    rendering--;
+  }
+}
+function renderBoardContent() {
+  renderSpaces();
+  const restoreFocus = retainFocus($('#board'));
+  if (activeCollection && !findCollection()) activeCollection = null;
+  const board = $('#board');
+  board.className = activeCollection
+    ? 'detail'
+    : data.state.settings.view === 'list'
+      ? 'list-view'
+      : '';
+  $('#breadcrumbs').replaceChildren(
+    ...[
+      activeCollection
+        ? button(
+            'All collections',
+            () => {
+              activeCollection = null;
+              renderBoard();
+            },
+            { glyph: 'back' },
+          )
+        : el(
+            'span',
+            {},
+            `${data.state.collections.filter((c) => c.spaceId === activeSpace).length} collections`,
+          ),
+      activeCollection ? el('span', {}, findCollection().name) : null,
+    ].filter(Boolean),
+  );
+  $('#view-tools').replaceChildren(
+    ...(activeCollection
+      ? [
+          button('Open all', () => actions.resume(findCollection())),
+          button(
+            data.sessionState?.active?.[win]?.collectionId === activeCollection
+              ? 'Close current collection'
+              : 'Swap to collection',
+            act(() =>
+              data.sessionState?.active?.[win]?.collectionId === activeCollection
+                ? actions.closeCollection(findCollection())
+                : actions.swap(findCollection()),
+            ),
+          ),
+        ]
+      : ['board', 'list'].map((v) =>
+          button(
+            v === 'board' ? 'Board view' : 'List view',
+            act(() => change('settings', { settings: { view: v } })),
+            {
+              glyph: v === 'board' ? 'grid' : 'list',
+              quiet: true,
+              className: data.state.settings.view === v ? 'view-active' : '',
+            },
+          ),
+        )),
+  );
+  const query = libraryQuery();
+  const collectionMatches = (c) =>
+    !query ||
+    matchesPage({ title: c.name + ' ' + (c.note || '') }, query) ||
+    c.groups.some((g) => matchesPage({ title: g.name }, query)) ||
+    c.links.some((l) => matchesPage(l, query));
+  const collections = activeCollection
+    ? [findCollection()].filter(collectionMatches)
+    : orderedCollections(data.state.collections)
+        .filter((c) => c.spaceId === activeSpace && collectionMatches(c))
+        .slice(0, collectionLimit);
+  if (query)
+    $('#breadcrumbs').replaceChildren(
+      el(
+        'span',
+        {},
+        `${collections.length} matching collections ${activeCollection ? 'in this view' : 'in this space'}`,
+      ),
+      button('Show all collections', () => {
+        $('#tab-search').value = '';
+        $('#tab-search').dispatchEvent(new Event('input'));
+      }),
+    );
+  if (!collections.length && query) {
+    board.replaceChildren(el('p', { class: 'hint' }, 'No collections match this search.'));
+    board.ondrop = null;
+    board.ondragover = null;
+    return;
+  }
+  if (!collections.length) {
+    board.style.display = '';
+    board.replaceChildren(
+      button('New collection', act(createCollection), {
+        glyph: 'plus',
+        className: 'add-collection',
+      }),
+    );
+    board.ondragover = (e) => e.preventDefault();
+    board.ondrop = act(async (e) => {
+      e.preventDefault();
+      const p = dragPayload(e);
+      if (p?.type === 'tabs') await change('save', { tabIds: p.ids });
+    });
+    return;
+  }
+  board.style.display = '';
+  board.ondragover = null;
+  board.ondrop = null;
+  board.replaceChildren(...collections.map(collectionCard));
+  if (!activeCollection && !query)
+    board.append(
+      button('New collection', act(createCollection), {
+        glyph: 'plus',
+        className: 'add-collection',
+      }),
+    );
+  if (!activeCollection && data.state.collections.length > collectionLimit)
+    board.append(
+      button('Show more collections', () => {
+        collectionLimit += 60;
+        renderBoard();
+      }),
+    );
+  restoreFocus();
+}
+const copyDrag = (e) => e.ctrlKey || e.metaKey;
+function clearDropFeedback() {
+  document.querySelectorAll('.drag-over').forEach((node) => node.classList.remove('drag-over'));
+}
+document.addEventListener('dragend', clearDropFeedback);
+function dragFeedback(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect =
+    copyDrag(e) || e.dataTransfer.effectAllowed === 'copy' ? 'copy' : 'move';
+}
+function dragPayload(e) {
+  try {
+    return JSON.parse(e.dataTransfer.getData('application/x-neo'));
+  } catch {
+    return null;
+  }
+}
+function collectionCard(c) {
+  const selection = savedSelections.get(c.id);
+  if (selection)
+    for (const id of selection.ids) if (!c.links.some((l) => l.id === id)) selection.ids.delete(id);
+  const card = el('article', {
+    class: 'collection',
+    style: collectionStyle(c),
+    dataset: { collectionId: c.id },
+  });
+  card.ondragover = (e) => {
+    e.preventDefault();
+    if (draggingCollection) {
+      e.dataTransfer.dropEffect = 'move';
+      markCollectionDrop(c, card, e);
+      return;
+    }
+    dragFeedback(e);
+    card.classList.add('drag-over');
+  };
+  card.ondragleave = (e) => {
+    if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over');
+  };
+  card.ondrop = act(async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    card.classList.remove('drag-over');
+    const p = dragPayload(e);
+    if (p?.type === 'collection') {
+      if (p.id === c.id) {
+        clearCollectionDrag();
+        return;
+      }
+      markCollectionDrop(c, card, e);
+      const beforeId = reorderBefore;
+      clearCollectionDrag();
+      await change('edit', {
+        kind: 'move-collection',
+        collectionId: p.id,
+        beforeId,
+        label: 'Move collection',
+      });
+      return;
+    }
+    if (p?.type === 'tabs') {
+      clearNativeGroupDrag();
+      await change('save', { tabIds: p.ids, destinationId: c.id, excludePinned: false });
+    }
+    if (p?.type === 'link')
+      await change('edit', {
+        kind: 'move-link',
+        copy: copyDrag(e),
+        collectionId: p.collectionId,
+        linkId: p.linkId,
+        destinationId: c.id,
+      });
+    if (p?.type === 'links')
+      await change('edit', {
+        kind: 'move-links',
+        copy: copyDrag(e),
+        collectionId: p.collectionId,
+        linkIds: p.linkIds,
+        destinationId: c.id,
+        label: copyDrag(e) ? 'Copy saved links' : 'Move saved links',
+      });
+    if (p?.type === 'group')
+      await change('edit', {
+        kind: 'move-group',
+        copy: copyDrag(e),
+        collectionId: p.collectionId,
+        groupId: p.groupId,
+        destinationId: c.id,
+        label: copyDrag(e) ? 'Copy group' : 'Move group',
+      });
+  });
+  const name = editableName(
+    c.name,
+    c.id + ':name',
+    (name) => change('edit', { kind: 'collection', collectionId: c.id, name }),
+    'collection-name',
+  );
+  name.dataset.focusKey = c.id + ':name';
+  name.draggable = name.tagName !== 'INPUT';
+  name.ondragstart = (e) => {
+    e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
+  };
+  card.append(
+    el(
+      'header',
+      { class: 'collection-head' },
+      button(
+        (c.collapsed ? 'Unfold ' : 'Fold ') + c.name,
+        act(() =>
+          change('edit', { kind: 'collection', collectionId: c.id, collapsed: !c.collapsed }),
+        ),
+        { glyph: c.collapsed ? 'chevron' : 'down', quiet: true, className: 'collection-fold' },
+      ),
+      name,
+      el('small', {}, c.links.length),
+      button(
+        selection ? 'Done' : 'Select',
+        () => {
+          if (selection) savedSelections.delete(c.id);
+          else {
+            const wasCollapsed = c.collapsed;
+            c.collapsed = false;
+            savedSelections.set(c.id, { ids: new Set(), anchor: null });
+            if (wasCollapsed)
+              change('edit', { kind: 'collection', collectionId: c.id, collapsed: false }).catch(
+                (e) => toast(e.message, { error: true }),
+              );
+          }
+          renderBoard();
+        },
+        {
+          glyph: selection ? undefined : 'select',
+          quiet: !selection,
+          className: 'collection-select' + (selection ? ' selection-mode-button' : ''),
+        },
+      ),
+      button(
+        (activeCollection === c.id ? 'Restore ' : 'Expand ') + c.name,
+        () => {
+          activeCollection = activeCollection === c.id ? null : c.id;
+          renderBoard();
+        },
+        { glyph: activeCollection === c.id ? 'restore' : 'expand', quiet: true },
+      ),
+      button(`Options for ${c.name}`, (e) => collectionMenu(c, e.currentTarget), {
+        glyph: 'more',
+        quiet: true,
+      }),
+    ),
+  );
+  const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
+  const newUrls = new Set(
+    data.tabs
+      .filter(
+        (t) =>
+          t.windowId === win &&
+          !t.pinned &&
+          !c.links.some((l) => l.url === (t.resourceUrl || t.url)),
+      )
+      .map((t) => t.resourceUrl || t.url),
+  );
+  card.append(
+    el(
+      'div',
+      { class: 'collection-meta' },
+      c.pinned
+        ? el(
+            'span',
+            { class: 'collection-pinned', title: 'Pinned collection' },
+            icon('pin'),
+            'Pinned',
+          )
+        : null,
+      el(
+        'time',
+        {
+          dateTime: new Date(c.updatedAt).toISOString(),
+          title: 'Last saved edit: ' + new Date(c.updatedAt).toLocaleString(),
+        },
+        collectionAge(c),
+      ),
+      currentSession
+        ? button(
+            c.autoUpdate === false ? 'Auto-update paused' : 'Auto-updating',
+            act(() =>
+              change('edit', {
+                kind: 'collection',
+                collectionId: c.id,
+                autoUpdate: c.autoUpdate === false,
+              }),
+            ),
+            {
+              className: 'collection-update-prompt',
+              title:
+                c.autoUpdate === false
+                  ? (c.autoUpdatePausedReason ? c.autoUpdatePausedReason + '. ' : '') +
+                    'Resume automatic updates from open tabs'
+                  : 'Open tabs, closures and groups are saved automatically. Click to pause.',
+            },
+          )
+        : null,
+      currentSession && c.autoUpdate === false && newUrls.size
+        ? button(
+            newUrls.size + ' new ' + (newUrls.size === 1 ? 'tab' : 'tabs'),
+            act(() => actions.update(c)),
+            {
+              className: 'collection-update-prompt',
+              title: 'Review new tabs to save in this collection',
+            },
+          )
+        : null,
+    ),
+  );
+  card.append(
+    button(
+      currentSession ? 'Close current collection' : 'Swap to ' + c.name,
+      act(async () => {
+        await (currentSession ? actions.closeCollection(c) : actions.swap(c));
+      }),
+      {
+        glyph: currentSession ? 'close' : 'arrow',
+        className: 'collection-switch',
+        title: currentSession
+          ? 'Save and close this collection’s tabs. Pinned tabs stay open.'
+          : 'Swap to ' + c.name + '. Keeps current tabs for a quick return.',
+      },
+    ),
+  );
+  const header = card.querySelector('.collection-head');
+  header.draggable = !activeCollection;
+  header.ondragstart = (e) => {
+    if (activeCollection || e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      return;
+    }
+    draggingCollection = c.id;
+    reorderBefore = undefined;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
+    const ghost = el('div', { class: 'collection-drag-ghost', style: collectionStyle(c) }, c.name);
+    ghost.style.width = header.getBoundingClientRect().width + 'px';
+    document.body.append(ghost);
+    e.dataTransfer.setDragImage(ghost, 28, 18);
+    requestAnimationFrame(() => {
+      ghost.remove();
+      card.classList.add('dragging');
+    });
+  };
+  header.ondragend = clearCollectionDrag;
+  header.oncontextmenu = (e) => {
+    e.preventDefault();
+    collectionMenu(c, header.querySelector('button[aria-label^="Options"]'));
+  };
+  const query = libraryQuery();
+  const matchesCollection = query && matchesPage({ title: c.name + ' ' + (c.note || '') }, query);
+  card.classList.toggle('folded', !!c.collapsed && !query);
+  if (query) {
+    const fold = card.querySelector('.collection-fold');
+    fold.replaceChildren(icon('down'));
+    fold.disabled = true;
+    fold.title = 'Clear search to fold this collection';
+  }
+  card
+    .querySelector('.collection-fold')
+    .setAttribute('aria-expanded', String(!c.collapsed || !!query));
+  if (c.collapsed && !query) return card;
+  const body = el('div', { class: 'collection-body' });
+  if (selection) card.append(savedSelectionToolbar(c, selection));
+  const ungrouped = c.links.filter((l) => !l.groupId);
+  function appendLinks(target, links, key) {
+    const groupMatches = c.groups.some(
+      (g) => g.id === key && matchesPage({ title: g.name }, query),
+    );
+    if (query && !matchesCollection && !groupMatches)
+      links = links.filter((l) => matchesPage(l, query));
+    const limit = activeCollection ? linkLimits.get(key) || 80 : 8;
+    target.append(...links.slice(0, limit).map((l) => savedRow(c, l)));
+    if (links.length > limit) {
+      const more = button(
+        activeCollection
+          ? `Show ${Math.min(80, links.length - limit)} more`
+          : `+ ${links.length - limit} more`,
+        () => {
+          activeCollection = c.id;
+          linkLimits.set(key, activeCollection && limit >= 80 ? limit + 80 : 80);
+          renderBoard();
+        },
+        { className: 'more-links' },
+      );
+      more.dataset.focusKey = key + ':more';
+      target.append(more);
+    }
+  }
+  appendLinks(body, ungrouped, c.id + ':links');
+  for (const g of c.groups) {
+    const children = c.links.filter((l) => l.groupId === g.id);
+    if (
+      query &&
+      !matchesCollection &&
+      !matchesPage({ title: g.name }, query) &&
+      !children.some((l) => matchesPage(l, query))
+    )
+      continue;
+    const wrap = el('div', { class: 'saved-group' });
+    const toggle = button(
+      '',
+      act(() =>
+        change('edit', {
+          kind: 'group',
+          collectionId: c.id,
+          groupId: g.id,
+          collapsed: !g.collapsed,
+        }),
+      ),
+      { className: 'group-toggle' },
+    );
+    toggle.setAttribute('aria-expanded', String(!g.collapsed || !!query));
+    toggle.setAttribute('aria-label', `${g.collapsed ? 'Expand' : 'Collapse'} group ${g.name}`);
+    toggle.replaceChildren(icon(g.collapsed && !query ? 'chevron' : 'down'), icon('group'));
+    if (query) {
+      toggle.disabled = true;
+      toggle.title = 'Clear search to fold this group';
+    }
+    wrap.append(toggle);
+    toggle.dataset.focusKey = g.id + ':toggle';
+    const options = button(`Options for group ${g.name}`, (e) => groupMenu(c, g, e.currentTarget), {
+      glyph: 'more',
+      quiet: true,
+    });
+    options.dataset.focusKey = g.id + ':options';
+    wrap.replaceChildren(
+      el(
+        'div',
+        {
+          class: 'group-header',
+          draggable: true,
+          dataset: { groupId: g.id },
+          title: 'Drag to move. Hold Ctrl to copy this group.',
+          ondragstart: (e) => {
+            if (e.target.tagName === 'INPUT') {
+              e.preventDefault();
+              return;
+            }
+            e.stopPropagation();
+            e.dataTransfer.setData(
+              'application/x-neo',
+              JSON.stringify({
+                type: 'group',
+                collectionId: c.id,
+                groupId: g.id,
+              }),
+            );
+            e.dataTransfer.effectAllowed = 'copyMove';
+          },
+        },
+        toggle,
+        selection
+          ? el('input', {
+              type: 'checkbox',
+              checked: children.length > 0 && children.every((l) => selection.ids.has(l.id)),
+              indeterminate:
+                children.some((l) => selection.ids.has(l.id)) &&
+                !children.every((l) => selection.ids.has(l.id)),
+              disabled: !children.length,
+              'aria-label': 'Select group ' + g.name,
+              onchange: (e) => {
+                children.forEach((l) =>
+                  e.target.checked ? selection.ids.add(l.id) : selection.ids.delete(l.id),
+                );
+                renderBoard();
+              },
+            })
+          : null,
+        editableName(g.name, g.id + ':name', (name) =>
+          change('edit', { kind: 'group', collectionId: c.id, groupId: g.id, name }),
+        ),
+        el('small', {}, children.length),
+        options,
+      ),
+    );
+    toggle.oncontextmenu = (e) => {
+      e.preventDefault();
+      groupMenu(c, g);
+    };
+    wrap.ondragover = dragFeedback;
+    wrap.ondrop = act(async (e) => {
+      const p = dragPayload(e);
+      clearDropFeedback();
+      if (p?.type === 'group') {
+        e.preventDefault();
+        e.stopPropagation();
+        card.classList.remove('drag-over');
+        await change('edit', {
+          kind: 'move-group',
+          copy: copyDrag(e),
+          collectionId: p.collectionId,
+          groupId: p.groupId,
+          destinationId: c.id,
+          beforeId: g.id,
+          label: copyDrag(e) ? 'Copy group' : 'Move group',
+        });
+      }
+      if (p?.type === 'link' || p?.type === 'links') {
+        e.preventDefault();
+        e.stopPropagation();
+        await change('edit', {
+          kind: p.type === 'links' ? 'move-links' : 'move-link',
+          copy: copyDrag(e),
+          collectionId: p.collectionId,
+          linkId: p.linkId,
+          linkIds: p.linkIds,
+          destinationId: c.id,
+          groupId: g.id,
+        });
+      }
+    });
+    if (!g.collapsed || query) {
+      const members = el('div', { class: 'group-members' });
+      appendLinks(members, children, g.id);
+      wrap.append(members);
+    }
+    body.append(wrap);
+  }
+  if (!c.links.length) body.append(el('p', { class: 'empty' }, 'Drop tabs here to save them.'));
+  if (c.note || noteDrafts.has(c.id)) {
+    const value = noteDrafts.get(c.id) ?? c.note;
+    const editor = el('textarea', {
+      class: 'collection-note',
+      rows: Math.min(4, (value.match(/\n/g) || []).length + 1),
+      value,
+      maxLength: 10000,
+      placeholder: 'Leave a note for next time…',
+      'aria-label': `Note for ${c.name}`,
+      oninput: (e) => noteDrafts.set(c.id, e.target.value),
+      onchange: act(async (e) => {
+        if (rendering) return;
+        const value = e.target.value;
+        await change('edit', {
+          kind: 'collection',
+          collectionId: c.id,
+          note: value,
+          label: 'Save note',
+        });
+        if (noteDrafts.get(c.id) === value) noteDrafts.delete(c.id);
+        renderBoard();
+      }),
+    });
+    const remove = button(
+      'Delete note',
+      act(async () => {
+        noteDrafts.delete(c.id);
+        if (c.note)
+          await change('edit', {
+            kind: 'collection',
+            collectionId: c.id,
+            note: '',
+            label: 'Delete note',
+          });
+        else renderBoard();
+        $(`[data-collection-id="${c.id}"] button[aria-label="Add note"]`)?.focus();
+      }),
+      { className: 'delete-collection-note' },
+    );
+    // Keep a mouse click on Delete from first saving the editor through blur.
+    remove.addEventListener('pointerdown', (e) => e.preventDefault());
+    body.append(el('div', { class: 'collection-note-editor' }, editor, remove));
+  }
+  body.append(
+    el(
+      'div',
+      { class: 'collection-footer' },
+      button('Add link', () => editLink(c)),
+      button(
+        'Add group',
+        act(() => createGroup(c)),
+      ),
+      !c.note && !noteDrafts.has(c.id)
+        ? button('Add note', () => {
+            noteDrafts.set(c.id, '');
+            renderBoard();
+            $(`[data-collection-id="${c.id}"] .collection-note`)?.focus();
+          })
+        : null,
+    ),
+  );
+  const note = body.querySelector('.collection-note');
+  if (note) note.dataset.focusKey = c.id + ':note';
+  for (const row of body.querySelectorAll('.saved-row'))
+    for (const control of row.querySelectorAll('button'))
+      control.dataset.focusKey = c.id + ':' + row.dataset.linkId + ':' + control.className;
+  card.append(body);
+  return card;
+}
+function savedSelectionToolbar(c, selection) {
+  const ids = () => [...selection.ids];
+  const members = c.links.filter((l) => selection.ids.has(l.id));
+  const group =
+    members.length && members[0].groupId && members.every((l) => l.groupId === members[0].groupId)
+      ? members[0].groupId
+      : null;
+  const control = (label, fn, enabled = members.length, glyph) => {
+    const b = button(label, act(fn), {
+      glyph: glyph || (label === 'Clear' ? 'clear' : label === 'Move to…' ? 'arrow' : 'select'),
+      quiet: true,
+    });
+    b.disabled = !enabled;
+    return b;
+  };
+  return el(
+    'div',
+    { class: 'saved-selection selection-toolbar', 'aria-label': 'Selected links in ' + c.name },
+    el('strong', { 'aria-live': 'polite' }, members.length + ' selected'),
+    button(
+      'Select all',
+      () => {
+        c.links.forEach((l) => selection.ids.add(l.id));
+        renderBoard();
+      },
+      { glyph: 'select', quiet: true },
+    ),
+    control('Clear', () => {
+      selection.ids.clear();
+      renderBoard();
+    }),
+    control('Open', () => actions.resume(c, { linkIds: ids() }), members.length, 'external'),
+    control(
+      'Group',
+      async () => {
+        const groupId = uid();
+        await change('edit', {
+          kind: 'group-links',
+          collectionId: c.id,
+          linkIds: ids(),
+          groupId,
+          label: 'Group saved links',
+        });
+        beginName(groupId + ':name');
+      },
+      members.length,
+      'group',
+    ),
+    control(
+      'Ungroup',
+      () =>
+        change('edit', {
+          kind: 'ungroup-links',
+          collectionId: c.id,
+          linkIds: ids(),
+          label: 'Ungroup saved links',
+        }),
+      members.some((l) => l.groupId),
+      'ungroup',
+    ),
+    control('Rename group', () => beginName(group + ':name'), !!group, 'rename'),
+    control('Move to…', () => {
+      const search = el('input', {
+        type: 'search',
+        placeholder: 'Search collections…',
+        'aria-label': 'Search collections',
+      });
+      const choices = el('div', { class: 'collection-choices', 'aria-label': 'Collections' });
+      const destinations = orderedCollections(data.state.collections).filter((x) => x.id !== c.id);
+      const { close } = popover(
+        'Move selected links to',
+        el('div', { class: 'collection-picker' }, search, choices),
+      );
+      const render = () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        choices.replaceChildren(
+          ...destinations
+            .filter((x) => x.name.toLocaleLowerCase().includes(query))
+            .map((dest) =>
+              collectionChoice(
+                dest,
+                act(async () => {
+                  await change('edit', {
+                    kind: 'move-links',
+                    collectionId: c.id,
+                    linkIds: ids(),
+                    destinationId: dest.id,
+                    label: 'Move saved links',
+                  });
+                  close();
+                }),
+                {
+                  detail: `${dest.links.length} tabs · ${data.state.spaces.find((x) => x.id === dest.spaceId)?.name || 'My space'}`,
+                },
+              ),
+            ),
+        );
+        if (!choices.children.length)
+          choices.append(
+            el(
+              'p',
+              { class: 'hint', role: 'status' },
+              destinations.length ? 'No matching collections.' : 'Add another collection first.',
+            ),
+          );
+      };
+      search.oninput = render;
+      search.onkeydown = (event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          choices.querySelector('button')?.focus();
+        }
+        if (event.key === 'Enter' && !event.isComposing) {
+          event.preventDefault();
+          choices.querySelector('button')?.click();
+        }
+      };
+      render();
+      search.focus({ preventScroll: true });
+    }),
+    control(
+      'Remove',
+      () =>
+        change('edit', {
+          kind: 'delete-links',
+          collectionId: c.id,
+          linkIds: ids(),
+          label: 'Remove saved links',
+        }),
+      members.length,
+      'close',
+    ),
+  );
+}
+function savedRow(c, l) {
+  const selection = savedSelections.get(c.id);
+  function choose(event) {
+    if (!selection && !event.ctrlKey && !event.metaKey && !event.shiftKey)
+      return rpc('open-link', { collectionId: c.id, linkId: l.id, windowId: win });
+    const current = selection || { ids: new Set(), anchor: null };
+    savedSelections.set(c.id, current);
+    if (event.shiftKey && current.anchor) {
+      const rows = [
+        ...event.currentTarget.closest('.collection').querySelectorAll('.saved-row'),
+      ].map((r) => r.dataset.linkId);
+      const a = rows.indexOf(current.anchor),
+        b = rows.indexOf(l.id);
+      if (a >= 0 && b >= 0)
+        rows.slice(Math.min(a, b), Math.max(a, b) + 1).forEach((id) => current.ids.add(id));
+    } else {
+      current.ids.has(l.id) ? current.ids.delete(l.id) : current.ids.add(l.id);
+      current.anchor = l.id;
+    }
+    renderBoard();
+  }
+  const row = el(
+    'div',
+    {
+      class: 'saved-row' + (selection?.ids.has(l.id) ? ' selected' : ''),
+      dataset: { linkId: l.id },
+      draggable: true,
+      title: (l.note || l.url) + '\nDrag to move. Hold Ctrl to copy.',
+      ondragstart: (e) => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'copyMove';
+        e.dataTransfer.setData(
+          'application/x-neo',
+          JSON.stringify(
+            selection?.ids.has(l.id)
+              ? { type: 'links', collectionId: c.id, linkIds: [...selection.ids] }
+              : { type: 'link', collectionId: c.id, linkId: l.id },
+          ),
+        );
+      },
+    },
+    selection
+      ? el('input', {
+          type: 'checkbox',
+          checked: selection.ids.has(l.id),
+          'aria-label': 'Select ' + l.title,
+          onchange: choose,
+        })
+      : null,
+    favicon(l),
+    button(l.title, act(choose), { className: 'link-open' }),
+    l.note ? noteButton(l.title, l.note) : null,
+    button(`Edit ${l.title}`, (e) => linkMenu(c, l, e.currentTarget), {
+      glyph: 'more',
+      quiet: true,
+    }),
+    button(
+      `Remove ${l.title} from collection`,
+      act(() =>
+        change('edit', {
+          kind: 'delete-link',
+          collectionId: c.id,
+          linkId: l.id,
+          label: 'Remove saved link',
+        }),
+      ),
+      { glyph: 'close', quiet: true, className: 'remove-link' },
+    ),
+  );
+  row.querySelector('.link-open').classList.add('row-title');
+  if (
+    libraryQuery() &&
+    !matchesPage({ title: l.title }, libraryQuery()) &&
+    matchesPage({ url: l.url }, libraryQuery())
+  ) {
+    const label = row.querySelector('.link-open');
+    label.classList.remove('row-title');
+    label.replaceChildren(
+      el('span', { class: 'row-title' }, l.title),
+      el('small', { class: 'search-match-url' }, l.url),
+    );
+  }
+  row.ondragover = dragFeedback;
+  row.ondrop = act(async (e) => {
+    const p = dragPayload(e);
+    clearDropFeedback();
+    if (p?.type === 'link' || p?.type === 'links') {
+      e.preventDefault();
+      e.stopPropagation();
+      await change('edit', {
+        kind: p.type === 'links' ? 'move-links' : 'move-link',
+        copy: copyDrag(e),
+        collectionId: p.collectionId,
+        linkId: p.linkId,
+        linkIds: p.linkIds,
+        destinationId: c.id,
+        beforeId: l.id,
+        groupId: l.groupId,
+      });
+    }
+  });
+  return row;
+}
+function collectionMenu(c, trigger) {
+  const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
+  const colors = el(
+    'div',
+    { class: 'swatches' },
+    ...PALETTE.map((color) =>
+      el('button', {
+        class: 'swatch' + (color === c.color ? ' selected' : ''),
+        style: `background:var(--${color})`,
+        title: color,
+        'aria-label': color,
+        onclick: act(() => change('edit', { kind: 'collection', collectionId: c.id, color })),
+      }),
+    ),
+  );
+  const choices = [
+    ['Version history', () => actions.versions(c), 'history'],
+    [
+      c.autoUpdate === false ? 'Enable automatic updates' : 'Pause automatic updates',
+      () =>
+        change('edit', {
+          kind: 'collection',
+          collectionId: c.id,
+          autoUpdate: c.autoUpdate === false,
+        }),
+      'restore',
+    ],
+    ['Add tabs from current window', () => actions.update(c), 'tray'],
+    [
+      c.pinned ? 'Unpin collection' : 'Pin collection',
+      () =>
+        change('edit', {
+          kind: 'collection',
+          collectionId: c.id,
+          pinned: !c.pinned,
+          label: c.pinned ? 'Unpin collection' : 'Pin collection',
+        }),
+      'pin',
+    ],
+    null,
+    ['Add link', () => editLink(c, undefined, trigger), 'plus'],
+    ['Add group', () => createGroup(c), 'group'],
+    null,
+    ['Open all', () => actions.resume(c, { target: 'current' }), 'external', !c.links.length],
+    [
+      currentSession ? 'Close current collection' : 'Swap to collection',
+      () => (currentSession ? actions.closeCollection(c) : actions.swap(c)),
+      currentSession ? 'close' : 'arrow',
+    ],
+    ['Open in new window', () => actions.resume(c, { target: 'new' }), 'external', !c.links.length],
+    [
+      c.collapsed ? 'Unfold collection' : 'Fold collection',
+      () => change('edit', { kind: 'collection', collectionId: c.id, collapsed: !c.collapsed }),
+      'down',
+    ],
+    ['Rename', () => beginName(c.id + ':name'), 'rename'],
+    [
+      'Move to space',
+      () =>
+        menu(
+          'Move to space',
+          data.state.spaces
+            .filter((x) => x.id !== c.spaceId)
+            .map((x) => [
+              x.name,
+              () => change('edit', { kind: 'collection', collectionId: c.id, spaceId: x.id }),
+            ]),
+          { anchor: trigger },
+        ),
+      'arrow',
+    ],
+    null,
+    ['Organise with AI', () => actions.ai(c), 'sparkles', !c.links.length],
+    ['Apply domain rules', () => change('rules', { collectionId: c.id }), 'group'],
+    ['Export', () => actions.export(c, trigger), 'tray'],
+    [
+      'Duplicate collection',
+      () => change('edit', { kind: 'duplicate-collection', collectionId: c.id }),
+      'copy',
+    ],
+    [
+      'Delete collection',
+      () =>
+        change('edit', {
+          kind: 'delete-collection',
+          collectionId: c.id,
+          label: 'Delete collection',
+        }),
+      'close',
+    ],
+  ];
+  menu('Collection actions', choices, { anchor: trigger, prefix: colors });
+}
+function groupMenu(c, g, trigger) {
+  menu(
+    'Group actions',
+    [
+      [
+        'Open all',
+        () =>
+          actions.resume(c, {
+            linkIds: c.links.filter((l) => l.groupId === g.id).map((l) => l.id),
+          }),
+        'external',
+      ],
+      ['Rename group', () => beginName(g.id + ':name'), 'rename'],
+      [
+        'Ungroup',
+        () => change('edit', { kind: 'delete-group', collectionId: c.id, groupId: g.id }),
+        'ungroup',
+      ],
+      [
+        'Remove group and links',
+        () =>
+          change('edit', {
+            kind: c.links.some((l) => l.groupId === g.id) ? 'delete-links' : 'delete-group',
+            collectionId: c.id,
+            groupId: g.id,
+            linkIds: c.links.filter((l) => l.groupId === g.id).map((l) => l.id),
+            label: 'Remove saved group',
+          }),
+        'close',
+      ],
+    ],
+    { anchor: trigger },
+  );
+}
+function linkMenu(c, l, trigger) {
+  menu(
+    'Link actions',
+    [
+      [
+        'Open in new tab',
+        () => rpc('open-link', { collectionId: c.id, linkId: l.id, windowId: win }),
+        'external',
+      ],
+      ['Edit link', () => editLink(c, l, trigger), 'rename'],
+      [
+        'Select',
+        () => {
+          savedSelections.set(c.id, { ids: new Set([l.id]), anchor: l.id });
+          renderBoard();
+        },
+        'select',
+      ],
+      [
+        'Remove',
+        () =>
+          change('edit', {
+            kind: 'delete-link',
+            collectionId: c.id,
+            linkId: l.id,
+            label: 'Remove saved link',
+          }),
+        'close',
+      ],
+    ],
+    { anchor: trigger },
+  );
+}
+function editLink(c, l, trigger) {
+  const title = el('input', { value: l?.title || '', maxLength: 500 }),
+    url = el('input', { value: l?.url || '', type: 'url', required: true }),
+    note = el('textarea', { value: l?.note || '', maxLength: 10000 }),
+    group = el(
+      'select',
+      {},
+      el('option', { value: '' }, 'No group'),
+      c.groups.map((g) => el('option', { value: g.id, selected: g.id === l?.groupId }, g.name)),
+    );
+  const actions = [
+    button(
+      'Save',
+      act(async () => {
+        if (!url.reportValidity()) return;
+        await change('edit', {
+          kind: l ? 'link' : 'add-link',
+          collectionId: c.id,
+          linkId: l?.id,
+          title: title.value,
+          url: url.value,
+          note: note.value,
+          groupId: group.value || null,
+        });
+        close();
+      }),
+      { className: 'primary' },
+    ),
+  ];
+  if (l)
+    actions.unshift(
+      button(
+        'Delete',
+        act(async () => {
+          await change('edit', { kind: 'delete-link', collectionId: c.id, linkId: l.id });
+          close();
+        }),
+        { className: 'danger' },
+      ),
+    );
+  const { close } = popover(
+    l ? 'Edit link' : 'Add link',
+    el(
+      'div',
+      {},
+      field('Title', title),
+      field('URL', url),
+      field('Group', group),
+      field('Note', note),
+    ),
+    actions,
+    { anchor: trigger },
+  );
+}
+function searchDialog() {
+  const input = el('input', { class: 'search-input', type: 'search' }),
+    scope = el('div', { class: 'search-scope' }),
+    results = el('div', { class: 'search-results' });
+  // Each search has its own dialog; action dialogs can close without destroying it.
+  const dialog = el(
+    'dialog',
+    { class: 'search-dialog' },
+    el(
+      'header',
+      { class: 'dialog-head' },
+      el('h2', {}, 'Search'),
+      button('Close', () => dialog.close(), { glyph: 'close', quiet: true }),
+    ),
+    input,
+    scope,
+    results,
+  );
+  document.body.append(dialog);
+  dialog.showModal();
+  const controller = (searchController = createSearchController({
+    input,
+    scope,
+    results,
+    getData: () => data,
+    windowId: win,
+    actions,
+    onNavigate: () => dialog.close(),
+    onDismiss: () => dialog.close(),
+  }));
+  dialog.addEventListener(
+    'close',
+    () => {
+      controller.destroy();
+      if (searchController === controller) searchController = null;
+      dialog.remove();
+      $('#global-search').focus();
+    },
+    { once: true },
+  );
+  controller.focus();
+}
+async function start() {
+  win = await currentWindow();
+  actions = createActionDialogs({
+    getData: () => data,
+    windowId: win,
+    getTabIds: selectedIds,
+    change,
+  });
+  await refresh();
+  $('#settings').replaceChildren(icon('settings'));
+  $('#settings').onclick = actions.settings;
+  $('#ai-tools').replaceChildren(icon('sparkles'), 'Organise with AI');
+  $('#ai-tools').onclick = (e) => {
+    if (activeCollection) return actions.ai(findCollection());
+    menu(
+      'Organise with AI',
+      [
+        ...data.state.collections
+          .filter((c) => c.spaceId === activeSpace && c.links.length)
+          .map((c) => [c.name, () => actions.ai(c), 'sparkles']),
+        null,
+        ['AI connection settings', () => actions.aiSettings(), 'settings'],
+      ],
+      { anchor: e.currentTarget },
+    );
+  };
+  $('#save-current').onclick = () => actions.save(findCollection());
+  $('#switch-collection').onclick = () => actions.switch(findCollection());
+  $('#imports').onclick = actions.import;
+  $('#recovery').onclick = actions.recovery;
+  const focusLibrarySearch = () => {
+    $('#tab-search').focus();
+    $('#tab-search').select();
+  };
+  $('#global-search').onclick = focusLibrarySearch;
+  chrome.permissions.onAdded.addListener(loadHistory);
+  chrome.permissions.onRemoved.addListener(loadHistory);
+  loadHistory();
+  $('#tab-search').onkeydown = (e) => {
+    if (e.key === 'Escape' && e.currentTarget.value) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.value = '';
+      e.currentTarget.dispatchEvent(new Event('input'));
+    }
+  };
+  $('#tab-search').oninput = () => {
+    selected.clear();
+    anchor = null;
+    tabLimit = 120;
+    recentLimit = 6;
+    visitLimit = 8;
+    historyGeneration++;
+    historyPages = [];
+    historyBusy = true;
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(loadHistory, 180);
+    renderTabs();
+    renderBoard();
+    renderRecent();
+  };
+  tabTools = createTabTools({
+    getTabs: eligibleTabs,
+    getSettings: () => data.state.settings,
+    change,
+    actions,
+    compact: true,
+  });
+  tabTools.save.id = 'stash-button';
+  tabTools.dedup.id = 'dedup';
+  const selectMode = button(
+    'Select tabs',
+    () => {
+      selectingTabs = !selectingTabs;
+      if (!selectingTabs) selected.clear();
+      selectMode.removeAttribute('aria-pressed');
+      selectMode.textContent = selectingTabs ? 'Done' : 'Select';
+      selectMode.title = selectingTabs ? 'Done selecting' : 'Select tabs';
+      selectMode.setAttribute('aria-label', selectMode.title);
+      renderTabs();
+    },
+    { glyph: 'select', quiet: true },
+  );
+  selectMode.id = 'library-select-mode';
+  selectMode.className = 'selection-mode-button';
+  $('#tab-tools').replaceChildren(tabTools.node, selectMode);
+  renderTabs();
+  chrome.runtime.onMessage.addListener((m) => {
+    if (m.event === 'navigate')
+      chrome.tabs.getCurrent().then((t) => {
+        if (t?.id === m.tabId) handleNavigation();
+      });
+    if (m.event === 'changed') {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(
+        () => refresh().catch((e) => toast(e.message, { error: true })),
+        100,
+      );
+    }
+  });
+  const schedule = () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => refresh().catch(() => {}), 160);
+  };
+  chrome.tabs.onCreated.addListener(schedule);
+  chrome.tabs.onRemoved.addListener(schedule);
+  chrome.tabs.onUpdated.addListener(schedule);
+  chrome.tabs.onMoved.addListener(schedule);
+  chrome.tabGroups.onUpdated.addListener(schedule);
+  document.addEventListener('keydown', (e) => {
+    if (
+      e.isComposing ||
+      /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) ||
+      document.querySelector('dialog[open]')
+    )
+      return;
+    if (e.key === '/') {
+      e.preventDefault();
+      focusLibrarySearch();
+    }
+    if (e.key === 'Escape') {
+      selected.clear();
+      selectingTabs = false;
+      savedSelections.clear();
+      renderTabs();
+      renderBoard();
+    }
+  });
+  handleNavigation();
+  window.addEventListener('hashchange', handleNavigation);
+}
+function handleNavigation() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (params.get('collection')) {
+    activeCollection = params.get('collection');
+    activeSpace = findCollection()?.spaceId || activeSpace;
+    renderBoard();
+  }
+  if (location.hash === '#settings') actions.settings();
+  if (location.hash === '#search') $('#tab-search').focus();
+  if (['settings', 'import', 'export', 'ai'].includes(params.get('action')))
+    actions[params.get('action')](findCollection());
+}
+start().catch((e) => toast(e.message, { error: true }));

@@ -1,0 +1,172 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Neo · Help & privacy</title>
+    <link rel="stylesheet" href="ui/styles.css" />
+  </head>
+  <body>
+    <main class="help-page">
+      <a href="app.html">← Library</a>
+      <h1>Help & privacy</h1>
+      <section>
+        <h2>Open pages and saved work</h2>
+        <p>
+          The sidebar shows eligible open web and file pages. Click a page to switch to it. Use
+          Shift-click to select a range, or Ctrl-click (Cmd-click on Mac) to toggle individual
+          pages. Checkboxes work with the keyboard too.
+        </p>
+        <p>
+          Drag selected tabs or an open group header into a collection to save them. The tray beside
+          Open tabs shows the same Stash popover as the switcher: save into a new collection and
+          optionally close tabs after saving. Pinned tabs stay open.
+        </p>
+        <p>
+          Spaces contain collections. Use the top plus to add a space and the final New collection
+          row to create a collection. Names are edited inline; Enter saves and Escape cancels
+          renaming. Collections contain links, optional groups and a continuation note. Use a
+          collection's expand button to focus it, and Restore to return to the board. The chevron
+          folds the collection. Its menu opens all pages directly in the current or a new window.
+          Every saved page opens as a fresh tab. Use Select to open only some links.
+        </p>
+        <p>
+          Clicking an individual saved link always opens a new browser tab, including links found
+          through collection search. Drag a saved group header to move the whole group. Moving the
+          last link out removes the emptied group. Hover or focus a note icon to read it; click to
+          keep it open, and press Escape or Close to dismiss it.
+        </p>
+      </section>
+      <section>
+        <h2>Organise with AI</h2>
+        <p>
+          Use Organise with AI in the library header and choose a collection. Configure Gemini or a
+          compatible provider, model and API key in Settings under AI connection. Generate a plan,
+          review and edit its proposed groups, then apply the selected changes. No request is sent
+          just by opening the AI tools.
+        </p>
+      </section>
+      <section>
+        <h2>Save and switch work</h2>
+        <p>
+          Stash saves to a new collection, with an option to close the saved tabs. Switch collection
+          shows a searchable list. Choose a collection to replace the current window's tabs. Leave
+          Save current tabs checked to save the old work into a new collection automatically, or
+          clear it to switch without adding a collection. Undo and Recovery remain available. Pinned
+          tabs stay open. Remove a saved link with its hover × button; Undo restores it. The broom
+          beside Open tabs shows how many duplicate tabs it will close.
+        </p>
+      </section>
+      <section>
+        <h2>Two ways to find your place</h2>
+        <p>
+          The toolbar button opens the library. Alt+Q opens a floating, translucent switcher over
+          the current web page. Its light or dark theme follows your Neo settings. Chrome's
+          protected internal pages use a bounded extension window instead. A group tile opens that
+          group's pages. Real previews appear when a captured image is available; Neo does not visit
+          background pages to manufacture previews.
+        </p>
+        <p>
+          Each saved collection also has Select: choose individual links or whole groups, then
+          Group, Ungroup, Rename group, Move, Open, or Remove. These edits offer Undo. Choose Select
+          in the switcher to manage live tabs. Click tabs or whole groups to select them, then
+          Group, Ungroup, Rename group, or Close tabs. New groups are named inline. Pinned tabs stay
+          open. Escape exits selection mode first; press it again to go back or close the switcher.
+        </p>
+        <p>
+          Alt+Shift+K opens search only, without preview cards or the collection dock. Search finds
+          open, saved and recently closed pages, plus notes. Type
+          <code>@</code> to select a collection or <code>/</code> to choose an action. Up/Down
+          changes the highlighted result; Enter performs its displayed action. Escape clears the
+          query or closes search.
+        </p>
+        <p>
+          The switcher uses the same @ scopes and / commands. A selected collection lists only its
+          saved links, even when extra copies of those pages are open or recently closed.
+        </p>
+        <p>
+          Default shortcuts are Alt+Q (switcher), Alt+Shift+K (search only) and Alt+Shift+L
+          (library). Configure shortcuts in the browser's extension settings if another application
+          uses them.
+        </p>
+      </section>
+      <section>
+        <h2>Portable collections</h2>
+        <p>
+          Import accepts Neo JSON, supported Toby collections/cards JSON, bookmark HTML, Markdown
+          links and OneTab text. Review the contents before importing. Imported collections become
+          separate copies.
+        </p>
+        <p>
+          A library backup includes spaces, current collections, groups, notes, preferences, domain
+          rules and a reference log of recent actions. It excludes API keys, page previews, browser
+          history, tab/session IDs and older recovery snapshots. Imported log entries are
+          informational and never replay browser actions. Restoring preferences is optional.
+        </p>
+        <p>
+          Markdown and bookmark HTML exports preserve useful structure without requiring Neo. The
+          Markdown export creates a portable file for other note apps.
+          For a large collection, use a Markdown file. Direct Notion export creates a snapshot under
+          a page you review. Share that parent page with your Notion integration first.
+        </p>
+      </section>
+      <section>
+        <h2>Data on this device</h2>
+        <p>
+          Neo's core uses IndexedDB and extension-local storage. It has no required account,
+          backend, analytics or telemetry. Stored links and notes are not automatically uploaded.
+          Chrome's favicon service supplies small site icons.
+        </p>
+        <p>
+          Optional automatic previews capture only the active page while browsing, exclude private
+          windows, expire after 14 days and use a cache capped at 50 MB. A toolbar action may
+          capture the current web page with temporary active-tab access. Clear previews or revoke
+          website access in Settings.
+        </p>
+        <p>
+          Saved keys stay in trusted extension-local storage, outside backups. They are not
+          protected by an operating-system keychain. Forget them in Settings when no longer needed.
+        </p>
+      </section>
+      <section>
+        <h2>Optional connections</h2>
+        <p>
+          AI receives only the selected link titles, URLs and notes when you request a plan. Page
+          text, screenshots and other collections are excluded. Review the suggested groups and note
+          before applying them. Changes made after generation require a fresh plan.
+        </p>
+        <p>
+          Notion receives the collection you select for export. People with access to the
+          destination may see it. Large exports use batches; you can pause between batches and
+          continue through Recovery. If a response is lost, Neo marks that batch uncertain and will
+          not blindly resend it.
+        </p>
+        <p>
+          Bookmark and browser-history access are optional permissions. History search is explicit
+          and limited to the previous 30 days. Revoking optional access stops these connections
+          until you grant it again.
+        </p>
+      </section>
+      <section>
+        <h2>Recovery and limits</h2>
+        <p>
+          A durable snapshot is saved before tabs close. Tabs that navigate, become pinned or
+          otherwise change during the operation are left open. Recovery can reopen saved URLs and
+          groups, but cannot restore unsaved form contents, login state or an application's memory.
+        </p>
+        <p>
+          Undo reverses the latest compatible action. If newer edits exist, restore an older
+          collection as a separate copy. The last 20 completed action records and up to 1,000
+          closed-page records from 30 days are retained; unfinished operations remain visible. An
+          interrupted close is never automatically replayed.
+        </p>
+        <p>
+          Exports to other apps are separate actions and cannot be undone through local library
+          Undo. Browser-internal and other extensions' pages are excluded from saved tab operations.
+          Export a backup before uninstalling: uninstalling removes Neo's local data.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
