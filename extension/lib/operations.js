@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 import { parkedTitle, settleParked } from './parked.js';
 import { snapshotTabs, safeURL, sameCapturedTab, stamp, uid } from './model.js';
+import { manageableURL } from './tab-policy.js';
+import { arrangeSaved } from './arrange.js';
+import { randomCollectionColor } from './colors.js';
 
 // Dependencies are explicit so failure tests use the exact production operation path.
-export function operations({ browser, db }) {
+export function operations({ browser, db, beforeStashClose = async () => {} }) {
   const ownURL = browser.runtime.getURL('');
-  const available = (t) => !t.incognito && !!safeURL(t.resourceUrl || t.pendingUrl || t.url);
+  const available = (t) => !t.incognito && manageableURL(t.resourceUrl || t.pendingUrl || t.url)
+    && !(String(t.url || '').startsWith(ownURL) && !t.parked);
   async function live(ids) {
     const tabs = await Promise.all(
       (await browser.tabs.query({})).map(async (t) => {
@@ -122,16 +126,28 @@ export function operations({ browser, db }) {
       tabs.some((tab) => tab.groupId === group.id),
     );
     const captured = snapshotTabs(tabs, groups);
+    if (!captured.links.length) {
+      if (close) {
+        const operation={ id:uid(), label:'Close utility tabs', at:stamp(), snapshot:captured, sourceGroups:groups, tabs };
+        await db.write('journal',operation);
+        await beforeStashClose(tabs);
+        return await closeCaptured(operation,tabs);
+      }
+      throw new Error('These utility tabs do not need saving. Use Close tabs.');
+    }
     if (name?.trim()) captured.name = name.trim().slice(0, 500);
     const { operation } = await db.mutate(close ? 'Stash tabs' : 'Save tabs', (state) => {
+      if (state.settings.autoGroup) arrangeSaved(captured, state.settings.rules);
       if (destinationId) {
         const dest = state.collections.find((c) => c.id === destinationId);
         if (!dest) throw new Error('This collection no longer exists.');
         dest.groups.push(...captured.groups);
         dest.links.push(...captured.links);
         dest.updatedAt = stamp();
-      } else {
-        captured.spaceId =
+        } else {
+          captured.color = randomCollectionColor(state.collections.at(-1)?.color);
+          captured.autoUpdate = !!state.settings.autoUpdateDefault;
+          captured.spaceId =
           state.spaces?.find((s) => s.id === spaceId)?.id || state.spaces?.[0]?.id || 'main';
         state.collections.push(captured);
       }
@@ -143,7 +159,12 @@ export function operations({ browser, db }) {
         status: close ? 'saved' : 'complete',
       };
     });
-    if (close) await closeCaptured(operation, tabs);
+    if (close) {
+      // Save durably first, then stop mirroring before removal events can turn
+      // the active collection into the remaining (possibly empty) tab set.
+      await beforeStashClose(tabs);
+      await closeCaptured(operation, tabs);
+    }
     return operation;
   }
   async function close(tabIds) {

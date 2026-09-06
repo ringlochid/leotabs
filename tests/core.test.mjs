@@ -25,7 +25,7 @@ const baseTab = (id, extra = {}) => ({
   status: 'complete',
   ...extra,
 });
-function fixture(tabs = [baseTab(1), baseTab(2), baseTab(3, { pinned: true })]) {
+function fixture(tabs = [baseTab(1), baseTab(2), baseTab(3, { pinned: true })], beforeStashClose) {
   const state = initialState(),
     stores = { journal: new Map(), parked: new Map() },
     events = [],
@@ -119,7 +119,7 @@ function fixture(tabs = [baseTab(1), baseTab(2), baseTab(3, { pinned: true })]) 
     removed,
     created,
     browser,
-    ops: operations({ browser, db }),
+    ops: operations({ browser, db, beforeStashClose }),
     set: (key, value) => {
       if (key === 'write') failWrite = value;
       if (key === 'create') failCreate = value;
@@ -189,6 +189,44 @@ test('save-only leaves all live tabs unchanged', async () => {
   await f.ops.save({ close: false });
   assert.equal(f.tabs.length, 3);
   assert.equal(f.state.collections.length, 1);
+});
+
+test('stash pauses tracking after durable save and before removing any tab; save-only never pauses', async () => {
+  const f=fixture(undefined, async tabs=>{
+    assert.equal(f.state.collections.at(-1).links.length,2);
+    assert.equal(f.removed.length,0);
+    assert.deepEqual(tabs.map(t=>t.id),[1,2]);
+    f.events.push(['pause']);
+  });
+  await f.ops.save({close:false});
+  assert(!f.events.some(e=>e[0]==='pause'));
+  await f.ops.save({close:true});
+  assert(f.events.findIndex(e=>e[0]==='pause')<f.events.findIndex(e=>e[0]==='close'));
+});
+
+test('failed stash save never pauses; failed pause preserves both saved copy and live tabs', async () => {
+  let pauses=0;
+  const f=fixture(undefined,async()=>{pauses++;throw Error('pause failed');});
+  f.set('write',true);
+  await assert.rejects(f.ops.save({close:true}),/disk full/);
+  assert.equal(pauses,0);
+  f.set('write',false);
+  await assert.rejects(f.ops.save({close:true}),/pause failed/);
+  assert.equal(f.state.collections[0].links.length,2);
+  assert.deepEqual(f.removed,[]);
+});
+
+test('utility-only stash also pauses before closing', async () => {
+  let paused=false;
+  const f=fixture([baseTab(1,{url:'chrome://newtab/'})],async()=>{
+    assert.equal(f.removed.length,0);
+    assert.equal(f.stores.journal.size,1);
+    paused=true;
+  });
+  await f.ops.save({close:true});
+  assert(paused);
+  assert.deepEqual(f.removed,[1]);
+  assert.equal(f.state.collections.length,0);
 });
 test('navigation after snapshot prevents closure of changed instance', async () => {
   const f = fixture();

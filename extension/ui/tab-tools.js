@@ -3,6 +3,8 @@ import { el, button, icon, popover, task, menu } from './shared.js';
 import { duplicateCandidates } from '../lib/model.js';
 
 export function orderedTabs(tabs, order = 'recent') {
+  if(order==='title')return [...tabs].sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  if(order==='domain')return [...tabs].sort((a,b)=>{const host=t=>{try{return new URL(t.resourceUrl||t.url).hostname;}catch{return '';}};return host(a).localeCompare(host(b))||a.index-b.index;});
   const sorted = [...tabs].sort(
     order === 'recent'
       ? (a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0)
@@ -13,24 +15,13 @@ export function orderedTabs(tabs, order = 'recent') {
 
 // Both tab surfaces use these exact controls, settings and save dialog.
 export function createTabTools({ getTabs, getSettings, change, actions, compact = false }) {
-  const sort = button(
-    'Sort tabs',
-    (e) =>
-      menu(
-        'Sort tabs',
-        [
-          ['recent', 'Most recent first'],
-          ['position', 'Position in tab bar'],
-          ['reverse', 'Reverse tab order'],
-        ].map(([tabSort, label]) => [
-          label,
-          () => change('settings', { settings: { tabSort } }),
-          getSettings().tabSort === tabSort ? 'check' : undefined,
-        ]),
-        { anchor: e.currentTarget },
-      ),
-    { glyph: 'sort', quiet: compact },
-  );
+  const sort = button('Arrange tabs', e => menu('Arrange tabs', [
+    ['Group by rules now', () => actions.arrangeRules(), 'group'],
+    ['Group with AI…', () => actions.aiTabs(), 'sparkles'],
+    [getSettings().autoGroup ? 'Automatic rules: on' : 'Automatic rules: off', () => change('settings',{settings:{autoGroup:!getSettings().autoGroup}}), 'check'],
+    ['Configure rules', () => actions.ruleSettings(), 'settings'], null,
+    ...[['position','Browser order'],['recent','Most recent first'],['title','Title A–Z'],['domain','Website'],['reverse','Reverse browser order']].map(([tabSort,label])=>[label,()=>change('settings',{settings:{tabSort}}),getSettings().tabSort===tabSort?'check':undefined]),
+  ], {anchor:e.currentTarget}), {glyph:'sort',quiet:compact});
   const save = button('Save tabs', () => actions.save(), { glyph: 'tray', quiet: compact });
   const dedup = button(
     'Close duplicate tabs',
@@ -46,6 +37,7 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
     sort,
     save,
     dedup,
+    button('Close tabs', task(()=>actions.closeWindow()), {glyph:'close',quiet:compact,title:'Close unpinned tabs without updating saved collections'}),
   );
   function update() {
     const count = duplicateCandidates(getTabs()).length;

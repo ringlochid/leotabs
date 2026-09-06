@@ -29,8 +29,8 @@ export function sessionManager({ browser, db, ops }) {
     const groups = await browser.tabGroups.query({ windowId });
     const snapshot = snapshotTabs(tabs, groups);
     // Multiple windows must not overwrite each other's version of a collection.
-    const owners = Object.values(s.active).filter((x) => x.collectionId === current?.collectionId);
-    if (sync && current && owners.length === 1) {
+    const owners = Object.values(s.active).filter((x) => x.collectionId === current?.collectionId && x.tracking !== false);
+    if (sync && current && current.tracking !== false && owners.length === 1) {
       await db.mutate('Automatic collection update', (library) => {
         const c = library.collections.find((x) => x.id === current.collectionId);
         if (!c || c.autoUpdate === false) return { unchanged: true };
@@ -92,6 +92,8 @@ export function sessionManager({ browser, db, ops }) {
     signal,
     focusPage = false,
     force = false,
+    tracking,
+    preserveCurrent = false,
   }) {
     if ((await hiddenWindows()).includes(windowId))
       throw Error(
@@ -99,12 +101,12 @@ export function sessionManager({ browser, db, ops }) {
       );
     const s = await state();
     const key = windowId + ':' + destinationId;
-    if (!force && s.active[windowId]?.collectionId === destinationId) {
+    if (!force && !preserveCurrent && s.active[windowId]?.collectionId === destinationId) {
       await capture(windowId);
       return { status: 'complete' };
     }
-    const other = Object.entries(s.active).find(
-      ([id, x]) => Number(id) !== windowId && x.collectionId === destinationId,
+    const other = !preserveCurrent && Object.entries(s.active).find(
+      ([id, x]) => Number(id) !== windowId && x.collectionId === destinationId && x.tracking !== false,
     );
     if (other) {
       try {
@@ -115,7 +117,7 @@ export function sessionManager({ browser, db, ops }) {
         await persist(s);
       }
     }
-    const saved = await capture(windowId, { reason: 'Before switch', force: true, sync: !force });
+    const saved = await capture(windowId, { reason: 'Before switch', force: true, sync: !force && !preserveCurrent });
     const library = await db.getState();
     const destination = library.collections.find((c) => c.id === destinationId);
     const retained = force ? null : s.parked[key];
@@ -172,7 +174,7 @@ export function sessionManager({ browser, db, ops }) {
           id: uid(),
           collectionId: sourceId,
           name: sourceName,
-          snapshot: saved.snapshot,
+          snapshot: saved?.snapshot,
           tabIds: [],
         };
         s.parked[windowId + ':' + sourceId] = parked;
@@ -188,6 +190,7 @@ export function sessionManager({ browser, db, ops }) {
       s.active[windowId] = {
         collectionId: destinationId,
         name: destination?.name || retained.name,
+        tracking: tracking ?? (destination?.autoUpdate !== false),
       };
       if (retained && !destinationTabs.length && (await holding(retained))) {
         // Preserve unmatched live work under its own recovery entry, never strand it.
@@ -315,5 +318,57 @@ export function sessionManager({ browser, db, ops }) {
     delete s.active[windowId];
     await persist(s);
   }
-  return { capture, switchTo, closeCurrent, hiddenWindows, list, replaceTab, forgetWindow };
+  async function closeAll(windowId) {
+    await capture(windowId, {reason:'Closed window tabs', force:true, sync:false});
+    const tabs = (await ops.live()).filter(t => t.windowId === windowId && !t.pinned);
+    const visible = await browser.tabs.query({windowId});
+    if (tabs.length && visible.every(t => tabs.some(x => x.id === t.id)))
+      await browser.tabs.create({windowId, url:browser.runtime.getURL('app.html'), active:false});
+    await forgetWindow(windowId);
+    return tabs.length ? ops.close(tabs.map(t => t.id)) : {status:'complete'};
+  }
+  async function setAutoUpdate({ collectionId, windowId, enabled }) {
+    if (typeof enabled !== 'boolean') throw Error('Choose whether to enable auto-update.');
+    const s = await state();
+    const active = s.active[windowId];
+    if (!active || active.collectionId !== collectionId)
+      throw Error('This collection is no longer active in this window.');
+    if (enabled && Object.entries(s.active).some(([id, x]) => Number(id) !== windowId && x.collectionId === collectionId && x.tracking !== false))
+      throw Error('Auto-update is already running for this collection in another window.');
+    // Keep the pre-resume version recoverable before current tabs are mirrored.
+    await db.mutate(enabled ? 'Resume auto-update' : 'Pause auto-update', library => {
+      const c = library.collections.find(c => c.id === collectionId);
+      if (!c) throw Error('This collection no longer exists.');
+      const beforeCollection = structuredClone(c);
+      c.autoUpdate = enabled;
+      delete c.autoUpdatePausedReason;
+      return { beforeCollection, versionWindowId: windowId };
+    });
+    active.tracking = enabled;
+    await persist(s);
+    if (enabled) await capture(windowId);
+    return { label: enabled ? 'Auto-update on' : 'Auto-update paused' };
+  }
+  async function applyAutoUpdateToOpen(enabled) {
+    const s = await state();
+    const owners = new Set();
+    // A collection opened in multiple windows still needs one writer.
+    const entries = Object.entries(s.active).sort((a,b) => Number(b[1].tracking !== false)-Number(a[1].tracking !== false));
+    for (const [, active] of entries) {
+      active.tracking = enabled && !owners.has(active.collectionId);
+      if (active.tracking) owners.add(active.collectionId);
+    }
+    await persist(s);
+    if (enabled) for (const [id, active] of entries)
+      if (active.tracking) await capture(Number(id));
+  }
+  async function pauseForStash(tabs) {
+    const s=await state();
+    for (const windowId of new Set(tabs.map(t=>t.windowId))) {
+      const current=s.active[windowId];
+      if(current && current.tracking !== false)
+        await setAutoUpdate({collectionId:current.collectionId,windowId,enabled:false});
+    }
+  }
+  return { capture, switchTo, closeCurrent, closeAll, setAutoUpdate, applyAutoUpdateToOpen, pauseForStash, hiddenWindows, list, replaceTab, forgetWindow };
 }

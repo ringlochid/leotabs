@@ -211,13 +211,13 @@ export function createSearchController({
       );
       parts.push(
         button(
-          currentSession ? 'Close current collection' : 'Swap to collection',
+          currentSession ? 'Close current collection' : 'Switch to collection',
           task(() => (currentSession ? actions.closeCollection(c) : actions.swap(c))),
           {
             glyph: currentSession ? 'close' : 'arrow',
             title: currentSession
               ? 'Save and close this collection’s tabs. Pinned tabs stay open.'
-              : 'Swap to collection: replace unpinned tabs and keep the current session for a quick return',
+              : 'Make this collection current in this window; choose whether to save the current tabs',
           },
         ),
       );
@@ -228,14 +228,6 @@ export function createSearchController({
           'Version history',
           task(() => actions.versions(c)),
           { glyph: 'history' },
-        ),
-      );
-    if (c && !pendingCommand && !historyMode && parsed.mode !== 'commands' && actions.update)
-      parts.push(
-        button(
-          'Update collection',
-          task(() => actions.update(c)),
-          { glyph: 'tray', title: 'Review new tabs from this window' },
         ),
       );
     if (historyMode && parsed.mode !== 'commands')

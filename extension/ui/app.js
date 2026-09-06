@@ -21,6 +21,8 @@ import {
   menu,
   collectionChoice,
 } from './shared.js';
+import { colorHex, colorInk } from '../lib/colors.js';
+import { drawIdentity } from '../lib/identity.js';
 import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
 import { parseImport, jsonExport, markdownExport, htmlExport } from '../lib/portable.js';
 import { orderedCollections, collectionAge } from '../lib/collection-workflow.js';
@@ -62,6 +64,31 @@ let actions,
   refreshTimer,
   searchController;
 const linkLimits = new Map();
+let dragActive = false;
+let refreshAfterDrag = false;
+document.addEventListener('dragstart', (event) => {
+  if (!event.target.closest('[draggable="true"]')) return;
+  dragActive = true;
+  // Capture also sees saved rows that stop event propagation.
+  queueMicrotask(() => { if (event.defaultPrevented) finishDrag(); });
+}, true);
+function finishDrag() {
+  if (!dragActive) return;
+  dragActive = false;
+  clearDropFeedback();
+  if (refreshAfterDrag) {
+    refreshAfterDrag = false;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => refresh().catch(() => {}), 100);
+  }
+}
+document.addEventListener('dragend', finishDrag, true);
+document.addEventListener('drop', () => queueMicrotask(finishDrag), true);
+function retainScroll() {
+  const positions = [...new Set([document.scrollingElement, $('#main'), $('#sidebar')])]
+    .filter(Boolean).map(node => [node, node.scrollLeft, node.scrollTop]);
+  return () => positions.forEach(([node, left, top]) => { node.scrollLeft = left; node.scrollTop = top; });
+}
 let refreshGeneration = 0;
 let rendering = 0;
 let draggingCollection = null;
@@ -107,15 +134,24 @@ function markCollectionDrop(c, card, e) {
 }
 const act = (fn) => task(fn);
 async function refresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = null;
+  if (dragActive) { refreshAfterDrag = true; return; }
   const generation = ++refreshGeneration,
     next = await rpc('load');
   if (generation !== refreshGeneration) return;
+  if (dragActive) { refreshAfterDrag = true; return; }
+  const restoreScroll = retainScroll();
+  const boardChanged = !data || data.state.revision !== next.state.revision ||
+    JSON.stringify(data.sessionState?.active) !== JSON.stringify(next.sessionState?.active);
   data = next;
   theme(data.state.settings.theme);
   renderTabs();
-  renderBoard();
+  if (boardChanged) renderBoard();
   renderRecent();
+  if (boardChanged) renderCurrentCollection();
   searchController?.update();
+  restoreScroll();
 }
 async function change(action, payload) {
   if (action === 'save' || action === 'switch') payload.spaceId ||= activeSpace;
@@ -180,12 +216,15 @@ function chooseTab(event, tab) {
   renderTabs();
 }
 function renderTabs() {
+  if (dragActive) { refreshAfterDrag = true; return; }
+  const restoreScroll = retainScroll();
   rendering++;
   try {
     renderTabsContent();
     highlightMatches($('#tabs'), $('#tab-search').value);
   } finally {
     rendering--;
+    restoreScroll();
   }
 }
 function renderTabsContent() {
@@ -532,6 +571,7 @@ async function loadHistory() {
   }
 }
 function renderRecent() {
+  if (dragActive) { refreshAfterDrag = true; return; }
   const root = $('#recent');
   const restoreFocus = retainFocus(root);
   root.replaceChildren(
@@ -686,8 +726,13 @@ function renderRecent() {
 let historyId = null;
 function renderSessionTimeline(root) {
   const snapshots = data.timeline || [];
-  const native = (data.recentSessions || []).map((r) => ({ ...r, native: true, reason: r.name }));
-  const rows = [...snapshots, ...native]
+  const seen = new Map();
+  const rows = [...snapshots].sort((a,b)=>b.at-a.at).filter(r => {
+    if (!r.snapshot?.links.length) return false;
+    const key = r.collectionId || r.windowId;
+    const previous = seen.get(key); seen.set(key,r);
+    return !previous || previous.at-r.at > 60000 || (r.reason === 'Before switch' || r.reason === 'Closed collection');
+  })
     .filter(
       (r) =>
         !libraryQuery() ||
@@ -704,6 +749,8 @@ function renderSessionTimeline(root) {
     );
     return;
   }
+  const choices = el('select', {'aria-label':'Timeline events', class:'timeline-event-picker', onchange:e=>{historyId=e.target.value;renderRecent();}}, ...rows.map(r=>el('option', {value:r.id, selected:r.id===row.id}, new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})+' · '+r.name+' · '+r.snapshot.links.length+' tabs')));
+  root.append(choices);
   const navigate = (offset) => {
     historyId = rows[index + offset].id;
     renderRecent();
@@ -985,13 +1032,15 @@ function collectionStyle(c) {
   return `--color:var(--${PALETTE.includes(c.color) ? c.color : 'blue'})`;
 }
 function renderBoard() {
-  if (draggingCollection) return;
+  if (dragActive || draggingCollection) { refreshAfterDrag = true; return; }
+  const restoreScroll = retainScroll();
   rendering++;
   try {
     renderBoardContent();
     highlightMatches($('#board'), libraryQuery());
   } finally {
     rendering--;
+    restoreScroll();
   }
 }
 function renderBoardContent() {
@@ -1027,15 +1076,11 @@ function renderBoardContent() {
     ...(activeCollection
       ? [
           button('Open all', () => actions.resume(findCollection())),
+          button('Open in new window', () => actions.resume(findCollection(), { target: 'new' })),
           button(
-            data.sessionState?.active?.[win]?.collectionId === activeCollection
-              ? 'Close current collection'
-              : 'Swap to collection',
-            act(() =>
-              data.sessionState?.active?.[win]?.collectionId === activeCollection
-                ? actions.closeCollection(findCollection())
-                : actions.swap(findCollection()),
-            ),
+            'Switch to collection',
+            act(() => actions.swap(findCollection())),
+            { disabled: data.sessionState?.active?.[win]?.collectionId === activeCollection },
           ),
         ]
       : ['board', 'list'].map((v) =>
@@ -1082,10 +1127,7 @@ function renderBoardContent() {
   if (!collections.length) {
     board.style.display = '';
     board.replaceChildren(
-      button('New collection', act(createCollection), {
-        glyph: 'plus',
-        className: 'add-collection',
-      }),
+      newCollectionDropTarget(),
     );
     board.ondragover = (e) => e.preventDefault();
     board.ondrop = act(async (e) => {
@@ -1101,10 +1143,7 @@ function renderBoardContent() {
   board.replaceChildren(...collections.map(collectionCard));
   if (!activeCollection && !query)
     board.append(
-      button('New collection', act(createCollection), {
-        glyph: 'plus',
-        className: 'add-collection',
-      }),
+      newCollectionDropTarget(),
     );
   if (!activeCollection && data.state.collections.length > collectionLimit)
     board.append(
@@ -1132,13 +1171,64 @@ function dragPayload(e) {
     return null;
   }
 }
+
+function newCollectionDropTarget() {
+  const target=button('New collection', act(createCollection), {glyph:'plus',className:'add-collection'});
+  target.ondragover=e=>{e.preventDefault();target.classList.add('drag-over');};
+  target.ondragleave=e=>{if(!target.contains(e.relatedTarget))target.classList.remove('drag-over');};
+  target.ondrop=act(async e=>{
+    e.preventDefault(); e.stopPropagation();
+    const payload=dragPayload(e); if(!payload)return;
+    await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
+  });
+  return target;
+}
+function renderCurrentCollection() {
+  const host=$('#current-collection'); if(!host)return;
+  const active=data.sessionState?.active?.[win];
+  const c=data.state.collections.find(c=>c.id===active?.collectionId);
+  host.replaceChildren();
+  if(c) {
+    host.style.setProperty('--current-color',colorHex(c.color));
+    const label=button(c.name,()=>{activeSpace=c.spaceId;activeCollection=c.id;renderBoard();}, {className:'current-collection-name', title:'Current collection: '+c.name});
+    label.prepend(el('span',{class:'current-colour','aria-hidden':'true'}));
+    const updating = active.tracking !== false && c.autoUpdate !== false;
+    const toggle = el('input', { type: 'checkbox', role: 'switch', checked: updating,
+      'aria-label': 'Auto-update current collection',
+      title: updating ? 'Pause auto-update: keep the saved collection unchanged' : 'Resume auto-update: save this window’s current tabs and follow changes',
+    });
+    toggle.onchange = act(async () => {
+      toggle.disabled = true;
+      try { await change('collection-auto-update', { collectionId: c.id, windowId: win, enabled: toggle.checked }); }
+      catch (error) { toggle.checked = updating; throw error; }
+      finally { toggle.disabled = false; }
+    });
+    const autoUpdate = el('label', { class: 'current-auto-update' }, 'Auto-update', toggle,
+      el('small', { class: 'auto-update-state' }, updating ? 'On' : 'Paused'));
+    host.append(label, autoUpdate,button('Close current collection',act(()=>actions.closeCollection(c)),{glyph:'close',className:'close-current'}));
+  } else {
+    host.style.removeProperty('--current-color');
+    host.append(button('Close tabs',act(()=>actions.closeWindow()),{glyph:'close', title:'Close unpinned tabs without changing saved collections'}));
+  }
+  const color=c?.color || 'lavender';
+  const mark=document.querySelector('.brand-mark');
+  if(mark){mark.style.background=colorHex(color);mark.style.color=colorInk(color);}
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=32;
+  drawIdentity(canvas.getContext('2d'),32,color);
+  let favicon=document.querySelector('link[rel="icon"]');
+  if(!favicon){favicon=document.createElement('link');favicon.rel='icon';document.head.append(favicon);}
+  const key=c?.id+':'+color+':'+c?.name;
+  if(favicon.dataset.key!==key){favicon.href=canvas.toDataURL();favicon.dataset.key=key;}
+  document.title=c?'Neo · '+c.name:'Neo · Library';
+}
+
 function collectionCard(c) {
   const selection = savedSelections.get(c.id);
   if (selection)
     for (const id of selection.ids) if (!c.links.some((l) => l.id === id)) selection.ids.delete(id);
   const card = el('article', {
     class: 'collection',
-    style: collectionStyle(c),
+    style: collectionStyle(c) + ';--color:' + colorHex(c.color) + ';--collection-ink:' + colorInk(c.color),
     dataset: { collectionId: c.id },
   });
   card.ondragover = (e) => {
@@ -1266,83 +1356,16 @@ function collectionCard(c) {
     ),
   );
   const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
-  const newUrls = new Set(
-    data.tabs
-      .filter(
-        (t) =>
-          t.windowId === win &&
-          !t.pinned &&
-          !c.links.some((l) => l.url === (t.resourceUrl || t.url)),
-      )
-      .map((t) => t.resourceUrl || t.url),
-  );
-  card.append(
-    el(
-      'div',
-      { class: 'collection-meta' },
-      c.pinned
-        ? el(
-            'span',
-            { class: 'collection-pinned', title: 'Pinned collection' },
-            icon('pin'),
-            'Pinned',
-          )
-        : null,
-      el(
-        'time',
-        {
-          dateTime: new Date(c.updatedAt).toISOString(),
-          title: 'Last saved edit: ' + new Date(c.updatedAt).toLocaleString(),
-        },
-        collectionAge(c),
-      ),
-      currentSession
-        ? button(
-            c.autoUpdate === false ? 'Auto-update paused' : 'Auto-updating',
-            act(() =>
-              change('edit', {
-                kind: 'collection',
-                collectionId: c.id,
-                autoUpdate: c.autoUpdate === false,
-              }),
-            ),
-            {
-              className: 'collection-update-prompt',
-              title:
-                c.autoUpdate === false
-                  ? (c.autoUpdatePausedReason ? c.autoUpdatePausedReason + '. ' : '') +
-                    'Resume automatic updates from open tabs'
-                  : 'Open tabs, closures and groups are saved automatically. Click to pause.',
-            },
-          )
-        : null,
-      currentSession && c.autoUpdate === false && newUrls.size
-        ? button(
-            newUrls.size + ' new ' + (newUrls.size === 1 ? 'tab' : 'tabs'),
-            act(() => actions.update(c)),
-            {
-              className: 'collection-update-prompt',
-              title: 'Review new tabs to save in this collection',
-            },
-          )
-        : null,
-    ),
-  );
-  card.append(
-    button(
-      currentSession ? 'Close current collection' : 'Swap to ' + c.name,
-      act(async () => {
-        await (currentSession ? actions.closeCollection(c) : actions.swap(c));
-      }),
-      {
-        glyph: currentSession ? 'close' : 'arrow',
-        className: 'collection-switch',
-        title: currentSession
-          ? 'Save and close this collection’s tabs. Pinned tabs stay open.'
-          : 'Swap to ' + c.name + '. Keeps current tabs for a quick return.',
-      },
-    ),
-  );
+  card.append(el('div', {class:'collection-meta'},
+    c.pinned ? el('span', {class:'collection-pinned'}, icon('pin'), 'Pinned') : null,
+    el('time', {dateTime:new Date(c.updatedAt).toISOString()}, collectionAge(c)),
+    currentSession ? el('span', {class:'collection-current-label'},
+      data.sessionState.active[win].tracking !== false && c.autoUpdate !== false ? 'Auto-update on' : 'Auto-update paused') : null));
+  card.classList.toggle('current-collection-card', currentSession);
+  card.append(el('div', {class:'collection-primary-actions'},
+    button('Open', act(() => actions.resume(c)), {glyph:'external', title:'Open fresh tabs; keep saved collection unchanged', disabled:!c.links.length}),
+    button('New window', act(() => actions.resume(c, { target: 'new' })), {glyph:'external', title:'Open in new window', className:'collection-open-window', disabled:!c.links.length}),
+    button('Switch to collection', act(() => actions.swap(c)), {glyph:'arrow', className:'collection-switch', disabled:currentSession, title:currentSession?'This collection is already current':'Make this collection current in this window; choose whether to save the current tabs'})));
   const header = card.querySelector('.collection-head');
   header.draggable = !activeCollection;
   header.ondragstart = (e) => {
@@ -1846,7 +1869,6 @@ function savedRow(c, l) {
   return row;
 }
 function collectionMenu(c, trigger) {
-  const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
   const colors = el(
     'div',
     { class: 'swatches' },
@@ -1860,19 +1882,11 @@ function collectionMenu(c, trigger) {
       }),
     ),
   );
+  const custom = el('input', {type:'color', value:colorHex(c.color), 'aria-label':'Custom collection colour', onchange:act(e => change('edit', {kind:'collection', collectionId:c.id, color:e.target.value}))});
+  const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Use a six-digit hex colour, such as #3498db.'); return change('edit', {kind:'collection',collectionId:c.id,color:e.target.value}); })});
+  colors.append(el('label', {class:'custom-colour'}, 'Custom', custom, hex));
   const choices = [
     ['Version history', () => actions.versions(c), 'history'],
-    [
-      c.autoUpdate === false ? 'Enable automatic updates' : 'Pause automatic updates',
-      () =>
-        change('edit', {
-          kind: 'collection',
-          collectionId: c.id,
-          autoUpdate: c.autoUpdate === false,
-        }),
-      'restore',
-    ],
-    ['Add tabs from current window', () => actions.update(c), 'tray'],
     [
       c.pinned ? 'Unpin collection' : 'Pin collection',
       () =>
@@ -1888,18 +1902,6 @@ function collectionMenu(c, trigger) {
     ['Add link', () => editLink(c, undefined, trigger), 'plus'],
     ['Add group', () => createGroup(c), 'group'],
     null,
-    ['Open all', () => actions.resume(c, { target: 'current' }), 'external', !c.links.length],
-    [
-      currentSession ? 'Close current collection' : 'Swap to collection',
-      () => (currentSession ? actions.closeCollection(c) : actions.swap(c)),
-      currentSession ? 'close' : 'arrow',
-    ],
-    ['Open in new window', () => actions.resume(c, { target: 'new' }), 'external', !c.links.length],
-    [
-      c.collapsed ? 'Unfold collection' : 'Fold collection',
-      () => change('edit', { kind: 'collection', collectionId: c.id, collapsed: !c.collapsed }),
-      'down',
-    ],
     ['Rename', () => beginName(c.id + ':name'), 'rename'],
     [
       'Move to space',
@@ -2127,8 +2129,7 @@ async function start() {
       { anchor: e.currentTarget },
     );
   };
-  $('#save-current').onclick = () => actions.save(findCollection());
-  $('#switch-collection').onclick = () => actions.switch(findCollection());
+
   $('#imports').onclick = actions.import;
   $('#recovery').onclick = actions.recovery;
   const focusLibrarySearch = () => {
@@ -2194,16 +2195,12 @@ async function start() {
         if (t?.id === m.tabId) handleNavigation();
       });
     if (m.event === 'changed') {
-      clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(
-        () => refresh().catch((e) => toast(e.message, { error: true })),
-        100,
-      );
+      schedule();
     }
   });
   const schedule = () => {
-    clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => refresh().catch(() => {}), 160);
+    if (refreshTimer) return;
+    refreshTimer = setTimeout(() => refresh().catch(() => {}), 60);
   };
   chrome.tabs.onCreated.addListener(schedule);
   chrome.tabs.onRemoved.addListener(schedule);

@@ -1,3 +1,4 @@
+import {colorHex} from '../lib/colors.js';
 // SPDX-License-Identifier: MPL-2.0
 import {
   $,
@@ -905,7 +906,7 @@ export async function startQuick() {
             },
             { className: 'dock-collection' },
           );
-          b.style.setProperty('--color', 'var(--' + c.color + ')');
+          b.style.setProperty('--color', colorHex(c.color));
           return b;
         }),
       ),

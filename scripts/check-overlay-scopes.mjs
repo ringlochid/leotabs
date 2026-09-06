@@ -139,19 +139,21 @@ export async function checkOverlayScopes({
   await read('root.querySelector(".collection-result").click()');
   assert(
     await read(
-      'return root.querySelector(".search-scope").textContent.includes("Open collection") && root.querySelector(".search-scope").textContent.includes("Swap to collection")',
+      'return root.querySelector(".search-scope").textContent.includes("Open collection") && root.querySelector(".search-scope").textContent.includes("Switch to collection")',
     ),
   );
-  assert(
-    await read(
-      'return [...root.querySelectorAll("button")].some(b=>b.textContent==="Update collection")',
-    ),
-  );
-  await click('Update collection');
-  await wait(() => read('return !!root.querySelector("dialog[open] .collection-update-list")'));
-  await shot('overlay-update-collection');
-  await click('Cancel');
+  assert(await read('return ![...root.querySelectorAll("button")].some(b=>b.textContent==="Update collection")'));
   await shot('overlay-collections');
+  for (const theme of ['light', 'dark']) {
+    await rpc('settings', { settings: { theme } });
+    await wait(() => read(`return root.host.dataset.theme===${JSON.stringify(theme)}`));
+    await click('Switch to collection');
+    assert(await read(`const d=root.querySelector('#dialog'),s=getComputedStyle(d);return d.open && s.borderTopWidth==='1px' && s.borderRadius==='4px' && s.boxShadow==='none' && !d.textContent.includes('Keep a snapshot') && !d.textContent.includes('Replaces unpinned') && !!d.querySelector('input[aria-label="Save current tabs"]');`));
+    await shot('flat-switch-modal-' + theme);
+    await read(`root.querySelector('#dialog footer button').click()`);
+    await wait(() => read('return !root.querySelector("#dialog[open]")'));
+  }
+  results.push('Light/dark injected switch dialogs use a flat 1px border, 4px corners and no shadow; removed copy is absent and Cancel keeps the switcher open');
   await click('This window');
   await query('');
   await rpc('settings', { settings: { theme: 'dark' } });

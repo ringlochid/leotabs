@@ -14,6 +14,7 @@ await fs.mkdir(out, { recursive: true });
 if (
   process.argv.includes('--native-bookmarks') ||
   process.argv.includes('--connections') ||
+  process.argv.includes('--ai-workflow') ||
   process.argv.includes('--history-access')
 ) {
   const fixture = path.join(out, 'granted-access-fixture');
@@ -28,7 +29,7 @@ if (
     manifest.permissions.push('history');
     manifest.optional_permissions = manifest.optional_permissions.filter((p) => p !== 'history');
   }
-  if (process.argv.includes('--connections'))
+  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow'))
     manifest.host_permissions = ['http://127.0.0.1/*', 'https://api.notion.com/*'];
   await fs.writeFile(path.join(fixture, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
@@ -223,6 +224,11 @@ try {
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
+  if (process.argv.includes('--toolbar-identity')) {
+    await (await import('./check-toolbar-identity.mjs')).checkToolbarIdentity({app,rpc,results,delay,origin});
+  } else if (process.argv.includes('--stash-safety')) {
+    await (await import('./check-stash-safety.mjs')).checkStashSafety({app,rpc,results,delay,origin});
+  } else {
   const tabA = await app.evaluate(
     `chrome.tabs.create({url:${JSON.stringify(origin + '/brief')},active:false})`,
   );
@@ -663,6 +669,9 @@ try {
       origin,
       extensionOrigin,
     });
+  if (process.argv.includes('--workflow')) await (await import('./check-workflow.mjs')).checkWorkflow({app,rpc,out,results,delay,origin,extensionOrigin});
+  if (process.argv.includes('--collection-colours')) await (await import('./check-workflow.mjs')).checkCollectionColors({app,rpc,results,delay,origin,extensionOrigin});
+  if (process.argv.includes('--ai-workflow')) await (await import('./check-ai-workflow.mjs')).checkAIWorkflow({app,rpc,out,results,delay,origin,extensionOrigin});
   if (process.argv.includes('--favicon-stability'))
     await (
       await import('./check-favicon-stability.mjs')
@@ -680,6 +689,7 @@ try {
       chromeMode,
       processId: proc.pid,
     });
+  }
   await fs.writeFile(
     path.join(out, 'results.json'),
     JSON.stringify({ results, exceptions: app.events, hits }, null, 2),

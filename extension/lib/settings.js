@@ -10,12 +10,12 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
   delete next.obsidianVault;
   for (const [key, values] of Object.entries({
     theme: ['system', 'light', 'dark'],
-    tabSort: ['recent', 'position', 'reverse'],
+    tabSort: ['recent', 'position', 'reverse', 'title', 'domain'],
     view: ['board', 'list'],
     provider: ['openai', 'claude', 'gemini', 'deepseek', 'compatible'],
   }))
     if (values.includes(input[key])) next[key] = input[key];
-  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash'])
+  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault'])
     if (typeof input[key] === 'boolean') next[key] = input[key];
   for (const key of ['model', 'notionParent'])
     if (input[key] !== undefined) next[key] = text(input[key], 200);

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 export const SCHEMA = 1;
+import { validColor } from './colors.js';
+import { duplicateKey } from './tab-policy.js';
+import { DEFAULT_RULES } from './arrange.js';
 export const PALETTE = ['mint', 'blue', 'lavender', 'peach', 'rose', 'teal', 'yellow', 'grey'];
 export const uid = () => crypto.randomUUID();
 export const stamp = () => Date.now();
@@ -29,11 +32,14 @@ export function initialState() {
       previewLimitMB: 50,
       currentWindowOnly: true,
       closeAfterStash: true,
+      autoUpdateDefault: false,
       provider: 'gemini',
       model: 'gemini-2.5-flash',
       aiEndpoint: '',
       notionParent: '',
-      rules: [],
+      rules: structuredClone(DEFAULT_RULES),
+      autoGroup: true,
+      aiNaming: false,
     },
   };
 }
@@ -52,7 +58,7 @@ export function migrate(state) {
       ...c,
       spaceId: spaces.some((s) => s.id === c.spaceId) ? c.spaceId : spaces[0].id,
     })),
-    settings: { ...initialState().settings, ...state.settings },
+    settings: { ...initialState().settings, ...state.settings, rules: state.settings?.autoGroup === undefined && !state.settings?.rules?.length ? structuredClone(DEFAULT_RULES) : (state.settings?.rules || structuredClone(DEFAULT_RULES)) },
   };
 }
 export function validateSpaces(spaces) {
@@ -72,9 +78,9 @@ export function newCollection(name = 'Untitled', color = 'blue') {
     id: uid(),
     spaceId: 'main',
     pinned: false,
-    autoUpdate: true,
+    autoUpdate: false,
     name: text(name).trim() || 'Untitled',
-    color: PALETTE.includes(color) ? color : 'blue',
+    color: validColor(color) ? color : 'blue',
     note: '',
     collapsed: false,
     groups: [],
@@ -176,7 +182,7 @@ export function duplicateCandidates(tabs) {
       Number(b.active) - Number(a.active) ||
       (b.lastAccessed || 0) - (a.lastAccessed || 0),
   )) {
-    const url = safeURL(t.resourceUrl || t.pendingUrl || t.url);
+    const url = duplicateKey(t);
     if (!url) continue;
     if (seen.has(url) && !t.pinned) duplicates.push(t.id);
     else seen.add(url);
@@ -236,6 +242,7 @@ export function validatePlan(raw, collection) {
       collection.links.map((l) => [l.id, l.url, l.title, l.note, l.groupId]),
     ]),
     groups,
+    collectionName: text(raw.collectionName, 100),
     note: text(raw.note, 3000),
   };
 }

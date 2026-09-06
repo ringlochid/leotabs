@@ -2,6 +2,7 @@
 import { PALETTE } from '../lib/model.js';
 import { PROTOCOL } from '../lib/version.js';
 import { rasterCanvas } from './raster.js';
+import { colorHex } from '../lib/colors.js';
 export const surface = () => globalThis.__neoSurface || document;
 export const $ = (selector, root = surface()) => root.querySelector(selector);
 export const $$ = (selector, root = surface()) => [...root.querySelectorAll(selector)];
@@ -206,7 +207,7 @@ export function toast(message, { undo, error = false } = {}) {
   );
   node.hidden = false;
   clearTimeout(node._timer);
-  if (!error && !undo) node._timer = setTimeout(() => (node.hidden = true), 5000);
+  if (!error) node._timer = setTimeout(() => (node.hidden = true), 5000);
 }
 export function task(fn) {
   return async (event) => {
@@ -498,7 +499,7 @@ export function styleCollectionChoice(node, collection) {
   node.classList.add('collection-choice');
   node.style.setProperty(
     '--collection-color',
-    'var(--' + (PALETTE.includes(collection.color) ? collection.color : 'blue') + ')',
+    colorHex(collection.color),
   );
   node.prepend(el('span', { class: 'collection-color', 'aria-hidden': 'true' }));
   if (collection.pinned) node.append(icon('pin'));

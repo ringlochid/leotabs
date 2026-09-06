@@ -39,17 +39,18 @@
       <main id="main">
         <header class="page-head">
           <nav id="spaces" aria-label="Spaces"></nav>
-          <div class="head-actions">
-            <button id="ai-tools" aria-label="Organise with AI">Organise with AI</button>
-            <button id="global-search">Search <kbd>/</kbd></button
-            ><button id="save-current">Save tabs</button
-            ><button id="switch-collection">Switch collection</button>
+          <div class="global-actions">
+            <button id="global-search">Search <kbd>/</kbd></button>
             <button
               id="settings"
               title="Settings"
               aria-label="Settings"
               aria-haspopup="dialog"
             ></button>
+          </div>
+          <div class="head-actions">
+            <button id="ai-tools" aria-label="Organise with AI">Organise with AI</button>
+            <div id="current-collection"></div>
           </div>
         </header>
         <nav class="library-tools">

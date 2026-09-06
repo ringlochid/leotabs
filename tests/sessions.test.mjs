@@ -98,6 +98,47 @@ function fixture() {
     ops,
   };
 }
+
+test('global auto-update updates open sessions and preserves one writer for duplicate collection windows', async () => {
+  const f = fixture();
+  await f.browser.storage.session.set({ neoSessions: {
+    active: { 2: { collectionId: 'b', tracking: false }, 1: { collectionId: 'b', tracking: true } }, parked: {},
+  } });
+  await f.browser.tabs.create({ windowId: 2, url: 'https://other-copy.test/', title: 'Other copy' });
+  await f.manager.applyAutoUpdateToOpen(true);
+  let active = (await f.manager.list()).active;
+  assert.equal(active[1].tracking, true);
+  assert.equal(active[2].tracking, false);
+  assert(!f.collections[0].links.some(l => l.url === 'https://other-copy.test/'));
+  await f.manager.applyAutoUpdateToOpen(false);
+  active = (await f.manager.list()).active;
+  assert(Object.values(active).every(x => x.tracking === false));
+  const saved = JSON.stringify(f.collections[0].links);
+  await f.browser.tabs.create({ windowId: 1, url: 'https://paused.test/', title: 'Paused' });
+  await f.manager.capture(1);
+  assert.equal(JSON.stringify(f.collections[0].links), saved);
+});
+
+test('stash pauses only affected active collections and later checkpoints cannot shrink them', async () => {
+  const f=fixture();
+  f.collections.push({id:'other',name:'Other',autoUpdate:true,links:[],groups:[]});
+  await f.browser.storage.session.set({neoSessions:{active:{
+    1:{collectionId:'b',tracking:true},2:{collectionId:'other',tracking:true},
+  },parked:{}}});
+  const before=structuredClone(f.collections[0].links);
+  await f.manager.pauseForStash([{id:1,windowId:1}]);
+  const active=(await f.manager.list()).active;
+  assert.equal(active[1].tracking,false);
+  assert.equal(active[2].tracking,true);
+  assert.equal(f.collections[0].autoUpdate,false);
+  assert.equal(f.collections[1].autoUpdate,true);
+  await f.browser.tabs.remove(1);
+  await f.manager.capture(1);
+  assert.deepEqual(f.collections[0].links,before);
+  await f.browser.tabs.remove(2);
+  await f.manager.capture(1);
+  assert.deepEqual(f.collections[0].links,before);
+});
 test('switch saves source snapshot and returns in the same window with pins preserved', async () => {
   const f = fixture();
   f.browser.windows.create = async () => {

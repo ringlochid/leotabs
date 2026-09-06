@@ -32,11 +32,11 @@ Chrome/Chromium 123 or newer is required. No server, package installation, build
 ## Current behaviour
 
 - Saving captures URLs, titles, groups, order and notes in IndexedDB. It records recovery information before closing any tab. Pinned or subsequently changed instances stay open. Undo restores closed pages as well as the local library change.
-- Collection menus offer direct **Open all** and **Open in new window**, with no chooser or progress modal. These additive actions create fresh tabs and load their websites. Use collection Select for opening a subset. Switch collection and Recovery retain deferred preparation for their separate workflows. Open reports completion in a notification and exposes Cancel while running.
+- Collection cards expose **Open**, **New window** and **Switch to collection** on one line. Open and New window create fresh tabs; switching makes the collection current in this window and asks whether to retain the outgoing session. Close current collection appears only in the coloured header control. Open reports completion and exposes Cancel while running.
 - Stash always creates a new collection. Its small popover offers “and close them,” Stash tabs and Cancel. Drag tabs into an existing collection to save them there. The library and overlay share this exact flow.
 - Notes and library edits persist locally; JSON, Markdown and bookmark HTML exports stay portable. Imports add separate copies after preview. [Library backups](docs/backup-format.md) include saved preferences/rules and an inert recovery log, excluding credentials and browser session state.
 - Spaces contain collections. Create a collection from the final add row; create a space with the top `+`. New collection/group names are selected inline. Click a title to rename it. Collection options include moving it to another space. Hover a saved link and click its `×` to remove it; Undo remains available.
-- Both switcher and library search support `@` collection scope and `/` commands. Scoped search lists only that collection's saved links, without extra live/history copies. Save tabs and Switch collection are visible in the main toolbar. Switch collection shows a searchable list and a Save current tabs checkbox. Choosing a row opens that collection and closes the old work, keeping pinned tabs. Saving is checked by default and creates a new collection automatically; clear it to switch without adding a collection. Undo and Recovery retain the close snapshot.
+- Both switcher and library search support `@` collection scope and `/` commands. Search and Settings remain upper right. AI and current-collection controls sit below the spaces. Auto-update all collections in Settings applies globally; the current collection has an immediate On/Paused switch. Local GitHub grouping works without AI. Optional AI can name collections and unnamed groups and produce editable organisation plans. See [0.11 workflow and evidence](docs/workflow-0.11.md).
 - Alt+Q opens a centered, translucent switcher over the current page. Select enters a separate management mode; Escape exits that mode before closing the switcher. Protected Chrome/extension pages use a bounded extension window because Chrome blocks script injection there. This is a browser experience; it does not replace the Windows desktop switcher.
 - Clicking a saved link, including a result inside an @ collection scope, always creates a new browser tab. Bulk Open also creates fresh tabs; it does not reuse existing pages. Drag an open group header to save all its eligible pages, or a saved group header to move it between collections. Moving/removing a group's last link removes that emptied group; intentionally empty groups remain.
 - Hover or focus a saved link's note button to read its note. Click to keep it open; Escape, Close, or clicking outside dismisses it.
@@ -49,11 +49,9 @@ Chrome/Chromium 123 or newer is required. No server, package installation, build
 npm test
 npm run build
 npm run check
-node scripts/browser-check.mjs --chrome --polish --search --integrations --recovery --scale --bulk --previews --interactions
-node scripts/browser-check.mjs --chrome --redesign
-node scripts/browser-check.mjs --chrome --organizer-ux --unified-ux --direct-ux --previews
-node scripts/browser-check.mjs --chrome --native-bookmarks --connections
-npm run package
+node scripts/browser-check.mjs --chrome --overlay-scopes --workflow
+node scripts/browser-check.mjs --workflow
+node scripts/browser-check.mjs --chrome --overlay-scopes --workflow --ai-workflow
 ```
 
 The browser check uses a fresh task-owned headless Chrome profile and local fixture pages. It never operates the user's normal browser profile. It records destination requests to prove deferred resume does not eagerly load sites, exercises real tab/group/storage APIs, and saves theme/reflow screenshots under `output/`. Omit `--chrome` for the basic Edge route. Connection fixtures use dummy keys, pre-granted permissions in an isolated manifest copy, and localhost service responses; they do not prove access to a user's account. The production manifest keeps those permissions optional.

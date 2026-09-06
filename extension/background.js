@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 import { repairParkedTabs } from './lib/parked.js';
+import { validColor, randomCollectionColor } from './lib/colors.js';
+import { matchingRule, arrangeSaved } from './lib/arrange.js';
+import { updateIdentity, invalidateIdentity } from './lib/identity.js';
 import { providerEndpoint, aiConnectionId, readAIKeys, PROVIDERS } from './lib/providers.js';
 import * as db from './lib/db.js';
 import {
@@ -15,7 +18,6 @@ import {
   uid,
   text,
   stamp,
-  PALETTE,
   safeURL,
   validateCollections,
   validateSpaces,
@@ -30,7 +32,7 @@ import { favicon } from './lib/favicons.js';
 import { openSwitcher, isOverlaySender, forgetOverlay } from './lib/overlay.js';
 import { PROTOCOL } from './lib/version.js';
 import { editSavedSelection } from './lib/selection.js';
-const ops = operations({ browser: chrome, db });
+const ops = operations({ browser: chrome, db, beforeStashClose: tabs => sessions.pauseForStash(tabs) });
 const sessions = sessionManager({ browser: chrome, db, ops });
 let queue = Promise.resolve();
 let notionQueue = Promise.resolve();
@@ -128,7 +130,22 @@ const serial = (fn) => {
   queue = next.catch(() => {});
   return next;
 };
-const changed = () => chrome.runtime.sendMessage({ event: 'changed' }).catch(() => {});
+let identityTimer;
+let identityQueue=Promise.resolve();
+const scheduleIdentity = (tabId) => {
+  if(Number.isInteger(tabId)) invalidateIdentity(tabId);
+  if(identityTimer) return;
+  identityTimer=setTimeout(()=>{
+    identityTimer=undefined;
+    identityQueue=identityQueue.then(async()=>{
+      await updateIdentity(chrome, await db.getState(), (await sessions.list()).active);
+    }).catch(()=>{});
+  },50);
+};
+const changed = () => {
+  scheduleIdentity();
+  return chrome.runtime.sendMessage({ event: 'changed' }).catch(() => {});
+};
 const own = chrome.runtime.getURL('');
 const collection = (s, id) => {
   const c = s.collections.find((c) => c.id === id);
@@ -205,7 +222,7 @@ async function dispatch(action, data = {}) {
         connections: {
           ai: !!(await readAIKeys(chrome.storage.local, state.settings))[
             aiConnectionId(state.settings)
-          ],
+          ] || (state.settings.provider === 'compatible' && !!state.settings.aiEndpoint),
           aiProviders: Object.fromEntries(
             Object.entries(await readAIKeys(chrome.storage.local, state.settings)).map(
               ([id, key]) => [id, !!key],
@@ -382,6 +399,10 @@ async function dispatch(action, data = {}) {
     case 'resume':
       return runResume((await startResume(data)).id);
     case 'resume-start':
+      if (!data.deferred && data.target !== 'new') {
+        const wid = await windowId(data);
+        await serial(async () => { await sessions.capture(wid, {sync:false}); await sessions.forgetWindow(wid); });
+      }
       return startResume(data);
     case 'resume-run':
       return runResume(data.id);
@@ -400,10 +421,37 @@ async function dispatch(action, data = {}) {
       }
       return;
     }
-    case 'save':
-      return serial(() => ops.save(data));
+    case 'save': {
+      const op=await serial(() => ops.save(data));
+      if(op.collectionId) autoName(op.collectionId, { renameCollection: !data.name }).catch(()=>{});
+      return op;
+    }
+    case 'arrange-tabs':
+      return serial(() => applyNativeRules(data.windowId, true));
+    case 'drop-new': {
+      const p=data.payload;
+      if(p?.type==='tabs') return dispatch('save',{tabIds:p.ids,spaceId:data.spaceId});
+      const result=await serial(()=>db.mutate('Create collection from dropped tabs',s=>{
+        const source=collection(s,p?.collectionId);
+        const ids=p.type==='group'?source.links.filter(l=>l.groupId===p.groupId).map(l=>l.id):p.type==='link'?[p.linkId]:p.linkIds;
+        if(!ids?.length || !ids.every(id=>source.links.some(l=>l.id===id))) throw Error('Dragged items changed. Try again.');
+        const selected=source.links.filter(l=>ids.includes(l.id));
+        const [created]=validateCollections([{...source,id:uid(),name:'New collection',links:selected,groups:source.groups.filter(g=>selected.some(l=>l.groupId===g.id)),note:'',autoUpdate:!!s.settings.autoUpdateDefault}],{freshIds:true});
+        created.spaceId=s.spaces.find(x=>x.id===data.spaceId)?.id || s.spaces[0].id;
+        created.color = randomCollectionColor(s.collections.at(-1)?.color);
+        s.collections.push(created);
+        if(!data.copy){source.links=source.links.filter(l=>!ids.includes(l.id));source.groups=source.groups.filter(g=>source.links.some(l=>l.groupId===g.id));source.updatedAt=stamp();}
+        return {collectionId:created.id};
+      }));
+      if(result.operation?.collectionId) autoName(result.operation.collectionId).catch(()=>{});
+      return result;
+    }
     case 'close':
       return serial(() => ops.close(data.tabIds));
+    case 'close-window':
+      return serial(async () => sessions.closeAll(await windowId(data)));
+    case 'collection-auto-update':
+      return serial(async () => sessions.setAutoUpdate({ collectionId: data.collectionId, windowId: await windowId(data), enabled: data.enabled }));
     case 'close-collection':
       return serial(async () =>
         sessions.closeCurrent({
@@ -465,6 +513,8 @@ async function dispatch(action, data = {}) {
     case 'ungroup-tabs': {
       const tabs = (await ops.live(data.tabIds)).filter((t) => t.groupId >= 0);
       if (!tabs.length) throw new Error('Select grouped tabs first.');
+      const excluded=(await chrome.storage.session.get('neoRuleExcluded')).neoRuleExcluded || [];
+      await chrome.storage.session.set({neoRuleExcluded:[...new Set([...excluded,...tabs.map(t=>t.id)])].slice(-2000)});
       await chrome.tabs.ungroup(tabs.map((t) => t.id));
       return { count: tabs.length };
     }
@@ -526,8 +576,9 @@ async function dispatch(action, data = {}) {
             case 'create': {
               const created = newCollection(
                 data.name || 'New collection',
-                PALETTE[s.collections.length % PALETTE.length],
+                randomCollectionColor(s.collections.at(-1)?.color),
               );
+              created.autoUpdate = !!s.settings.autoUpdateDefault;
               if (data.id && !s.collections.some((c) => c.id === data.id))
                 created.id = text(data.id, 100);
               created.spaceId = s.spaces.find((x) => x.id === data.spaceId)?.id || s.spaces[0].id;
@@ -568,14 +619,14 @@ async function dispatch(action, data = {}) {
               if (s.spaces.some((x) => x.id === data.spaceId)) c.spaceId = data.spaceId;
               if (data.name !== undefined) c.name = text(data.name).trim() || 'Untitled';
               if (data.note !== undefined) c.note = text(data.note, 10000);
-              if (PALETTE.includes(data.color)) c.color = data.color;
+              if (validColor(data.color)) c.color = data.color;
               break;
             case 'delete-collection':
               s.collections = s.collections.filter((x) => x.id !== c.id);
               break;
             case 'duplicate-collection':
               s.collections.push(
-                ...validateCollections([{ ...c, name: c.name + ' copy' }], { freshIds: true }),
+                ...validateCollections([{ ...c, name: c.name + ' copy', color: randomCollectionColor(c.color) }], { freshIds: true }),
               );
               break;
             case 'create-group':
@@ -701,6 +752,8 @@ async function dispatch(action, data = {}) {
           }
         });
         if (data.autoUpdate === true) scheduleCheckpoint();
+        if (['group-links', 'link', 'move-link', 'move-links', 'move-group', 'create-group'].includes(data.kind))
+          autoName(data.destinationId || data.collectionId).catch(() => {});
         return result;
       });
     case 'import':
@@ -731,12 +784,21 @@ async function dispatch(action, data = {}) {
         }),
       );
     case 'settings':
+      scheduleCheckpoint();
       if (data.settings?.previewCapture === false) invalidatePreviews();
-      return serial(() =>
-        db.mutate('Update settings', (s) => {
+      return serial(async () => {
+        const result = await db.mutate('Update settings', (s) => {
           s.settings = sanitizeSettings(data.settings, s.settings);
-        }),
-      );
+          if (typeof data.settings?.autoUpdateDefault === 'boolean')
+            for (const c of s.collections) {
+              c.autoUpdate = data.settings.autoUpdateDefault;
+              delete c.autoUpdatePausedReason;
+            }
+        });
+        if (typeof data.settings?.autoUpdateDefault === 'boolean')
+          await sessions.applyAutoUpdateToOpen(data.settings.autoUpdateDefault);
+        return result;
+      });
     case 'credentials':
       return serial(async () => {
         await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
@@ -783,6 +845,44 @@ async function dispatch(action, data = {}) {
         aiRequests.delete(requestId);
       }
     }
+    case 'ai-tabs-context': {
+      const wid=await windowId(data);
+      const tabs=(await ops.live(data.tabIds)).filter(t=>t.windowId===wid && !t.pinned && safeURL(t.resourceUrl||t.url)).sort((a,b)=>a.index-b.index);
+      const c=snapshotTabs(tabs,await chrome.tabGroups.query({windowId:wid}));
+      c.id='live:'+wid;c.name='Open tabs';
+      return {collection:c,tabs:tabs.map(t=>({id:t.id,url:t.url,groupId:t.groupId})),windowId:wid};
+    }
+    case 'ai-tabs-plan': {
+      const state=await db.getState();
+      await requirePermission({origins:[endpointOrigin(providerEndpoint(state.settings))+'/*']});
+      const key=(await readAIKeys(chrome.storage.local,state.settings))[aiConnectionId(state.settings)];
+      const requestId = text(data.requestId || uid(), 100);
+      if (aiRequests.has(requestId)) throw Error('This AI request is already running.');
+      const controller = new AbortController();
+      aiRequests.set(requestId, controller);
+      try {
+        return await organize(data.context.collection, data.instruction, state.settings, key, fetch,
+          { linkIds: data.linkIds, signal: controller.signal });
+      } finally { aiRequests.delete(requestId); }
+    }
+    case 'ai-tabs-apply':
+      return serial(async()=>{
+        const context=data.context;
+        const now=(await ops.live(context.tabs.map(t=>t.id))).filter(t=>t.windowId===context.windowId && !t.pinned);
+        if(now.length!==context.tabs.length || context.tabs.some(t=>!now.some(n=>n.id===t.id&&n.url===t.url&&n.groupId===t.groupId)))throw Error('Open tabs changed. Generate a new plan.');
+        const plan=validatePlan(data.plan,context.collection);
+        if(plan.fingerprint!==data.plan.fingerprint)throw Error('The plan changed. Generate it again.');
+        await sessions.capture(context.windowId,{reason:'Before AI grouping',force:true});
+        const groups=await chrome.tabGroups.query({windowId:context.windowId});
+        for(const g of plan.groups.filter(g=>g.accepted)){
+          const ids=g.linkIds.map(id=>context.tabs[context.collection.links.findIndex(l=>l.id===id)]?.id);
+          if(!ids.length)continue;
+          const existing=groups.find(x=>x.title===g.name);
+          const id=await chrome.tabs.group({tabIds:ids,...(existing?{groupId:existing.id}:{createProperties:{windowId:context.windowId}})});
+          if(!existing)await chrome.tabGroups.update(id,{title:g.name,color:'blue'});
+        }
+        await sessions.capture(context.windowId,{reason:'AI grouping',force:true});
+      });
     case 'ai-cancel':
       aiRequests.get(data.requestId)?.abort();
       return;
@@ -797,12 +897,14 @@ async function dispatch(action, data = {}) {
               'These links changed after the plan was generated. Generate a fresh plan.',
             );
           for (const g of plan.groups.filter((g) => g.accepted)) {
-            const id = uid();
-            c.groups.push({ id, name: g.name, color: 'blue', collapsed: false });
+            const existing=c.groups.find(x=>x.name===g.name);
+            const id = existing?.id || uid();
+            if(!existing)c.groups.push({ id, name: g.name, color: 'blue', collapsed: false });
             c.links.forEach((l) => {
               if (g.linkIds.includes(l.id)) l.groupId = id;
             });
           }
+          if (data.applyName && plan.collectionName)c.name=plan.collectionName;
           if (data.applyNote) c.note = plan.note;
           if (JSON.stringify(c) !== before) c.updatedAt = stamp();
         }),
@@ -812,19 +914,7 @@ async function dispatch(action, data = {}) {
         db.mutate('Apply domain rules', (s) => {
           const c = collection(s, data.collectionId);
           const before = JSON.stringify(c);
-          for (const l of c.links) {
-            const hostname = new URL(l.url).hostname;
-            const rule = s.settings.rules.find(
-              (r) => hostname === r.domain || hostname.endsWith('.' + r.domain),
-            );
-            if (!rule) continue;
-            let group = c.groups.find((g) => g.name === rule.group);
-            if (!group) {
-              group = { id: uid(), name: rule.group, color: 'blue', collapsed: false };
-              c.groups.push(group);
-            }
-            l.groupId = group.id;
-          }
+          arrangeSaved(c, s.settings.rules);
           if (JSON.stringify(c) !== before) c.updatedAt = stamp();
         }),
       );
@@ -980,9 +1070,11 @@ chrome.commands.onCommand.addListener((command, tab) => {
 chrome.tabs.onRemoved.addListener(forgetOverlay);
 chrome.tabs.onReplaced.addListener((addedId, removedId) => {
   forgetOverlay(removedId);
-  serial(() => sessions.replaceTab(removedId, addedId)).catch(() => {});
+  invalidateIdentity(removedId);
+  serial(() => sessions.replaceTab(removedId, addedId)).then(()=>scheduleIdentity(addedId)).catch(() => {});
 });
 chrome.tabs.onActivated.addListener(({ tabId }) => {
+  scheduleIdentity(tabId);
   invalidatePreviews();
   loadParked(tabId).catch(() => {});
   db.getState().then((s) => {
@@ -990,6 +1082,8 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   });
 });
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  // Chromium clears per-tab action icons/titles on navigation, including reloads.
+  if(change.url || change.status) scheduleIdentity(tabId);
   if (change.url || change.status === 'loading') invalidatePreviews();
   if (change.status === 'complete' && tab.active)
     db.getState().then((s) => {
@@ -997,6 +1091,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     });
 });
 chrome.tabs.onAttached.addListener(invalidatePreviews);
+chrome.tabs.onAttached.addListener(scheduleIdentity);
 chrome.tabs.onDetached.addListener(invalidatePreviews);
 // Recoverable unfinished journal records are shown to the user; never replay closes on startup.
 db.trimJournal().catch(() => {});
@@ -1013,17 +1108,32 @@ trimPreviews().catch(() => {});
 // Capture changed tab sets, including ordinary browsing, without polling page content.
 // Alarms also survive service-worker suspension; IDs are held in storage.session.
 let checkpointTimer;
+let checkpointRunning = false;
+let checkpointDirty = false;
 function scheduleCheckpoint() {
-  clearTimeout(checkpointTimer);
-  checkpointTimer = setTimeout(checkpointAll, 1800);
+  checkpointDirty = true;
+  if (checkpointTimer || checkpointRunning) return;
+  checkpointTimer = setTimeout(checkpointAll, 120);
 }
 async function checkpointAll() {
-  await serial(async () => {
-    for (const w of await chrome.windows.getAll({ windowTypes: ['normal'] }))
-      if (!w.incognito) await sessions.capture(w.id);
-  })
-    .then(changed)
-    .catch(() => {});
+  if (checkpointRunning) { checkpointDirty = true; return; }
+  clearTimeout(checkpointTimer);
+  checkpointTimer = null;
+  checkpointRunning = true;
+  checkpointDirty = false;
+  try {
+    await serial(async () => {
+      for (const w of await chrome.windows.getAll({ windowTypes: ['normal'] }))
+        if (!w.incognito) { await applyNativeRules(w.id); await sessions.capture(w.id); }
+    });
+    await changed();
+    nameNativeGroups().catch(() => {});
+  } catch {
+    // A later tab event or the durable alarm retries a failed checkpoint.
+  } finally {
+    checkpointRunning = false;
+    if (checkpointDirty) scheduleCheckpoint();
+  }
 }
 chrome.windows.onRemoved.addListener((id) =>
   serial(() => sessions.forgetWindow(id)).catch(() => {}),
@@ -1049,3 +1159,85 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 chrome.alarms.create('neo-session-checkpoint', { periodInMinutes: 1 });
 scheduleCheckpoint();
+
+async function applyNativeRules(windowId, force=false) {
+  const s=await db.getState(); if(!force && !s.settings.autoGroup)return;
+  const excluded=(await chrome.storage.session.get('neoRuleExcluded')).neoRuleExcluded || [];
+  const tabs=(await ops.live()).filter(t=>t.windowId===windowId && !t.pinned && t.groupId===-1 && !excluded.includes(t.id));
+  const groups=await chrome.tabGroups.query({windowId});
+  const buckets=new Map();
+  for(const tab of tabs){const rule=matchingRule(tab.resourceUrl || tab.url,s.settings.rules);if(rule){if(!buckets.has(rule.group))buckets.set(rule.group,[]);buckets.get(rule.group).push(tab);}}
+  for(const [name,members] of buckets){
+    const eligible=[];
+    for(const tab of members){const current=await chrome.tabs.get(tab.id).catch(()=>null);if(current && current.groupId===-1 && current.windowId===windowId && !current.pinned && current.url===tab.url)eligible.push(tab.id);}
+    if(!eligible.length)continue;
+    const existing=groups.find(g=>g.title===name);
+    const groupId=await chrome.tabs.group({tabIds:eligible,...(existing?{groupId:existing.id}:{createProperties:{windowId}})});
+    if(!existing)await chrome.tabGroups.update(groupId,{title:name,color:'blue'});
+  }
+}
+
+async function autoName(collectionId, { renameCollection = true } = {}) {
+  const state=await db.getState();
+  if(!state.settings.aiNaming)return;
+  const c=state.collections.find(c=>c.id===collectionId);if(!c?.links.length || c.links.length>300)return;
+  const genericName = /^(New collection|Untitled)$/.test(c.name) || /^Saved .*\d/.test(c.name);
+  if (!(renameCollection && genericName) && !c.groups.some(g => /^(Group|New group)$/.test(g.name))) return;
+  const key=(await readAIKeys(chrome.storage.local,state.settings))[aiConnectionId(state.settings)];
+  if(!key && state.settings.provider !== 'compatible')return;
+  await requirePermission({origins:[endpointOrigin(providerEndpoint(state.settings))+'/*']});
+  const signature=JSON.stringify(c);
+  const plan=await organize(c,'Suggest a short specific collection name and names for existing groups. Keep existing group membership exactly. Return no note. Do not rename manually named groups.',state.settings,key);
+  await serial(()=>db.mutate('AI names',s=>{
+    if(!s.settings.aiNaming)return {unchanged:true};
+    const current=collection(s,collectionId);if(JSON.stringify(current)!==signature)return {unchanged:true};
+    let edited=false;
+    if(renameCollection && genericName && plan.collectionName){current.name=plan.collectionName;edited=true;}
+    for(const g of current.groups){
+      if(!/^(Group|New group)$/.test(g.name))continue;
+      const ids=current.links.filter(l=>l.groupId===g.id).map(l=>l.id);
+      const proposed=plan.groups.find(p=>p.linkIds.length===ids.length && ids.every(id=>p.linkIds.includes(id)));
+      if(proposed){g.name=proposed.name;edited=true;}
+    }
+    if(!edited)return {unchanged:true};current.updatedAt=stamp();
+  }));
+  await changed();
+}
+
+const namingGroups = new Map();
+const groupNameAttempts = new Map();
+async function nameNativeGroups() {
+  const state = await db.getState();
+  if (!state.settings.aiNaming) return;
+  const groups = (await chrome.tabGroups.query({})).filter(g => !g.title || /^(Group|New group)$/.test(g.title));
+  if (!groups.length) return;
+  const key = (await readAIKeys(chrome.storage.local, state.settings))[aiConnectionId(state.settings)];
+  if (!key && state.settings.provider !== 'compatible') return;
+  await requirePermission({ origins: [endpointOrigin(providerEndpoint(state.settings)) + '/*'] });
+  const tabs = await ops.live();
+  const signature = members => JSON.stringify(members.map(t => [t.id, t.resourceUrl || t.url, t.title]).sort((a,b) => a[0]-b[0]));
+  await Promise.all(groups.map(async group => {
+    const members = tabs.filter(t => t.groupId === group.id && safeURL(t.resourceUrl || t.url));
+    if (!members.length || members.length > 300 || namingGroups.has(group.id)) return;
+    const original = signature(members);
+    const attempt = JSON.stringify([original, group.title, state.settings.provider, state.settings.model, state.settings.aiEndpoint]);
+    if (groupNameAttempts.get(group.id) === attempt) return;
+    groupNameAttempts.set(group.id, attempt);
+    if (groupNameAttempts.size > 500) groupNameAttempts.delete(groupNameAttempts.keys().next().value);
+    namingGroups.set(group.id, original);
+    try {
+      const snapshot = snapshotTabs(members, [group]);
+      const plan = await organize(snapshot, 'Name this existing group concisely from its links. Keep every link together in one group. Return no note.', state.settings, key);
+      const proposed = plan.groups.find(g => g.linkIds.length === snapshot.links.length);
+      if (!proposed || /^(Group|New group)$/.test(proposed.name)) return;
+      await serial(async () => {
+        if (!(await db.getState()).settings.aiNaming) return;
+        const current = await chrome.tabGroups.get(group.id).catch(() => null);
+        if (!current || current.title !== group.title) return;
+        const live = (await ops.live()).filter(t => t.groupId === group.id && safeURL(t.resourceUrl || t.url));
+        if (signature(live) !== original) return;
+        await chrome.tabGroups.update(group.id, { title: proposed.name });
+      });
+    } finally { namingGroups.delete(group.id); }
+  }));
+}
