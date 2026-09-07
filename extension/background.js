@@ -1265,6 +1265,8 @@ db.trimJournal().catch(() => {});
   if (!done) await chrome.storage.local.set({ [key]: true });
 })().catch(() => {});
 trimPreviews().catch(() => {});
+// Restore collection colours for existing tabs on extension reload / worker wake.
+scheduleIdentity();
 
 // Capture changed tab sets, including ordinary browsing, without polling page content.
 // Alarms also survive service-worker suspension; IDs are held in storage.session.

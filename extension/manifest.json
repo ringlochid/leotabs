@@ -3,7 +3,7 @@
   "omnibox": {
     "keyword": "neo"
   },
-  "name": "Neo \u2014 Tabs & Collections",
+  "name": "LeoTabs \u2014 Tab Manager & Switcher",
   "version": "0.13.0",
   "minimum_chrome_version": "123",
   "description": "Find open pages, put work away, and resume only what you need. Local collections, groups, notes and portable exports.",
@@ -36,7 +36,13 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Open Neo library"
+    "default_title": "Open LeoTabs library",
+    "default_icon": {
+      "16": "icons/16.png",
+      "20": "icons/20.png",
+      "24": "icons/24.png",
+      "32": "icons/32.png"
+    }
   },
   "options_ui": {
     "page": "app.html#settings",

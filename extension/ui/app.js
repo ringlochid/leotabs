@@ -24,7 +24,7 @@ import {
 import {installDragScroll,captureMoveAnimation} from './drag-scroll.js';
 import {collectionSlot,rowSlot,createInsertionIndicator} from './insertion.js';
 import { colorHex, colorInk } from '../lib/colors.js';
-import { drawIdentity } from '../lib/identity.js';
+import { updatePageIdentity } from '../lib/identity.js';
 import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
 import { parseImport, jsonExport, markdownExport, htmlExport } from '../lib/portable.js';
 import { orderedCollections, collectionAge } from '../lib/collection-workflow.js';
@@ -1295,16 +1295,7 @@ function renderCurrentCollection() {
     host.style.removeProperty('--current-color');
     host.append(button('Close all currently open tabs',act(()=>actions.closeWindow()),{className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.',disabled:!data.tabs.some(t=>t.windowId===win&&!t.pinned)}));
   }
-  const color=c?.color || 'lavender';
-  const mark=document.querySelector('.brand-mark');
-  if(mark){mark.style.background=colorHex(color);mark.style.color=colorInk(color);}
-  const canvas=document.createElement('canvas');canvas.width=canvas.height=32;
-  drawIdentity(canvas.getContext('2d'),32,color);
-  let favicon=document.querySelector('link[rel="icon"]');
-  if(!favicon){favicon=document.createElement('link');favicon.rel='icon';document.head.append(favicon);}
-  const key=c?.id+':'+color+':'+c?.name;
-  if(favicon.dataset.key!==key){favicon.href=canvas.toDataURL();favicon.dataset.key=key;}
-  document.title=c?'Neo · '+c.name:'Neo · Library';
+  updatePageIdentity(document,c);
 }
 
 function collectionCard(c) {

@@ -35,7 +35,7 @@ export async function checkWorkflow({app,rpc,out,results,delay,origin,extensionO
   results.push('Direct Replace closes new/settings/extension-management tabs in the same window and preserves outgoing saved content');
   await wait(()=>app.evaluate(`document.querySelector('#current-collection')?.textContent.includes('Workflow destination')`),'active collection identity absent');
   await wait(()=>app.evaluate(`chrome.action.getTitle({tabId:${own.id}}).then(t=>t.includes('Workflow destination'))`),'toolbar identity absent');
-  assert(await app.evaluate(`document.title.includes('Workflow destination') && document.querySelector('link[rel=icon]').href.startsWith('data:image/png')`));
+  assert(await app.evaluate(`document.title.includes('Workflow destination') && document.querySelector('link[rel=icon]').href.startsWith('data:image/svg+xml,')`));
   assert(!(await app.evaluate(`!!document.querySelector('#save-current,#switch-collection')`)));
   assert(await app.evaluate(`document.querySelector('.head-actions #current-collection') !== null && document.querySelector('[data-collection-id="${dest.id}"] .collection-switch').disabled`));
   for (const width of [1440, 900, 390]) {

@@ -5,12 +5,14 @@ import {colorHex} from '../extension/lib/colors.js';
 
 test('toolbar identity restores invalidated colours, isolates windows and retries failed writes', async t => {
   const original=globalThis.OffscreenCanvas;
+  const originalPath=globalThis.Path2D;
+  globalThis.Path2D=class {constructor(path){this.path=path;}};
   globalThis.OffscreenCanvas=class {
     getContext() {
-      return {clearRect(){},beginPath(){},roundRect(){},fill(){this.background=this.fillStyle;},fillText(){},getImageData(){return {background:this.background};}};
+      return {clearRect(){},save(){},restore(){},scale(){},translate(){},stroke(){},fill(){this.ink=this.fillStyle;},getImageData(){return {ink:this.ink};}};
     }
   };
-  t.after(()=>{globalThis.OffscreenCanvas=original;});
+  t.after(()=>{globalThis.OffscreenCanvas=original;globalThis.Path2D=originalPath;});
   const icons=new Map(),titles=new Map();
   let writes=0,fail=false,duringWrite;
   const browser={
@@ -23,15 +25,15 @@ test('toolbar identity restores invalidated colours, isolates windows and retrie
   const library={collections:[{id:'green',name:'Research',color:'mint'},{id:'pink',name:'Writing',color:'rose'}]};
   const active={1:{collectionId:'green'},2:{collectionId:'pink'}};
   await updateIdentity(browser,library,active);
-  assert.equal(icons.get(901).imageData[16].background,colorHex('mint'));
-  assert.equal(icons.get(902).imageData[16].background,colorHex('rose'));
+  assert.equal(icons.get(901).imageData[16].ink,colorHex('mint'));
+  assert.equal(icons.get(902).imageData[16].ink,colorHex('rose'));
   const previous=writes;
   await updateIdentity(browser,library,active);
   assert.equal(writes,previous,'unchanged tabs should avoid redundant icon writes');
   icons.delete(901);titles.delete(901); // Browser navigation resets per-tab state.
   invalidateIdentity(901);
   await updateIdentity(browser,library,active);
-  assert.equal(icons.get(901).imageData[32].background,colorHex('mint'));
+  assert.equal(icons.get(901).imageData[32].ink,colorHex('mint'));
   assert.match(titles.get(901),/Research/);
   assert.equal(writes,previous+1,'navigation must not recolour unrelated windows');
 
@@ -52,5 +54,5 @@ test('toolbar identity restores invalidated colours, isolates windows and retrie
   delete active[1];
   await updateIdentity(browser,library,active);
   assert.equal(icons.get(901).path[16],'icons/16.png');
-  assert.equal(icons.get(902).imageData[16].background,colorHex('rose'));
+  assert.equal(icons.get(902).imageData[16].ink,colorHex('rose'));
 });
