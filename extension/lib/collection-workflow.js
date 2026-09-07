@@ -77,7 +77,8 @@ export function mirrorCollection(collection, snapshot) {
     const id = previous?.[0] || group.id;
     used.add(id);
     mapped.set(group.id, id);
-    return { ...group, id };
+    const old=collection.groups.find(g=>g.id===id);
+    return { ...group, id, ...(old?.manualName?{manualName:true}:{}) };
   });
   const links = pairs.map(({ live, old }) => ({
     ...live,

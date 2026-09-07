@@ -191,7 +191,7 @@ export function favicon(item) {
   }
   return mark;
 }
-export function toast(message, { undo, error = false } = {}) {
+export function toast(message, { undo, error = false, duration = undo ? 8000 : 5000 } = {}) {
   let node = $('#toast');
   if (!node) {
     node = el('div', { id: 'toast', role: 'status' });
@@ -201,13 +201,23 @@ export function toast(message, { undo, error = false } = {}) {
   node.replaceChildren(
     ...[
       el('span', {}, message),
-      undo ? button('Undo', () => undo().catch((e) => toast(e.message, { error: true }))) : null,
+      undo ? button('Undo', task(async()=>{node.hidden=true;await undo();})) : null,
       button('Dismiss', () => (node.hidden = true), { glyph: 'close', quiet: true }),
     ].filter(Boolean),
   );
   node.hidden = false;
   clearTimeout(node._timer);
-  if (!error) node._timer = setTimeout(() => (node.hidden = true), 5000);
+  let remaining=duration,started=Date.now(),paused=false;
+  const resume=()=>{clearTimeout(node._timer);if(error||!duration||node.matches(':hover')||node.contains(surface().activeElement))return;paused=false;started=Date.now();node._timer=setTimeout(()=>{if(node.matches(':hover')||node.contains(surface().activeElement)){pause();return;}node.hidden=true;},remaining);};
+  const pause=()=>{if(paused)return;paused=true;clearTimeout(node._timer);remaining=Math.max(0,remaining-(Date.now()-started));};
+  node._toastEvents?.abort();
+  node._toastEvents=new AbortController();
+  const options={signal:node._toastEvents.signal};
+  node.addEventListener('mouseenter',pause,options);
+  node.addEventListener('mouseleave',resume,options);
+  node.addEventListener('focusin',pause,options);
+  node.addEventListener('focusout',()=>queueMicrotask(resume),options);
+  resume();
 }
 export function task(fn) {
   return async (event) => {

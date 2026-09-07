@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
-import { initialState, text, uid } from './model.js';
+import { initialState, text } from './model.js';
 import { endpointOrigin } from './integrations.js';
+import {sanitizePolicy,sanitizeRules} from './organisation.js';
 
 // Explicit allowlist shared by Settings and portable backups. Credentials never enter state.
 export function sanitizeSettings(input = {}, base = initialState().settings) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw new Error('Invalid saved preferences.');
   const next = { ...base };
+  if(input.organisation!==undefined)next.organisation=sanitizePolicy(input.organisation);
+  else {
+    if(input.autoGroup!==undefined && Object.keys(next.organisation||{}).length)
+      next.organisation={...next.organisation,group:input.autoGroup?'rules':'keep'};
+    if(input.aiNaming!==undefined && Object.keys(next.organisation||{}).length)
+      next.organisation={...next.organisation,collectionName:input.aiNaming?'ai':'keep',groupName:input.aiNaming?'ai':'keep'};
+  }
   delete next.obsidianVault;
+  delete next.captureWebStore;
   for (const [key, values] of Object.entries({
     theme: ['system', 'light', 'dark'],
     tabSort: ['recent', 'position', 'reverse', 'title', 'domain'],
@@ -15,7 +24,7 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
     provider: ['openai', 'claude', 'gemini', 'deepseek', 'compatible'],
   }))
     if (values.includes(input[key])) next[key] = input[key];
-  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault'])
+  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault', 'websiteGrouping', 'regroupExisting'])
     if (typeof input[key] === 'boolean') next[key] = input[key];
   for (const key of ['model', 'notionParent'])
     if (input[key] !== undefined) next[key] = text(input[key], 200);
@@ -26,13 +35,7 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
   if (input.rules !== undefined) {
     if (!Array.isArray(input.rules) || input.rules.length > 50)
       throw new Error('Use at most 50 rules.');
-    next.rules = input.rules
-      .map((r) => ({
-        id: uid(),
-        domain: text(r?.domain, 200).trim().toLowerCase(),
-        group: text(r?.group, 100).trim(),
-      }))
-      .filter((r) => r.domain && r.group);
+    next.rules = sanitizeRules(input.rules);
   }
   return next;
 }

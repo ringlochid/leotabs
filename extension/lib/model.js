@@ -3,6 +3,7 @@ export const SCHEMA = 1;
 import { validColor } from './colors.js';
 import { duplicateKey } from './tab-policy.js';
 import { DEFAULT_RULES } from './arrange.js';
+import {sanitizePolicy} from './organisation.js';
 export const PALETTE = ['mint', 'blue', 'lavender', 'peach', 'rose', 'teal', 'yellow', 'grey'];
 export const uid = () => crypto.randomUUID();
 export const stamp = () => Date.now();
@@ -26,7 +27,7 @@ export function initialState() {
     collections: [],
     settings: {
       theme: 'system',
-      tabSort: 'recent',
+      tabSort: 'position',
       view: 'board',
       previewCapture: false,
       previewLimitMB: 50,
@@ -39,7 +40,10 @@ export function initialState() {
       notionParent: '',
       rules: structuredClone(DEFAULT_RULES),
       autoGroup: true,
+      regroupExisting: true,
       aiNaming: false,
+      organisation: {},
+      websiteGrouping: true,
     },
   };
 }
@@ -69,7 +73,7 @@ export function validateSpaces(spaces) {
   return spaces.map((s) => {
     if (!s || typeof s.id !== 'string' || !s.id || ids.has(s.id)) throw new Error('Invalid space.');
     ids.add(s.id);
-    return { id: text(s.id, 100), name: text(s.name).trim() || 'New space' };
+    return { id: text(s.id, 100), name: text(s.name).trim() || 'New space', ...(s.organisation?{organisation:sanitizePolicy(s.organisation)}:{}) };
   });
 }
 export function newCollection(name = 'Untitled', color = 'blue') {
@@ -139,6 +143,10 @@ export function validateCollections(input, { freshIds = false } = {}) {
     c.collapsed = !!raw.collapsed;
     c.pinned = !!raw.pinned;
     c.autoUpdate = raw.autoUpdate !== false;
+    if(raw.organisation)c.organisation=sanitizePolicy(raw.organisation);
+    if(raw.manualName)c.manualName=true;
+    if(raw.manualOrder)c.manualOrder=true;
+    if(raw.manualPlacement)c.manualPlacement=true;
     if (Number.isFinite(raw.createdAt) && raw.createdAt > 0) c.createdAt = raw.createdAt;
     if (Number.isFinite(raw.updatedAt) && raw.updatedAt > 0) c.updatedAt = raw.updatedAt;
     c.groups = (raw.groups || []).map((g) => {
@@ -151,6 +159,7 @@ export function validateCollections(input, { freshIds = false } = {}) {
         name: text(g.name) || 'Group',
         color: text(g.color, 20),
         collapsed: !!g.collapsed,
+        ...(g.manualName?{manualName:true}:{}),
       };
     });
     const ids = new Set();
@@ -168,6 +177,7 @@ export function validateCollections(input, { freshIds = false } = {}) {
         note: text(l.note, 10000),
         groupId: map.get(l.groupId) || null,
         createdAt: Number(l.createdAt) || stamp(),
+        ...(l.manualGroup?{manualGroup:true}:{}),
       };
     });
     return c;
@@ -217,6 +227,9 @@ export function validatePlan(raw, collection) {
     throw new Error('Invalid AI selection. Choose up to 300 current links.');
   const known = new Set(scope),
     assigned = new Set();
+  const orderedLinkIds=raw.orderedLinkIds||[];
+  if(!Array.isArray(orderedLinkIds)||new Set(orderedLinkIds).size!==orderedLinkIds.length||orderedLinkIds.some(id=>!known.has(id)))
+    throw Error('AI returned an invalid reading order.');
   const groups = raw.groups.map((g) => {
     if (!Array.isArray(g.linkIds) || !g.name)
       throw new Error('AI group is missing a name or links.');
@@ -242,6 +255,7 @@ export function validatePlan(raw, collection) {
       collection.links.map((l) => [l.id, l.url, l.title, l.note, l.groupId]),
     ]),
     groups,
+    orderedLinkIds,
     collectionName: text(raw.collectionName, 100),
     note: text(raw.note, 3000),
   };

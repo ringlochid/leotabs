@@ -1,7 +1,10 @@
 {
   "manifest_version": 3,
+  "omnibox": {
+    "keyword": "neo"
+  },
   "name": "Neo \u2014 Tabs & Collections",
-  "version": "0.11.0",
+  "version": "0.13.0",
   "minimum_chrome_version": "123",
   "description": "Find open pages, put work away, and resume only what you need. Local collections, groups, notes and portable exports.",
   "icons": {
@@ -21,8 +24,13 @@
     "alarms",
     "favicon"
   ],
-  "optional_permissions": ["bookmarks", "history"],
-  "optional_host_permissions": ["<all_urls>"],
+  "optional_permissions": [
+    "bookmarks",
+    "history"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

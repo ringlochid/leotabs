@@ -29,7 +29,7 @@ export async function startQuick() {
   const searchOnly =
     (globalThis.__neoOverlayContext?.mode || new URLSearchParams(location.search).get('mode')) ===
     'search';
-  let data = await rpc('load'),
+  let data = await rpc('load',{includeTimeline:false}),
     win = await currentWindow(),
     groupId = null;
   let browseMode = 'window',
@@ -260,7 +260,7 @@ export async function startQuick() {
       if (op?.label)
         toast(op.label, {
           undo:
-            action !== 'undo-action' && (op.before || op.closed?.length)
+            action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
               ? async () => {
                   await rpc('undo-action', { id: op.id, windowId: win });
                   await refresh();
@@ -444,7 +444,7 @@ export async function startQuick() {
           (browseMode !== 'window' || t.windowId === win) &&
           (!audioOnly || t.audible || t.mutedInfo?.muted),
       ),
-      data.state.settings.tabSort,
+      'position',
     );
   }
   function visibleTabs() {
@@ -1051,8 +1051,8 @@ export async function startQuick() {
       else load();
     }
     const g = ++generation,
-      next = await rpc('load');
-    if (disposed || g !== generation) return;
+      next = await rpc('load',{includeTimeline:false,allowBusy:true});
+    if (disposed || g !== generation || next.layoutBusy) return;
     const nextKey = JSON.stringify(next);
     if (lastData === nextKey) return;
     lastData = nextKey;

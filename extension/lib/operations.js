@@ -2,11 +2,11 @@
 import { parkedTitle, settleParked } from './parked.js';
 import { snapshotTabs, safeURL, sameCapturedTab, stamp, uid } from './model.js';
 import { manageableURL } from './tab-policy.js';
-import { arrangeSaved } from './arrange.js';
 import { randomCollectionColor } from './colors.js';
+import {policyFor,applySavedPolicy} from './organisation.js';
 
 // Dependencies are explicit so failure tests use the exact production operation path.
-export function operations({ browser, db, beforeStashClose = async () => {} }) {
+export function operations({ browser, db, beforeStashClose = async () => {}, afterStashClose = async () => {} }) {
   const ownURL = browser.runtime.getURL('');
   const available = (t) => !t.incognito && manageableURL(t.resourceUrl || t.pendingUrl || t.url)
     && !(String(t.url || '').startsWith(ownURL) && !t.parked);
@@ -119,6 +119,8 @@ export function operations({ browser, db, beforeStashClose = async () => {} }) {
     spaceId,
     close = false,
     excludePinned = true,
+    automaticName = false,
+    preserveLayout = false,
   }) {
     const tabs = (await live(tabIds)).filter((t) => !excludePinned || !t.pinned);
     if (!tabs.length) throw new Error('There are no eligible tabs to save.');
@@ -131,13 +133,17 @@ export function operations({ browser, db, beforeStashClose = async () => {} }) {
         const operation={ id:uid(), label:'Close utility tabs', at:stamp(), snapshot:captured, sourceGroups:groups, tabs };
         await db.write('journal',operation);
         await beforeStashClose(tabs);
-        return await closeCaptured(operation,tabs);
+        const result=await closeCaptured(operation,tabs);await afterStashClose(result);return result;
       }
       throw new Error('These utility tabs do not need saving. Use Close tabs.');
     }
+    if (automaticName) captured.name = 'Saved on '+new Date(captured.createdAt).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
     if (name?.trim()) captured.name = name.trim().slice(0, 500);
     const { operation } = await db.mutate(close ? 'Stash tabs' : 'Save tabs', (state) => {
-      if (state.settings.autoGroup) arrangeSaved(captured, state.settings.rules);
+      const target=destinationId?state.collections.find(c=>c.id===destinationId):null;
+      const policy=policyFor(state,target,spaceId||target?.spaceId||state.spaces?.[0]?.id);
+      if(name?.trim())captured.manualName=true;
+      if(policy.automatic&&!preserveLayout)applySavedPolicy(captured,policy,state.settings.rules,{space:state.spaces?.find(s=>s.id===(spaceId||target?.spaceId))?.name||''});
       if (destinationId) {
         const dest = state.collections.find((c) => c.id === destinationId);
         if (!dest) throw new Error('This collection no longer exists.');
@@ -164,6 +170,7 @@ export function operations({ browser, db, beforeStashClose = async () => {} }) {
       // the active collection into the remaining (possibly empty) tab set.
       await beforeStashClose(tabs);
       await closeCaptured(operation, tabs);
+      await afterStashClose(operation);
     }
     return operation;
   }

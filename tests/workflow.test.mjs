@@ -6,13 +6,13 @@ import {manageableURL} from '../extension/lib/tab-policy.js';
 import {colorHex,colorInk,validColor} from '../extension/lib/colors.js';
 import {sanitizeSettings} from '../extension/lib/settings.js';
 test('default GitHub rule handles paths and queries without matching lookalike domains',()=>{
-  assert.equal(matchingRule('https://github.com/a/b?q=1',DEFAULT_RULES).group,'Github');
-  assert.equal(matchingRule('https://github.com',DEFAULT_RULES).group,'Github');
+  assert.equal(matchingRule('https://github.com/a/b?q=1',DEFAULT_RULES).group,'GitHub');
+  assert.equal(matchingRule('https://github.com',DEFAULT_RULES).group,'GitHub');
   assert.equal(matchingRule('https://github.com.evil.test/a',DEFAULT_RULES),undefined);
   assert.equal(matchingRule('https://other.test/github.com/a',DEFAULT_RULES),undefined);
 });
 test('automatic rules preserve manual groups and reuse existing destinations',()=>{
-  const c=newCollection();c.groups=[{id:'manual',name:'My project'},{id:'github',name:'Github'}];
+  const c=newCollection();c.groups=[{id:'manual',name:'My project'},{id:'github',name:'GitHub'}];
   c.links=[{id:'1',url:'https://github.com/a',groupId:'manual'},{id:'2',url:'https://github.com/b',groupId:null}];
   arrangeSaved(c,DEFAULT_RULES);arrangeSaved(c,DEFAULT_RULES);
   assert.equal(c.links[0].groupId,'manual');assert.equal(c.links[1].groupId,'github');assert.equal(c.groups.length,2);
@@ -32,7 +32,7 @@ test('custom colours roundtrip and contrasting foreground covers light and dark 
 });
 test('AI stays opt-in, preferences persist, and default rules migrate only once',()=>{
   const old=initialState();delete old.settings.autoGroup;old.settings.rules=[];
-  assert.equal(migrate(old).settings.rules[0].group,'Github');
+  assert.equal(migrate(old).settings.rules[0].group,'GitHub');
   const modern=initialState();modern.settings.rules=[];
   assert.equal(migrate(modern).settings.rules.length,0);
   assert.equal(initialState().settings.aiNaming,false);

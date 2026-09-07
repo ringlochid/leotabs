@@ -7,7 +7,7 @@ export async function checkWorkflow({app,rpc,out,results,delay,origin,extensionO
   await app.evaluate(`document.querySelector('#action-popover')?.hidePopover()`);
   const own=await app.evaluate('chrome.tabs.getCurrent()');const windowId=own.windowId;
   const beforeSettings=(await rpc('load')).state.settings;
-  assert.equal(beforeSettings.aiNaming,false);assert(beforeSettings.rules.some(r=>r.domain==='github.com/*'&&r.group==='Github'));
+  assert.equal(beforeSettings.aiNaming,false);assert(beforeSettings.rules.some(r=>r.domain==='github.com/*'&&r.group==='GitHub'));
   await rpc('import',{collections:[
     {id:'source',name:'Workflow source',autoUpdate:true,color:'#123456',groups:[],links:[{id:'s',title:'Source',url:origin+'/workflow-source'}]},
     {id:'dest',name:'Workflow destination',autoUpdate:false,color:'#fcf0b4',groups:[],links:[{id:'d',title:'Destination',url:origin+'/workflow-destination',note:'Preserve me'}]},
@@ -21,7 +21,7 @@ export async function checkWorkflow({app,rpc,out,results,delay,origin,extensionO
   const windowIds=(await app.evaluate('chrome.windows.getAll({})')).map(w=>w.id).sort();
   await wait(()=>app.evaluate(`!!document.querySelector('[data-collection-id="${dest.id}"] .collection-switch')`),'destination action missing');
   await click(`[data-collection-id="${dest.id}"] .collection-switch`);
-  assert(await app.evaluate(`document.querySelector('#dialog input[aria-label="Save current tabs"]').checked`));
+  assert.equal(await app.evaluate(`document.querySelector('#dialog input[type="checkbox"]').checked`),false);
   assert(await app.evaluate(`(()=>{const d=document.querySelector('#dialog'),s=getComputedStyle(d);return s.boxShadow==='none' && s.borderRadius==='4px' && !d.textContent.includes('Keep a snapshot') && !d.textContent.includes('Replaces unpinned');})()`));
   assert.equal((await rpc('load')).sessionState.active[windowId]?.collectionId,source.id);
   await click('#dialog footer .primary');
@@ -137,11 +137,11 @@ export async function checkWorkflow({app,rpc,out,results,delay,origin,extensionO
   assert(!(await rpc('load')).sessionState.active[windowId]);
   const retainedBefore=new Set((await rpc('load')).sessionState.retained.map(r=>r.key));
   await click(`[data-collection-id="${source.id}"] .collection-switch`);
-  await click('#dialog input[aria-label="Save current tabs"]');
+  assert.equal(await app.evaluate(`document.querySelector('#dialog input[type="checkbox"]').checked`),false);
   await click('#dialog footer .primary');
   await wait(async()=> (await rpc('load')).sessionState.active[windowId]?.collectionId===source.id,'unchecked replace failed');
-  assert((await rpc('load')).sessionState.retained.every(r=>retainedBefore.has(r.key)));
-  results.push('Replace asks before changing tabs; Cancel preserves the session and unchecking Save skips a retained session');
+  assert((await rpc('load')).state.collections.length===state.collections.length);
+  results.push('Switch Cancel preserves the session; the unchecked option creates no extra collection while recovery remains automatic');
 
   await rpc('import',{collections:Array.from({length:18},(_,i)=>({id:'drag-'+i,name:'Drag fixture '+i,groups:[],links:Array.from({length:5},(_,j)=>({id:'l'+j,title:'Drag link '+j,url:origin+'/drag-'+i+'-'+j}))}))});
   await wait(()=>app.evaluate(`document.querySelectorAll('.collection').length>=18`),'drag fixtures missing');

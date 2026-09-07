@@ -191,6 +191,11 @@ test('save-only leaves all live tabs unchanged', async () => {
   assert.equal(f.state.collections.length, 1);
 });
 
+test('deliberate save retains Web Store resources',async()=>{
+  const f=fixture([baseTab(1,{url:'https://chromewebstore.google.com/detail/example'})]);
+  await f.ops.save({close:false});assert.equal(f.state.collections[0].links[0].url,'https://chromewebstore.google.com/detail/example');
+});
+
 test('stash pauses tracking after durable save and before removing any tab; save-only never pauses', async () => {
   const f=fixture(undefined, async tabs=>{
     assert.equal(f.state.collections.at(-1).links.length,2);

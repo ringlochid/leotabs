@@ -94,12 +94,16 @@ export function sessionManager({ browser, db, ops }) {
     force = false,
     tracking,
     preserveCurrent = false,
+    outgoing,
+    expectedSourceId,
   }) {
     if ((await hiddenWindows()).includes(windowId))
       throw Error(
         'Switch collections from your original browser window. This window holds an inactive session.',
       );
     const s = await state();
+    if(outgoing!==undefined&&!['keep','update','new'].includes(outgoing))throw Error('Unknown outgoing save choice.');
+    if(expectedSourceId!==undefined&&(s.active[windowId]?.collectionId||null)!==expectedSourceId)throw Error('The active collection changed. Open Switch again.');
     const key = windowId + ':' + destinationId;
     if (!force && !preserveCurrent && s.active[windowId]?.collectionId === destinationId) {
       await capture(windowId);
@@ -117,7 +121,7 @@ export function sessionManager({ browser, db, ops }) {
         await persist(s);
       }
     }
-    const saved = await capture(windowId, { reason: 'Before switch', force: true, sync: !force && !preserveCurrent });
+    const saved = await capture(windowId, { reason: 'Before switch', force: true, sync: outgoing===undefined && !force && !preserveCurrent });
     const library = await db.getState();
     const destination = library.collections.find((c) => c.id === destinationId);
     const retained = force ? null : s.parked[key];
@@ -129,13 +133,26 @@ export function sessionManager({ browser, db, ops }) {
     if (!fallback) throw Error('This collection is no longer available.');
     const source = (await ops.live()).filter((t) => t.windowId === windowId && !t.pinned);
     if (signal?.aborted) return { cancelled: true };
-    const sourceId = (force ? null : s.active[windowId]?.collectionId) || 'session-' + uid();
+    let createdCollectionId;
+    if(outgoing==='update') {
+      const currentId=s.active[windowId]?.collectionId;
+      if(!currentId)throw Error('No active collection to update.');
+      await db.mutate('Update collection before switching',library=>{
+        const c=library.collections.find(c=>c.id===currentId);if(!c)throw Error('Source collection no longer exists.');
+        Object.assign(c,mirrorCollection(c,saved.snapshot),{updatedAt:Date.now()});
+        return {versionWindowId:windowId};
+      });
+    } else if(outgoing==='new'&&saved?.snapshot?.links.length) {
+      const op=await ops.save({tabIds:source.map(t=>t.id),automaticName:true,preserveLayout:true});createdCollectionId=op.collectionId;
+    }
+    const sourceId = createdCollectionId || (force ? null : s.active[windowId]?.collectionId) || 'session-' + uid();
     const sourceName =
       (force ? 'Before version restore · ' : '') +
-      (s.active[windowId]?.name || 'Previous browsing session');
+      (library.collections.find(c=>c.id===s.active[windowId]?.collectionId)?.name || s.active[windowId]?.name || 'Previous browsing session');
     let parked, guard;
     let destinationTabs = [];
     let openedIds = [];
+    let closeOperation;
     try {
       // Keep the original window alive when the switcher is running inside a page.
       guard = await browser.tabs.create({ windowId, url: 'about:blank', active: false });
@@ -168,7 +185,7 @@ export function sessionManager({ browser, db, ops }) {
           );
       }
       if (signal?.aborted) throw Error('Switch cancelled. Current tabs were kept.');
-      if (saveCurrent && source.length) {
+      if ((outgoing!==undefined||saveCurrent) && source.length) {
         // Retain a resumable snapshot, not a hidden browser window.
         parked = {
           id: uid(),
@@ -182,6 +199,7 @@ export function sessionManager({ browser, db, ops }) {
       }
       if (source.length) {
         const closed = await ops.close(source.map((t) => t.id));
+        closeOperation=closed;
         if (closed?.skipped?.length || closed?.cancelled)
           throw Error(
             'Some source tabs changed and stayed open. Their saved snapshot is in Timeline.',
@@ -209,6 +227,8 @@ export function sessionManager({ browser, db, ops }) {
       )
         await browser.tabs.remove(retained.markerId).catch(() => {});
       await capture(windowId, { reason: 'Switched to collection', force: true }).catch(() => {});
+      const outgoingSnapshot=saved||{id:uid(),at:Date.now(),windowId,collectionId:sourceId,snapshot:snapshotTabs(source)};
+      await db.write('timeline',{...outgoingSnapshot,event:'switch',name:sourceName+' → '+s.active[windowId].name,reason:'Switched collection',operationId:closeOperation?.id,closedTabIds:closeOperation?.closed||[],closedCount:closeOperation?.closed?.length||0,destinationId});
       // Keep Neo visible when invoked from the library. Otherwise activate a destination page.
       const visible = await browser.tabs.query({ windowId });
       const libraryTab =
@@ -219,7 +239,7 @@ export function sessionManager({ browser, db, ops }) {
       if (libraryTab || first)
         await browser.tabs.update((libraryTab || first).id, { active: true }).catch(() => {});
       await browser.windows.update(windowId, { focused: true }).catch(() => {});
-      return { status: 'complete', label: 'Switched to ' + s.active[windowId].name };
+      return { status: 'complete', label: 'Switched to ' + s.active[windowId].name, createdCollectionId };
     } catch (error) {
       // Pause tracking after a partial switch rather than overwriting the recovery copy.
       await db
@@ -263,7 +283,7 @@ export function sessionManager({ browser, db, ops }) {
     const current = s.active[windowId];
     if (!current || current.collectionId !== collectionId)
       throw Error('This collection is no longer active in this window.');
-    await capture(windowId, { reason: 'Closed collection', force: true });
+    const saved=await capture(windowId, { reason: 'Closed collection', force: true });
     const tabs = (await ops.live()).filter((t) => t.windowId === windowId && !t.pinned);
     const visible = await browser.tabs.query({ windowId });
     if (tabs.length && visible.every((t) => tabs.some((x) => x.id === t.id)))
@@ -280,6 +300,7 @@ export function sessionManager({ browser, db, ops }) {
       const closed = tabs.length ? await ops.close(tabs.map((t) => t.id)) : null;
       if (closed?.skipped?.length || closed?.cancelled)
         throw Error('Some tabs stayed open. The collection is saved; try closing it again.');
+      if(saved)await db.write('timeline',{...saved,event:'close',name:'Closed '+current.name,operationId:closed?.id,closedTabIds:closed?.closed||[],closedCount:closed?.closed?.length||0});
       return { ...closed, status: 'complete', label: 'Closed ' + current.name };
     } catch (error) {
       // Keep a retryable current collection, but preserve the pre-close snapshot
@@ -319,13 +340,15 @@ export function sessionManager({ browser, db, ops }) {
     await persist(s);
   }
   async function closeAll(windowId) {
-    await capture(windowId, {reason:'Closed window tabs', force:true, sync:false});
+    const saved=await capture(windowId, {reason:'Closed window tabs', force:true, sync:false});
     const tabs = (await ops.live()).filter(t => t.windowId === windowId && !t.pinned);
     const visible = await browser.tabs.query({windowId});
     if (tabs.length && visible.every(t => tabs.some(x => x.id === t.id)))
       await browser.tabs.create({windowId, url:browser.runtime.getURL('app.html'), active:false});
     await forgetWindow(windowId);
-    return tabs.length ? ops.close(tabs.map(t => t.id)) : {status:'complete'};
+    const closed=tabs.length ? await ops.close(tabs.map(t => t.id)) : {status:'complete'};
+    if(saved)await db.write('timeline',{...saved,event:'close',name:'Closed window tabs',operationId:closed?.id,closedTabIds:closed?.closed||[],closedCount:closed?.closed?.length||0});
+    return closed;
   }
   async function setAutoUpdate({ collectionId, windowId, enabled }) {
     if (typeof enabled !== 'boolean') throw Error('Choose whether to enable auto-update.');
@@ -335,6 +358,8 @@ export function sessionManager({ browser, db, ops }) {
       throw Error('This collection is no longer active in this window.');
     if (enabled && Object.entries(s.active).some(([id, x]) => Number(id) !== windowId && x.collectionId === collectionId && x.tracking !== false))
       throw Error('Auto-update is already running for this collection in another window.');
+    // Pausing stops future changes, not the last change waiting for a checkpoint.
+    if (!enabled && active.tracking !== false) await capture(windowId);
     // Keep the pre-resume version recoverable before current tabs are mirrored.
     await db.mutate(enabled ? 'Resume auto-update' : 'Pause auto-update', library => {
       const c = library.collections.find(c => c.id === collectionId);
@@ -362,6 +387,26 @@ export function sessionManager({ browser, db, ops }) {
     if (enabled) for (const [id, active] of entries)
       if (active.tracking) await capture(Number(id));
   }
+  async function saveAsActive({windowId,tabIds}) {
+    const tabs=(await ops.live()).filter(t=>t.windowId===windowId&&!t.pinned);
+    if(!tabs.length||tabs.length!==new Set(tabIds).size||tabs.some(t=>!tabIds.includes(t.id)))throw Error('Select all unpinned tabs in this window to make a new active collection.');
+    await capture(windowId,{reason:'Before saving active collection',force:true});
+    const s=await state(),beforeActive=structuredClone(s.active[windowId]||null);
+    const op=await ops.save({tabIds,automaticName:true,preserveLayout:true});
+    const c=(await db.getState()).collections.find(c=>c.id===op.collectionId);
+    op.adoptedWindowId=windowId;op.beforeActive=beforeActive;
+    await db.write('journal',op);
+    s.active[windowId]={collectionId:c.id,name:c.name,tracking:c.autoUpdate!==false};
+    await persist(s);
+    return {...op,label:'Saved as active collection'};
+  }
+  async function undoAdoption(op) {
+    const s=await state();
+    if(s.active[op.adoptedWindowId]?.collectionId!==op.collectionId)throw Error('The active collection changed. This save cannot be undone here.');
+    const result=await ops.undo(op.id,op.adoptedWindowId);
+    if(op.beforeActive)s.active[op.adoptedWindowId]=op.beforeActive;else delete s.active[op.adoptedWindowId];
+    await persist(s);return result;
+  }
   async function pauseForStash(tabs) {
     const s=await state();
     for (const windowId of new Set(tabs.map(t=>t.windowId))) {
@@ -370,5 +415,14 @@ export function sessionManager({ browser, db, ops }) {
         await setAutoUpdate({collectionId:current.collectionId,windowId,enabled:false});
     }
   }
-  return { capture, switchTo, closeCurrent, closeAll, setAutoUpdate, applyAutoUpdateToOpen, pauseForStash, hiddenWindows, list, replaceTab, forgetWindow };
+  async function recordStash(operation) {
+    for(const windowId of new Set((operation.tabs||[]).map(t=>t.windowId))) {
+      const tabs=operation.tabs.filter(t=>t.windowId===windowId);
+      const snapshot=snapshotTabs(tabs,operation.sourceGroups||[]);
+      if(!snapshot.links.length)continue;
+      const closedTabIds=(operation.closed||[]).filter(id=>tabs.some(t=>t.id===id));
+      await db.write('timeline',{id:uid(),at:Date.now(),event:'stash',windowId,collectionId:operation.collectionId,name:'Stashed '+snapshot.links.length+' tabs',reason:'Stash tabs',snapshot,operationId:operation.id,closedTabIds,closedCount:closedTabIds.length});
+    }
+  }
+  return { saveAsActive, undoAdoption, capture, switchTo, closeCurrent, closeAll, setAutoUpdate, applyAutoUpdateToOpen, pauseForStash, recordStash, hiddenWindows, list, replaceTab, forgetWindow };
 }

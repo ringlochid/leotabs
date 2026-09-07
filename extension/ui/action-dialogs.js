@@ -27,8 +27,11 @@ import {
 } from '../lib/portable.js';
 import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
+import {rulesDialog} from './rules-dialog.js';
+import {organisationDialog} from './organisation-dialog.js';
+import {assist,researchOverview} from './contextual-ai.js';
 
-export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {} }) {
+export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false }) {
   const data = new Proxy({}, { get: (_, key) => getData()[key] });
   const win = windowId,
     selectedIds = getTabIds,
@@ -37,6 +40,10 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     const ids = selectedIds().filter((id) => data.tabs.some((t) => t.id === id && !t.pinned));
     if (!ids.length) return toast('Select at least one unpinned tab.', { error: true });
     const check = el('input', { type: 'checkbox', checked: closeTabs });
+    const adopt = el('input', {type:'checkbox', checked:false, 'aria-label':'and switch to new collection'});
+    const windowIds=data.tabs.filter(t=>t.windowId===win&&!t.pinned).map(t=>t.id);
+    const canAdopt=ids.length===windowIds.length&&ids.every(id=>windowIds.includes(id));
+    adopt.disabled=!canAdopt;
     const save = button(
       'Save tabs',
       act(async () => {
@@ -44,7 +51,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         try {
           await change('save', {
             tabIds: ids,
-
+            windowId:win, minimal:true, adopt:adopt.checked,
             close: check.checked,
           });
           close();
@@ -59,25 +66,49 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       save.title = save.textContent;
       save.setAttribute('aria-label', save.textContent);
     };
-    check.onchange = label;
+    check.onchange = () => {if(check.checked)adopt.checked=false;label();};
+    adopt.onchange = () => {if(adopt.checked)check.checked=false;label();};
     label();
     const { close } = popover(
-      `Save ${ids.length} tabs to a new collection`,
+      `Save ${ids.length} tabs`,
       el(
         'div',
         {},
-        el(
-          'p',
-          { class: 'hint' },
-          'Tip: drag tabs or a group into an existing collection to save them there.',
-        ),
         el('label', { class: 'check-label' }, check, 'and close them'),
-        el('p', { class: 'hint' }, 'Pinned tabs stay open. Saved groups are kept together.'),
+        el('label', { class: 'check-label', title:canAdopt?'':'Select all unpinned tabs in this window to switch to the new collection.' }, adopt, 'and switch to new collection'),
       ),
       [save, button('Cancel', () => close())],
     );
   }
-  async function aiTabs(){const context=await rpc('ai-tabs-context',{windowId:win,tabIds:selectedIds()});if(!context.collection.links.length)return toast('No pages to organise.');aiDialog(context.collection,{liveContext:context});}
+  let groupingBusy=false;
+  const groupingIds=(include=true)=>selectedIds().filter(id=>data.tabs.some(t=>t.id===id&&t.windowId===win&&!t.pinned&&(include||t.groupId<0)));
+  function topicOptions(title,run){
+    if(groupingBusy)return;
+    if(!data.connections.ai){settingsDetails('AI connection');return;}
+    const include=el('input',{type:'checkbox',checked:data.state.settings.regroupExisting!==false,'aria-label':'Include already grouped tabs'});
+    const apply=button('Organise by topic',act(async()=>{
+      if(!await chrome.permissions.request({origins:[endpointOrigin(providerEndpoint(data.state.settings))+'/*']}))return;
+      apply.disabled=true;
+      try{
+        if(include.checked!==(data.state.settings.regroupExisting!==false))await change('settings',{settings:{regroupExisting:include.checked}});
+        close();await run(include.checked);
+      }finally{apply.disabled=false;}
+    }),{className:'primary topic-apply'});
+    const {close}=modal(title,el('div',{},el('label',{class:'check-label'},include,'Include already grouped tabs'),el('p',{class:'hint'},'Included tabs are grouped afresh by topic. Existing group names and membership are ignored. Uncheck to leave grouped tabs unchanged.')),[button('Cancel',()=>close()),apply]);
+  }
+  function aiTabs(){return topicOptions('Group open tabs by topic',runTopicTabs);}
+  async function runTopicTabs(regroupExisting){
+    if(groupingBusy)return;
+    if(!data.connections.ai){settingsDetails('AI connection');return;}
+    groupingBusy=true;const requestId=uid();let cancelled=false;
+    const progress=el('span',{},'Grouping by topic…');
+    const cancel=button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});progress.textContent='Cancelling…';});
+    toast(el('span',{class:'grouping-progress'},progress,cancel),{duration:0});
+    try {await change('group-topic',{windowId:win,tabIds:groupingIds(regroupExisting),regroupExisting,requestId});}
+    catch(error){toast(cancelled?'AI grouping cancelled':error.message,{error:!cancelled});}
+    finally{groupingBusy=false;}
+  }
+  async function groupSort(options={}){if(groupingBusy)return;groupingBusy=true;try{return await change('group-sort',{windowId:win,tabIds:groupingIds(),...options});}finally{groupingBusy=false;}}
   const opening = new Set();
   async function resumeDialog(c, { target = 'current', linkIds } = {}) {
     if (!c?.links.length || (linkIds && !linkIds.length)) return toast('No saved pages to open.');
@@ -126,7 +157,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       swapping = false;
     }
   }
-  async function performSwap(collection, {working = collection.autoUpdate !== false, saveCurrent = true} = {}) {
+  async function performSwap(collection, {working = collection.autoUpdate !== false, outgoing = 'keep', expectedSourceId} = {}) {
     if (!collection || swapping) return;
     swapping = true;
     try {
@@ -134,8 +165,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       const result = await change('switch', {
         destinationId: collection.id,
         windowId: win,
-        saveCurrent,
-        preserveCurrent: true,
+        outgoing, expectedSourceId,
         tracking: working,
         requestId: uid(),
         focusPage: !!globalThis.__neoOverlayContext,
@@ -148,20 +178,25 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       swapping = false;
     }
   }
+  function outgoingOption() {
+    const source=data.state.collections.find(c=>c.id===data.sessionState?.active?.[win]?.collectionId);
+    const label=source?'Update “'+source.name+'” with current tabs':'Save current tabs as a new collection';
+    const check=el('input',{type:'checkbox',checked:false,'aria-label':label});
+    const payload=()=>({outgoing:check.checked?(source?'update':'new'):'keep',expectedSourceId:source?.id||null});
+    return {check,label,payload};
+  }
   function swapCollection(collection, { working = collection?.autoUpdate !== false } = {}) {
     if (!collection || swapping) return;
-    const saveCurrent = el('input', {
-      type: 'checkbox', checked: true, 'aria-label': 'Save current tabs',
-    });
+    const option=outgoingOption();
     const confirm = button('Switch to collection', act(async () => {
       confirm.disabled = true;
       try {
-        await performSwap(collection, { working, saveCurrent: saveCurrent.checked });
+        await performSwap(collection, { working, ...option.payload() });
         close();
       } finally { confirm.disabled = false; }
     }), { className: 'primary' });
     const { close } = modal('Switch to ' + collection.name + '?', el('div', {},
-      el('label', { class: 'check-label' }, saveCurrent, 'Save current tabs'),
+      el('label', { class: 'check-label' }, option.check, option.label),
     ), [button('Cancel', () => close()), confirm]);
   }
   function switchDialog() {
@@ -174,11 +209,8 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       placeholder: 'Search collections…',
       'aria-label': 'Search collections',
     });
-    const saveCurrent = el('input', {
-      type: 'checkbox',
-      checked: !!ids.length,
-      disabled: !ids.length,
-    });
+    const option=outgoingOption(),saveCurrent=option.check;
+    saveCurrent.disabled=!ids.length;
     const list = el('div', {
       class: 'switch-choices collection-choices',
       'aria-label': 'Collections',
@@ -209,7 +241,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                   requestId,
                   tabIds: ids,
                   destinationId: collection.id,
-                  saveCurrent: saveCurrent.checked,
+                  ...option.payload(),
                   focusPage: !!globalThis.__neoOverlayContext,
                   windowId: win,
                 });
@@ -253,11 +285,11 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         'div',
         { class: 'switch-picker' },
         search,
-        el('label', { class: 'check-label' }, saveCurrent, 'Save current tabs'),
+        el('label', { class: 'check-label' }, saveCurrent, option.label),
         el(
           'p',
           { class: 'hint switch-explanation' },
-          'Save keeps a snapshot for switching back. Tabs are replaced in this window; pinned tabs stay.',
+          'Timeline is saved automatically. Pinned tabs stay open.',
         ),
         list,
         status,
@@ -568,167 +600,15 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     }
     run();
   }
-  function aiDialog(c, { linkIds, liveContext } = {}) {
-    const instruction = el('textarea', {
-        value: 'Group these links by project. Leave uncertain links ungrouped.',
-      }),
-      picks = linkPicker(linkIds ? c.links.filter((l) => linkIds.includes(l.id)) : c.links, {
-        max: 300,
-      });
-    const requestId = uid(),
-      status = el('p', { class: 'hint', role: 'status' });
-    let running = false,
-      cancelled = false;
-    const generate = button(
-      'Generate a plan',
-      act(async () => {
-        if (!picks.ids().length) throw new Error('Select between 1 and 300 links.');
-        generate.disabled = true;
-        running = true;
-        status.textContent = 'Preparing your organisation plan…';
-        try {
-          const plan = await rpc(liveContext ? 'ai-tabs-plan' : 'ai-plan', {
-            context: liveContext,
-            requestId,
-            collectionId: c.id,
-            linkIds: picks.ids(),
-            instruction: instruction.value,
-          });
-          if (!cancelled) {
-            running = false;
-            close();
-            reviewPlan(c, plan, liveContext);
-          }
-        } catch (error) {
-          if (!cancelled) status.textContent = error.message;
-        } finally {
-          running = false;
-          generate.disabled = false;
-        }
-      }),
-      { className: 'primary' },
-    );
-    const { dialog, close } = modal(
-      'Organise with AI',
-      el(
-        'div',
-        {},
-        !data.connections.ai
-          ? el(
-              'div',
-              { class: 'ai-setup' },
-              el(
-                'p',
-                { class: 'hint' },
-                'Connect an AI provider in AI connection settings before generating a plan.',
-              ),
-              button('AI connection settings', () => settingsDetails('AI connection')),
-            )
-          : null,
-        el(
-          'p',
-          {},
-          `Send selected link titles, URLs and notes to ${PROVIDERS[data.state.settings.provider]?.name || 'your configured provider'}.`,
-        ),
-        el(
-          'p',
-          { class: 'hint' },
-          'Choose up to 300 links. Page contents, previews, other collections and browser history are excluded.',
-        ),
-        picks.node,
-        field('Instruction', instruction),
-        status,
-      ),
-      [
-        button('Cancel', () => {
-          cancelled = true;
-          close();
-        }),
-        generate,
-      ],
-    );
-    dialog.addEventListener(
-      'close',
-      () => {
-        cancelled = true;
-        if (running) rpc('ai-cancel', { requestId }).catch(() => {});
-      },
-      { once: true },
-    );
-  }
-  function reviewPlan(c, plan, liveContext) {
-    const groups = plan.groups.map((g) => {
-      const check = el('input', {
-        type: 'checkbox',
-        checked: true,
-        onchange: (e) => (g.accepted = e.target.checked),
-      });
-      return el(
-        'div',
-        { class: 'plan-group' },
-        el(
-          'div',
-          { class: 'row' },
-          check,
-          el('input', {
-            value: g.name,
-            'aria-label': 'Proposed group name',
-            oninput: (e) => {
-              g.name = e.target.value;
-              for (const option of placements.querySelectorAll('option'))
-                if (option.value === g.id) option.textContent = g.name;
-            },
-          }),
-        ),
-        el(
-          'ul',
-          {},
-          g.linkIds.map((id) =>
-            el('li', {}, c.links.find((l) => l.id === id)?.title || 'Unknown link'),
-          ),
-        ),
-      );
-    });
-    const updatePreview = () => groups.forEach((node, i) => node.querySelector('ul').replaceChildren(
-      ...plan.groups[i].linkIds.map(id => el('li', {}, c.links.find(l => l.id === id)?.title || 'Unknown link')),
-    ));
-    const placements=el('details',{},el('summary',{},'Adjust individual placements'));
-    for(const link of c.links.filter(l=>plan.scopeLinkIds.includes(l.id))){
-      const initial=plan.groups.find(g=>g.linkIds.includes(link.id));
-      const picker=el('select',{'aria-label':'Group for '+link.title,onchange:e=>{for(const g of plan.groups)g.linkIds=g.linkIds.filter(id=>id!==link.id);const destination=plan.groups.find(g=>g.id===e.target.value);if(destination)destination.linkIds.push(link.id);updatePreview();}},el('option',{value:''},'Leave unchanged'),...plan.groups.map(g=>el('option',{value:g.id,selected:g===initial},g.name)));
-      placements.append(field(link.title,picker));
-    }
-    const applyName=el('input',{type:'checkbox',checked:!!plan.collectionName});
-    const proposedName=el('input',{value:plan.collectionName||c.name,'aria-label':'Proposed collection name',oninput:e=>plan.collectionName=e.target.value});
-    const note = el('textarea', { value: plan.note, oninput: (e) => (plan.note = e.target.value) }),
-      applyNote = el('input', { type: 'checkbox' });
-    const { close } = modal(
-      'Review your organisation plan',
-      el(
-        'div',
-        {},
-        !liveContext ? el('label',{class:'check-label'},applyName,'Collection name',proposedName):null,
-        groups,
-        placements,
-        !liveContext ? el(
-          'label',
-          { class: 'check-label' },
-          applyNote,
-          'Replace the collection note with this draft',
-        ) : null,
-        !liveContext ? note : null,
-      ),
-      [
-        button(
-          'Apply selected changes',
-          act(async () => {
-            await change(liveContext ? 'ai-tabs-apply' : 'ai-apply', { context:liveContext, plan, applyName:applyName.checked, applyNote: applyNote.checked });
-            close();
-          }),
-          { className: 'primary' },
-        ),
-      ],
-    );
+  function aiSaved(c){return topicOptions('Organise collection with AI',include=>runCollectionAI(c,include));}
+  async function runCollectionAI(c,regroupExisting){
+    if(groupingBusy)return;
+    if(!data.connections.ai){settingsDetails('AI connection');return;}
+    const requestId=uid();let cancelled=false;groupingBusy=true;
+    toast(el('span',{class:'grouping-progress'},'Organising name, note and topic groups…',button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});})),{duration:0});
+    try {await change('collection-ai',{collectionId:c.id,windowId:win,regroupExisting,requestId});}
+    catch(error){toast(cancelled?'AI organisation cancelled':error.message,{error:!cancelled});}
+    finally{groupingBusy=false;}
   }
   function recoveryDialog() {
     modal(
@@ -908,14 +788,18 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         ['light', 'Light'],
         ['dark', 'Dark'],
       ]),
-      toggle('Show this window only', 'currentWindowOnly'),
+      ...(!inLibrary ? [toggle('Show this window only', 'currentWindowOnly')] : []),
       toggle('Auto-update all collections', 'autoUpdateDefault'),
+      ...(!inLibrary ? [toggle('Auto-group new tabs', 'autoGroup')] : []),
+
+      row('Collapse all collections', act(() => change('collapse-collections', {})), 'chevron'),
       el('hr'),
       row('AI connection', () => settingsDetails('AI connection'), 'sparkles'),
       row('Notion', () => settingsDetails('Notion'), 'note'),
-      row('Domain rules', () => settingsDetails('Domain rules'), 'group'),
+      row('Grouping rules', () => rulesDialog({state:data.state,tabs:data.tabs,change}), 'group'),
+      row('Open Library in its own window', () => change('library-window',{}), 'external'),
       el('hr'),
-      row('Import data', importDialog, 'plus'),
+      ...(!inLibrary ? [row('Import data', importDialog, 'plus')] : []),
       row('Export & backup', backupDialog, 'tray'),
       row('Privacy & permissions', () => settingsDetails('Data & permissions'), 'settings'),
       el('hr'),
@@ -984,7 +868,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           : 'Your internal integration token',
       });
     const autoGroup=el('input',{type:'checkbox',checked:s.autoGroup});
-    const aiNaming=el('input',{type:'checkbox',checked:s.aiNaming});
     const rules = el('textarea', {
       rows: 3,
       value: s.rules.map((r) => `${r.domain} => ${r.group}`).join('\n'),
@@ -1001,11 +884,11 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         field('Model', input('model')),
         field('Compatible endpoint (complete chat/completions URL)', input('aiEndpoint')),
         field('API key', aiKey),
-        el('label',{class:'check-label'},aiNaming,'Automatically name new collections and unnamed groups with AI'),
+
         el(
           'p',
           { class: 'hint' },
-          'Calls go directly to your provider when you request a plan or enable automatic naming. Keys stay in extension-local storage, outside backups; they are not encrypted by an OS keychain.',
+          'Calls go directly to your provider when you request AI assistance or enable automatic grouping, naming or ordering. Keys stay in extension-local storage, outside backups; they are not encrypted by an OS keychain.',
         ),
         button(
           'Forget AI key',
@@ -1140,7 +1023,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                       return { domain: domain.trim(), group: parts.join('=>').trim() };
                     });
                 if(sectionName==='Domain rules')settings.autoGroup=autoGroup.checked;
-                if(sectionName==='AI connection')settings.aiNaming=aiNaming.checked;
                 const origins = [];
                 if (
                   sectionName === 'AI connection' &&
@@ -1387,6 +1269,19 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
   function stashDialog(context) {
     return saveTo(context, { closeTabs: true });
   }
+  function dropSuggestions(c) {
+    const options=el('div',{}),status=el('p',{class:'hint',role:'status'});
+    const render=rows=>options.replaceChildren(...rows.map(r=>button('File in '+(data.state.collections.find(x=>x.id===r.id)?.name||r.name),act(async()=>{
+      await change('ai-library-apply',{plan:{revision:data.state.revision,scope:{type:'all'},actions:[{type:'merge',collectionId:c.id,destinationId:r.id}]}});close();
+    }),{title:r.reason||'Move these links, groups and notes into this collection'})));
+    const {close}=popover('Name or file dropped tabs',el('div',{},options,status),[button('Ask AI',act(async()=>{
+      status.textContent='Finding a name and destinations…';
+      const result=await assist(data.state,{kind:'destinations',collectionId:c.id});
+      render(result.destinations);status.textContent='';
+      if(result.name)options.prepend(button('Name this '+result.name,act(async()=>{await change('edit',{kind:'collection',collectionId:c.id,name:result.name});close();})));
+    }),{glyph:'sparkles'}),button('Keep here',()=>close())]);
+    rpc('destination-suggestions',{collectionId:c.id}).then(render).catch(error=>status.textContent=error.message);
+  }
   return {
     save: saveTo,
     update: updateCollection,
@@ -1399,15 +1294,19 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     closeWindow: () => change('close-window', {windowId:win}),
     note: noteDialog,
     export: exportDialog,
-    ai: aiDialog,
+    ai: aiSaved,
     aiTabs,
+    overview: c => researchOverview({state:data.state,collection:c,change}),
+    dropSuggestions,
     arrangeRules: () => change('arrange-tabs', {windowId:win}),
-    ruleSettings: () => settingsDetails('Domain rules'),
+    groupSort,
+    sortTabs: order => change('sort-open-tabs', {windowId:win,order}),
+    ruleSettings: seed => rulesDialog({state:data.state,tabs:data.tabs,change,seed}),
+    organisation: scope => organisationDialog({state:data.state,scope,change}),
     recovery: recoveryDialog,
     settings: settingsDialog,
     aiSettings: () => settingsDetails('AI connection'),
     import: importDialog,
     previewImport,
-    reviewPlan,
   };
 }

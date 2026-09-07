@@ -333,10 +333,10 @@
     opacity: 0;
     z-index: 1;
   }
-  .tab-row:is(:hover, :focus-within, .selected) .tab-select {
+  .tab-row:is(:hover, :has(:focus-visible), .selected) .tab-select {
     opacity: 1;
   }
-  .tab-row:is(:hover, :focus-within, .selected) > .favicon {
+  .tab-row:is(:hover, :has(:focus-visible), .selected) > .favicon {
     visibility: hidden;
   }
   .tab-row .tab-open {
@@ -355,7 +355,7 @@
     width: 23px;
     height: 23px;
   }
-  .tab-row:is(:hover, :focus-within) .row-close {
+  .tab-row:is(:hover, :has(:focus-visible)) .row-close {
     opacity: 1;
   }
   .tab-row .row-close svg {
@@ -471,8 +471,8 @@
   }
   .collection {
     min-width: 0;
-    content-visibility: auto;
-    contain-intrinsic-size: auto 240px;
+    /* Cards are rebuilt after collection edits: estimated offscreen heights
+       would reset and make the board jump before their next layout. */
     border-radius: 7px;
     background: color-mix(in srgb, var(--color) 4%, var(--bg));
   }
@@ -574,10 +574,11 @@
     min-height: 0;
     width: calc(100% - 12px);
     margin: 9px 6px 0;
-    padding: 8px 10px;
-    font-size: 12px;
+    padding: 12px 14px;
+    font-size: 15px;
+    line-height: 1.65;
     background: color-mix(in srgb, var(--color) 11%, var(--bg));
-    color: var(--muted);
+    color: var(--text);
     resize: vertical;
   }
   .collection-footer {
@@ -613,7 +614,7 @@
     min-height: 40px;
   }
   .detail .collection-note {
-    font-size: 13px;
+    font-size: 15px;
   }
   .detail .collection-footer {
     opacity: 1;
@@ -1990,6 +1991,8 @@ progress {
 .saved-selection {
   margin: 0 10px;
   padding: 8px 0;
+  flex-direction: column;
+  align-items: stretch;
 }
 #selection > strong,
 .saved-selection > strong {
@@ -2189,6 +2192,7 @@ progress {
   padding: 5px;
 }
 #selection .selection-actions > .close-selected,
+.saved-selection .selection-actions > .close-selected,
 .selection-toolbar > .close-selected {
   width: auto;
   min-width: 72px;
@@ -2196,9 +2200,23 @@ progress {
   padding: 4px 8px;
   margin-left: auto;
   font-size: 12px;
+  white-space: nowrap;
   color: light-dark(#a52c3b, #ffb2ba);
 }
 .close-selected:not(:disabled):hover {
+  background: light-dark(#fce9ed, #482b32);
+}
+.close-all-tabs,
+.tab-tools.compact > .close-all-tabs {
+  width: auto;
+  min-width: 62px;
+  height: 28px;
+  padding: 4px 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: light-dark(#a52c3b, #ffb2ba);
+}
+.close-all-tabs:hover {
   background: light-dark(#fce9ed, #482b32);
 }
 
@@ -2376,7 +2394,7 @@ progress {
   display: block;
   width: 100%;
   margin: 0;
-  min-height: 44px;
+  min-height: 100px;
 }
 .collection-note-editor .delete-collection-note {
   display: block;
@@ -3518,6 +3536,20 @@ dialog {
   box-shadow: none;
   outline: none;
 }
+.organisation-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
+.organisation-fields .field { margin:0;min-width:0; }
+.organisation-fields input,.organisation-fields select { width:100%;min-width:0; }
+.organisation-fields .check-label input { width:auto; }
+.organisation-rule { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 0;border-bottom:1px solid var(--line); }
+.organisation-rule input,.organisation-rule select {min-width:0;max-width:100%;}
+.inline-name-editor {display:inline-flex;align-items:center;gap:4px;position:relative;min-width:0;max-width:100%;}
+.inline-name-editor .inline-name {min-width:0;flex:1;}
+.inline-name-suggestions:not(:empty) {position:absolute;top:100%;left:0;min-width:220px;z-index:20;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);padding:6px;}
+.destination-suggestions {display:flex;flex-wrap:wrap;gap:4px;}
+.timeline-event-list {max-height:240px;overflow:auto;margin:8px 0;}
+.timeline-event-list>strong {display:block;margin:12px 0 4px;font-size:11px;}
+.timeline-event-list>button {display:block;width:100%;text-align:left;white-space:normal;font-size:11px;}
+@media(max-width:540px) {.organisation-fields,.organisation-rule{grid-template-columns:1fr;}}
 dialog::backdrop, .settings-detail::backdrop {
   background: #10121640;
   backdrop-filter: none;
@@ -3544,3 +3576,39 @@ dialog .primary {
 dialog .primary:hover { background: var(--selected); }
 .action-popover { border-radius: 4px; box-shadow: none; }
 .action-popover h2 { font-size: 15px; font-weight: 550; }
+
+/* Direct organisation: primary controls remain readable in the narrow sidebar. */
+.tab-tools .grouping-controls { flex: 1 0 100%; width:100%; display:grid; gap:8px; margin-bottom:8px; }
+.auto-group-control { font-size:12px; color:var(--muted); }
+.rules-screen {display:grid;gap:16px;min-width:0;}
+.rules-defaults {padding:14px;background:var(--bg);border:1px solid var(--line);border-radius:4px;display:grid;gap:10px;}
+.rules-defaults p {margin:0;}
+.rule-presets,.rule-suggestions,.rules-heading,.rule-row-actions {display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.rules-heading {justify-content:space-between;}
+.rule-presets button,.rule-suggestions button {border:1px solid var(--line);border-radius:4px;text-align:left;white-space:normal;}
+.rule-card {border-top:1px solid var(--line);padding:12px 0;}
+.rule-card>summary {display:flex;align-items:center;gap:10px;cursor:pointer;min-height:32px;flex-wrap:wrap;}
+.rule-card>summary span:first-of-type {flex:1;font-weight:600;}
+.rule-card>summary .hint {overflow-wrap:anywhere;}
+.rule-editor {display:grid;gap:12px;padding:12px 0;}
+.rule-editor input,.rule-editor select {max-width:100%;min-width:0;}
+.grouping-progress {display:inline-flex;gap:12px;align-items:center;}
+#tab-tools {flex-wrap:wrap;}
+#tab-tools>.tab-tools.compact {flex:1 0 100%;flex-wrap:wrap;justify-content:flex-start;}
+
+#sidebar .section-heading {display:grid;grid-template-columns:minmax(0,1fr);width:100%;min-width:0;gap:8px;}
+#sidebar #tab-tools {width:100%;min-width:0;}
+#sidebar #tab-tools>.tab-tools {width:100%;min-width:0;}
+.grouping-controls {min-width:0;max-width:100%;}
+#toast {width:max-content;}
+#toast>button {flex-shrink:0;}
+
+.auto-group-control.settings-preference {padding:6px 0;gap:8px;justify-content:flex-start;}
+.auto-group-control > span {flex:1;}
+.auto-group-state {min-width:20px;}
+
+.native-ungroup-drop {display:none;position:fixed;bottom:16px;z-index:60;padding:12px;border:1px dashed var(--accent);border-radius:4px;background:var(--panel);color:var(--text);text-align:center;font-size:12px;}
+.dragging-open-tabs .native-ungroup-drop {display:block;}
+.native-drop-over {outline:2px solid var(--accent);outline-offset:-2px;background:var(--selected);}
+.tab-open[draggable='true'] {cursor:grab;}
+.tab-open[draggable='true']:active {cursor:grabbing;}

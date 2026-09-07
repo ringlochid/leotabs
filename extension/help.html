@@ -21,7 +21,7 @@
         <p>
           Drag selected tabs or an open group header into a collection to save them. The tray beside
           Open tabs shows the same Stash popover as the switcher: save into a new collection and
-          optionally close tabs after saving. Pinned tabs stay open.
+          optionally close tabs after saving. Or choose and switch to new collection to adopt this window without reopening tabs. These choices are mutually exclusive; adopting requires all unpinned tabs in this window. With AI configured, a short descriptive name and time appear automatically after saving; otherwise the name is Saved on plus the time. Pinned tabs stay open.
         </p>
         <p>
           Spaces contain collections. Use the top plus to add a space and the final New collection
@@ -39,25 +39,44 @@
         </p>
       </section>
       <section>
-        <h2>Organise with AI</h2>
+        <p>Switching always saves Timeline recovery. With no active collection, Save current tabs as a new collection is unchecked by default. With an active collection, Update its name with current tabs is unchecked by default; checking it updates that collection once without enabling auto-update.</p>
+        <h2>Group and sort</h2>
+        <p>Choose Group &amp; sort in the Open tabs … menu. Neo applies your rules, groups the remaining tabs
+          by website, names them locally and sorts groups and tabs alphabetically. No AI connection
+          is needed. Use the Group panel to choose whether to include existing groups, then apply. Pinned tabs stay pinned. An existing selection limits the action
+          to those tabs in this window. Undo restores the previous browser grouping, colours and order.</p>
+        <p>Settings → Grouping rules opens a dedicated editor. Website grouping works immediately, even with no custom
+          rules. Enable a ready-made preset, use a suggestion from your open tabs, or right-click a tab
+          and choose Create rule from this tab. Right-click a group to always group its websites there.
+          The first matching rule wins; move specific rules above general ones. Random colours are
+          chosen when creating groups and kept on subsequent runs. The Group panel remembers whether to include already grouped tabs. Auto-group new tabs controls local
+          ongoing grouping independently from collection auto-update. Manual corrections and Undo are
+          respected. New automatic groups require at least two matching tabs. Turn Auto-group off in the sidebar. Drag open tabs onto another group or onto the Ungroup drop area to change their membership, with Undo. Web Store pages are saved and grouped like other web pages.</p>
+        <h2>AI tools</h2>
+        <p>Organise collection with AI creates a useful name, a brief collection overview and topic groups in one action. ChatGPT and Gemini belong together in AI chatbots; isolated links stay ungrouped. The overview uses titles, URLs and existing notes rather than page contents. Undo restores the collection and, when tracking, its browser layout.</p>
+        <p>Group open tabs by topic sends one batch of titles and URLs to your configured provider,
+          applies the groups directly and offers Undo. Cancel stops a pending request; results are
+          rejected if the tabs changed while it was running. AI response times depend on the provider.
+          Individual names remain directly editable without an AI suggestion workflow.</p>
+        <p>AI organisation works on open tabs or one collection. New saves are named automatically; drag-created collections offer optional
+          filing suggestions. Research overview reads selected open pages and produces a source-cited
+          draft for review. Grouping handles up to 300 links, and research overview up to 20 open pages. Closed or inaccessible pages are
+          reported as unread. Configure your provider under Settings → AI connection.</p>
         <p>
-          Use Organise with AI in the library header and choose a collection. Configure Gemini or a
-          compatible provider and model in Settings under AI connection. Add an API key if your
-          provider needs one. Generate a plan, review its names and individual placements, then
-          apply the selected changes. Optional automatic naming can name new collections and unnamed
-          saved or browser groups. Manual names are kept. AI is not required: Arrange can apply
-          configurable local rules, including github.com/* → Github.
+          Type neo followed by Tab or Space in the address bar, then enter a search or press Enter
+          for Library. Settings also offers Open Library in its own window.
         </p>
       </section>
       <section>
         <h2>Save and switch work</h2>
         <p>
-          Stash saves to a new collection, with an option to close the saved tabs. Switch to collection
+          Stash saves to a new or selected existing collection, with an option to close the saved tabs.
+          It pauses the affected current collection before closing tabs. Switch to collection
           makes that collection current in this window. Leave Save current tabs checked to retain
           the outgoing session for returning to it, or clear it to skip that retained session.
           Timeline recovery remains available. Pinned tabs stay open; new tabs and settings pages
           close without being saved. Close current collection is in the coloured header control.
-          Close tabs beside Open tabs works even when no collection is active.
+          Close all in the main current-window area works even when no collection is active.
           Remove a saved link with its hover × button; Undo restores it. The broom
           beside Open tabs shows how many duplicate tabs it will close.
         </p>
@@ -143,9 +162,12 @@
       <section>
         <h2>Optional connections</h2>
         <p>
-          AI receives only the selected link titles, URLs and notes when you request a plan. Page
-          text, screenshots and other collections are excluded. Review the suggested groups and note
-          before applying them. Changes made after generation require a fresh plan.
+          Collection plans and automatic organisation use link titles, URLs, groups and notes.
+          Space plans receive the chosen space's collections; All spaces must be chosen explicitly.
+          Destination suggestions use existing collection names, notes and sample URLs. Research
+          overview additionally reads the selected open pages after optional site access is granted.
+          Page text is sent to your configured provider only for that overview. Screenshots and browser
+          history are not sent. Review plans and drafts before applying them; stale plans require regeneration.
         </p>
         <p>
           Notion receives the collection you select for export. People with access to the

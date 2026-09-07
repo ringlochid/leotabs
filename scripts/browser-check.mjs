@@ -15,6 +15,8 @@ if (
   process.argv.includes('--native-bookmarks') ||
   process.argv.includes('--connections') ||
   process.argv.includes('--ai-workflow') ||
+  process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') ||
+  process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') ||
   process.argv.includes('--history-access')
 ) {
   const fixture = path.join(out, 'granted-access-fixture');
@@ -29,7 +31,7 @@ if (
     manifest.permissions.push('history');
     manifest.optional_permissions = manifest.optional_permissions.filter((p) => p !== 'history');
   }
-  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow'))
+  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow') || process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--proposal') || process.argv.includes('--topic-regroup'))
     manifest.host_permissions = ['http://127.0.0.1/*', 'https://api.notion.com/*'];
   await fs.writeFile(path.join(fixture, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
@@ -62,7 +64,7 @@ const server = http.createServer(async (req, res) => {
     ...(req.url === '/media-strict' ? { 'Content-Security-Policy': "img-src 'none'" } : {}),
   });
   res.end(
-    `<!doctype html>${process.argv.includes('--parked-identity') ? '<link rel="icon" href="/identity-icon.png">' : ''}<title>${req.url.includes('research') ? 'Research paper' : 'Project brief'}</title><style>body{font:24px system-ui;padding:50px;background:#f3f5ef}h1{color:#426b61}</style><h1>${req.url}</h1><p>Local integration-test page.</p>`,
+    `<!doctype html>${process.argv.includes('--parked-identity') ? '<link rel="icon" href="/identity-icon.png">' : ''}<title>${process.argv.includes('--tab-sort') ? req.url.slice(1).replace(/[^a-z]/gi,'') : req.url.includes('research') ? 'Research paper' : 'Project brief'}</title><style>body{font:24px system-ui;padding:50px;background:#f3f5ef}h1{color:#426b61}</style><h1>${req.url}</h1><p>Local integration-test page.</p>`,
   );
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -125,6 +127,7 @@ async function connect(url) {
   let id = 0;
   const pending = new Map();
   const events = [];
+  const dragEvents = [];
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data),
       p = pending.get(m.id);
@@ -133,6 +136,7 @@ async function connect(url) {
       pending.delete(m.id);
       m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result);
     } else if (m.method === 'Runtime.exceptionThrown') events.push(m.params);
+    else if (m.method === 'Input.dragIntercepted') dragEvents.push(m.params);
   };
   const send = (method, params = {}) =>
     new Promise((resolve, reject) => {
@@ -156,7 +160,7 @@ async function connect(url) {
     if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
     return result.result.value;
   };
-  const client = { ws, send, evaluate, events };
+  const client = { ws, send, evaluate, events, dragEvents };
   clients.push(client);
   return client;
 }
@@ -218,14 +222,33 @@ try {
     i++
   )
     await delay(100);
+  if(!await app.evaluate('!!document.querySelector("#spaces .active")')){await fs.writeFile(path.join(out,'startup-failure.json'),JSON.stringify({events:app.events,text:await app.evaluate('document.body.innerText')},null,2));throw Error('Neo did not finish starting; see startup-failure.json');}
   assert.equal(
     await app.evaluate(`document.querySelector('#spaces .active').textContent`),
     'My space',
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
-  if (process.argv.includes('--toolbar-identity')) {
+  if (process.argv.includes('--save-flow')) {
+    await (await import('./check-save-flow.mjs')).checkSaveFlow({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--tab-sort')) {
+    await (await import('./check-tab-sort.mjs')).checkTabSort({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--auto-update-audit')) {
+    await (await import('./check-auto-update.mjs')).checkAutoUpdate({app,rpc,results,delay,origin});
+  } else if (process.argv.includes('--native-drag')) {
+    await (await import('./check-native-drag.mjs')).checkNativeDrag({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--topic-regroup')) {
+    await (await import('./check-topic-regroup.mjs')).checkTopicRegroup({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--selection-hover')) {
+    await (await import('./check-selection-hover.mjs')).checkSelectionHover({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--toolbar-identity')) {
     await (await import('./check-toolbar-identity.mjs')).checkToolbarIdentity({app,rpc,results,delay,origin});
+  } else if (process.argv.includes('--group-sort')) {
+    await (await import('./check-group-sort.mjs')).checkGroupSort({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--proposal')) {
+    await (await import('./check-proposal.mjs')).checkProposal({app,rpc,results,delay,origin,out,extensionOrigin});
+  } else if (process.argv.includes('--organisation')) {
+    await (await import('./check-organisation.mjs')).checkOrganisation({app,rpc,results,delay,origin,out});
   } else if (process.argv.includes('--stash-safety')) {
     await (await import('./check-stash-safety.mjs')).checkStashSafety({app,rpc,results,delay,origin});
   } else {
@@ -448,7 +471,7 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   });
-  await app.evaluate(`document.querySelector('#stash-button').click()`);
+  await app.evaluate(`document.querySelector('.tab-tools [aria-label="Save tabs"]').click()`);
   await delay(100);
   assert(await app.evaluate(`document.querySelector('#action-popover').matches(':popover-open')`));
   const shot = await app.send('Page.captureScreenshot', { format: 'png' });

@@ -69,12 +69,16 @@ let refreshAfterDrag = false;
 document.addEventListener('dragstart', (event) => {
   if (!event.target.closest('[draggable="true"]')) return;
   dragActive = true;
+  rpc('interaction-drag',{active:true}).catch(()=>{});
   // Capture also sees saved rows that stop event propagation.
   queueMicrotask(() => { if (event.defaultPrevented) finishDrag(); });
 }, true);
 function finishDrag() {
   if (!dragActive) return;
   dragActive = false;
+  document.body.classList.remove('dragging-open-tabs');
+  document.querySelectorAll('.native-drop-over').forEach(n=>n.classList.remove('native-drop-over'));
+  rpc('interaction-drag',{active:false}).catch(()=>{});
   clearDropFeedback();
   if (refreshAfterDrag) {
     refreshAfterDrag = false;
@@ -138,17 +142,23 @@ async function refresh() {
   refreshTimer = null;
   if (dragActive) { refreshAfterDrag = true; return; }
   const generation = ++refreshGeneration,
-    next = await rpc('load');
+    next = await rpc('load',{includeTimeline:recentMode==='sessions',allowBusy:true});
   if (generation !== refreshGeneration) return;
+  if(next.layoutBusy){
+    if(!data){await new Promise(resolve=>setTimeout(resolve,80));return refresh();}
+    refreshTimer=setTimeout(()=>refresh().catch(()=>{}),80);return;
+  }
   if (dragActive) { refreshAfterDrag = true; return; }
   const restoreScroll = retainScroll();
-  const boardChanged = !data || data.state.revision !== next.state.revision ||
-    JSON.stringify(data.sessionState?.active) !== JSON.stringify(next.sessionState?.active);
+  const boardChanged = !data || JSON.stringify([data.state.collections,data.state.spaces,data.state.settings,data.sessionState?.active]) !==
+    JSON.stringify([next.state.collections,next.state.spaces,next.state.settings,next.sessionState?.active]);
+  const tabsChanged=!data||JSON.stringify([data.tabs,data.groups,data.state.settings])!==JSON.stringify([next.tabs,next.groups,next.state.settings]);
+  const recentChanged=!data||JSON.stringify([data.recent,data.recentSessions,data.timeline])!==JSON.stringify([next.recent,next.recentSessions,next.timeline]);
   data = next;
   theme(data.state.settings.theme);
-  renderTabs();
+  if(tabsChanged) renderTabs();
   if (boardChanged) renderBoard();
-  renderRecent();
+  if(recentChanged) renderRecent();
   if (boardChanged) renderCurrentCollection();
   searchController?.update();
   restoreScroll();
@@ -158,14 +168,14 @@ async function change(action, payload) {
   const result = await rpc(action, payload);
   await refresh();
   const op = result?.operation || result;
-  if (op?.id && action !== 'settings')
+  if (op?.label && action !== 'settings')
     toast(
       op.skipped?.length
         ? `${op.label}: ${op.skipped.length} changed tabs stayed open.`
         : op.label || 'Saved',
       {
         undo:
-          action !== 'undo-action' && (op.before || op.closed?.length)
+          action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
             ? () => change('undo-action', { id: op.id, windowId: win })
             : undefined,
       },
@@ -192,7 +202,7 @@ function selectedIds() {
 function visibleTabs() {
   const query = $('#tab-search').value;
   const tabs = eligibleTabs().filter((t) => matchesPage(t, query));
-  return orderedTabs(tabs, data.state.settings.tabSort);
+  return orderedTabs(tabs, 'position');
 }
 function chooseTab(event, tab) {
   const visible = [...$('#tabs').querySelectorAll('.tab-row')]
@@ -227,6 +237,20 @@ function renderTabs() {
     restoreScroll();
   }
 }
+function nativeDropTarget(node, target) {
+  node.ondragover=e=>{if(!e.dataTransfer.types.includes('application/x-neo'))return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';node.classList.add('native-drop-over');};
+  node.ondragleave=e=>{if(!node.contains(e.relatedTarget))node.classList.remove('native-drop-over');};
+  node.ondrop=act(async e=>{
+    e.preventDefault();e.stopPropagation();node.classList.remove('native-drop-over');
+    let payload;try{payload=JSON.parse(e.dataTransfer.getData('application/x-neo'));}catch{return;}
+    if(payload.type!=='tabs')return;
+    const ids=payload.ids.filter(id=>data.tabs.some(t=>t.id===id&&!t.pinned));
+    if(!ids.length)return;
+    const windowId=target.windowId||data.tabs.find(t=>t.id===ids[0]).windowId;
+    finishDrag();
+    await change('move-open-tabs',{tabIds:ids,windowId,groupId:-1,...target});
+  });
+}
 function renderTabsContent() {
   const currentScope = libraryScope || (data.state.settings.currentWindowOnly ? 'window' : 'all');
   const scopes = $('#sidebar-scopes');
@@ -257,6 +281,7 @@ function renderTabsContent() {
     ? `${all.length} of ${eligibleTabs().length}`
     : eligibleTabs().length;
   tabTools?.update();
+  if(tabTools)tabTools.save.hidden=selectingTabs||selected.size>0;
   $('#tabs').classList.toggle('selecting', selectingTabs);
   const selectMode = $('#library-select-mode');
   if (selectMode) {
@@ -265,7 +290,9 @@ function renderTabsContent() {
     selectMode.title = selectingTabs ? 'Done selecting' : 'Select tabs';
     selectMode.setAttribute('aria-label', selectMode.title);
   }
-  const nodes = [];
+  const ungroup=el('div',{class:'native-ungroup-drop'},'Drop here to ungroup');
+  nativeDropTarget(ungroup,{});
+  const nodes = [ungroup];
   const groupContainers = new Map();
   for (const t of tabs) {
     let groupContainer;
@@ -359,6 +386,8 @@ function renderTabsContent() {
           header,
           body,
         );
+        nativeDropTarget(container,{windowId:t.windowId,groupId:t.groupId});
+        header.oncontextmenu=e=>{e.preventDefault();menu('Group actions', [['Always group these websites here',()=>actions.ruleSettings(Object.assign([...members],{groupName:name})),'group']],{anchor:header});};
         header.ondragstart = (e) => {
           if (e.target.tagName === 'INPUT' || e.target.closest('.open-group-fold')) {
             e.preventDefault();
@@ -369,7 +398,8 @@ function renderTabsContent() {
             'application/x-neo',
             JSON.stringify({ type: 'tabs', ids: members.map((tab) => tab.id) }),
           );
-          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.effectAllowed = 'copyMove';
+          document.body.classList.add('dragging-open-tabs');
           nativeGroupDragImage = el(
             'div',
             {
@@ -421,14 +451,17 @@ function renderTabsContent() {
             'application/x-neo',
             JSON.stringify({ type: 'tabs', ids: selected.has(t.id) ? [...selected] : [t.id] }),
           );
-          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.effectAllowed = 'copyMove';
+          const bounds=$('#sidebar').getBoundingClientRect(),drop=$('.native-ungroup-drop');
+          Object.assign(drop.style,{left:(bounds.left+12)+'px',width:(bounds.width-24)+'px'});
+          document.body.classList.add('dragging-open-tabs');
         },
       },
       check,
       favicon(t),
       el(
         'button',
-        { class: 'tab-open', title: t.title, onclick: (e) => chooseTab(e, t) },
+        { class: 'tab-open', title: t.title, draggable: !t.pinned, onclick: (e) => chooseTab(e, t) },
         el('span', { class: 'row-title' }, t.title || domain(t.url)),
       ),
       t.pinned
@@ -439,6 +472,8 @@ function renderTabsContent() {
             { glyph: 'close', quiet: true, className: 'row-close' },
           ),
     );
+    if(!t.pinned)nativeDropTarget(row,{windowId:t.windowId,groupId:t.groupId,beforeTabId:t.id});
+    row.oncontextmenu=e=>{e.preventDefault();menu('Tab actions', [['Create rule from this tab',()=>actions.ruleSettings([t]),'group'],...(t.groupId>=0?[['Move out of group',()=>change('move-open-tabs',{tabIds:[t.id],windowId:t.windowId,groupId:-1}),'ungroup']]:[])],{anchor:row});};
     if (t.parked) row.title = 'Parked · loads when opened';
     if (groupContainer) {
       if (groupContainer.expanded) groupContainer.body.append(row);
@@ -468,12 +503,6 @@ function renderTabsContent() {
   const selection = $('#selection');
   selection.hidden = !selectingTabs && !selected.size;
   const members = eligibleTabs().filter((t) => selected.has(t.id));
-  const groupId =
-    members.length &&
-    members[0].groupId >= 0 &&
-    members.every((t) => t.groupId === members[0].groupId)
-      ? members[0].groupId
-      : null;
   const control = (label, fn, disabled, glyph) => {
     const b = button(label, act(fn), {
       glyph: glyph || (label === 'Clear' ? 'clear' : label === 'Move to…' ? 'arrow' : 'select'),
@@ -519,7 +548,6 @@ function renderTabsContent() {
       !members.some((t) => t.groupId >= 0),
       'ungroup',
     ),
-    control('Rename group', () => beginName('native:' + groupId), groupId === null, 'rename'),
     control(
       'Close tabs',
       async () => {
@@ -583,7 +611,7 @@ function renderRecent() {
         recentMode === 'pages' ? 'Timeline' : 'Recent & history',
         () => {
           recentMode = recentMode === 'pages' ? 'sessions' : 'pages';
-          renderRecent();
+          refresh().catch(error=>toast(error.message,{error:true}));
         },
         { glyph: recentMode === 'pages' ? 'history' : 'back', className: 'recent-mode' },
       ),
@@ -726,12 +754,14 @@ function renderRecent() {
 let historyId = null;
 function renderSessionTimeline(root) {
   const snapshots = data.timeline || [];
+  const events=snapshots.filter(r=>r.event);
   const seen = new Map();
   const rows = [...snapshots].sort((a,b)=>b.at-a.at).filter(r => {
-    if (!r.snapshot?.links.length) return false;
+    if (!r.snapshot?.links.length&&!r.event) return false;
+    if(!r.event&&events.some(e=>e.windowId===r.windowId&&Math.abs(e.at-r.at)<2000))return false;
     const key = r.collectionId || r.windowId;
     const previous = seen.get(key); seen.set(key,r);
-    return !previous || previous.at-r.at > 60000 || (r.reason === 'Before switch' || r.reason === 'Closed collection');
+    return r.event || !previous || previous.at-r.at > 60000 || (r.reason === 'Before switch' || r.reason === 'Closed collection');
   })
     .filter(
       (r) =>
@@ -749,7 +779,13 @@ function renderSessionTimeline(root) {
     );
     return;
   }
-  const choices = el('select', {'aria-label':'Timeline events', class:'timeline-event-picker', onchange:e=>{historyId=e.target.value;renderRecent();}}, ...rows.map(r=>el('option', {value:r.id, selected:r.id===row.id}, new Date(r.at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})+' · '+r.name+' · '+r.snapshot.links.length+' tabs')));
+  const choices=el('details',{class:'timeline-event-list'},el('summary',{},'Browse events'));
+  let day;
+  for(const entry of rows) {
+    const date=new Date(entry.at).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'});
+    if(date!==day){day=date;choices.append(el('strong',{},day));}
+    choices.append(button(new Date(entry.at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})+' · '+entry.name+' · '+entry.snapshot.links.length+' tabs',()=>{historyId=entry.id;renderRecent();},{className:entry.id===row.id?'selected':''}));
+  }
   root.append(choices);
   const navigate = (offset) => {
     historyId = rows[index + offset].id;
@@ -784,6 +820,7 @@ function renderSessionTimeline(root) {
   const links = row.native ? row.tabs : row.snapshot.links;
   if (row.name && row.name !== 'Browsing session')
     root.append(el('strong', { class: 'history-name' }, row.name));
+  if(row.event)root.append(el('small',{class:'hint'},`${row.snapshot.links.length} saved · ${row.closedCount||0} tabs closed by this action`));
   const restore = async (link) => {
     const result = row.native
       ? link
@@ -855,6 +892,7 @@ function beginName(key) {
   input?.select();
   input?.scrollIntoView({ block: 'nearest' });
 }
+const nameDrafts=new Map(),nameSuggestions=new Map();
 function editableName(value, key, save, className = '') {
   if (editingName !== key) {
     const node = button(value, () => beginName(key), { className: 'editable-name ' + className });
@@ -864,14 +902,16 @@ function editableName(value, key, save, className = '') {
   }
   const input = el('input', {
     class: 'inline-name ' + className,
-    value,
+    value:nameDrafts.get(key)??value,
     maxLength: 500,
     'aria-label': 'Name',
     dataset: { focusKey: key },
   });
+  input.oninput=()=>nameDrafts.set(key,input.value);
   input.onblur = act(async () => {
     if (editingName !== key || !input.isConnected || rendering) return;
     editingName = null;
+    nameDrafts.delete(key);nameSuggestions.delete(key);
     await save(input.value.trim() || value);
   });
   input.onkeydown = (e) => {
@@ -883,6 +923,7 @@ function editableName(value, key, save, className = '') {
     if (e.key === 'Escape') {
       e.stopPropagation();
       editingName = null;
+      nameDrafts.delete(key);nameSuggestions.delete(key);
       renderTabs();
       renderBoard();
     }
@@ -1006,6 +1047,7 @@ function renderSpaces() {
                   'plus',
                 ],
                 null,
+                ['Organisation', () => actions.organisation({type:'space',id:s.id}), 'group'],
                 ['Remove workspace', () => confirmRemoveWorkspace(s), 'close'],
               ],
               { anchor: event.currentTarget },
@@ -1172,6 +1214,7 @@ function dragPayload(e) {
   }
 }
 
+let lastDropCollection;
 function newCollectionDropTarget() {
   const target=button('New collection', act(createCollection), {glyph:'plus',className:'add-collection'});
   target.ondragover=e=>{e.preventDefault();target.classList.add('drag-over');};
@@ -1179,7 +1222,9 @@ function newCollectionDropTarget() {
   target.ondrop=act(async e=>{
     e.preventDefault(); e.stopPropagation();
     const payload=dragPayload(e); if(!payload)return;
-    await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
+    const result=await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
+    lastDropCollection=(result.operation||result).collectionId;
+    const scroll=$('#main').scrollTop;renderBoard();$('#main').scrollTop=scroll;
   });
   return target;
 }
@@ -1208,7 +1253,7 @@ function renderCurrentCollection() {
     host.append(label, autoUpdate,button('Close current collection',act(()=>actions.closeCollection(c)),{glyph:'close',className:'close-current'}));
   } else {
     host.style.removeProperty('--current-color');
-    host.append(button('Close tabs',act(()=>actions.closeWindow()),{glyph:'close', title:'Close unpinned tabs without changing saved collections'}));
+    host.append(button('Close all',act(()=>actions.closeWindow()),{className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.'}));
   }
   const color=c?.color || 'lavender';
   const mark=document.querySelector('.brand-mark');
@@ -1302,8 +1347,8 @@ function collectionCard(c) {
     (name) => change('edit', { kind: 'collection', collectionId: c.id, name }),
     'collection-name',
   );
-  name.dataset.focusKey = c.id + ':name';
-  name.draggable = name.tagName !== 'INPUT';
+  if(!name.querySelector('input'))name.dataset.focusKey = c.id + ':name';
+  name.draggable = name.tagName !== 'INPUT'&&!name.querySelector('input');
   name.ondragstart = (e) => {
     e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
   };
@@ -1356,6 +1401,7 @@ function collectionCard(c) {
     ),
   );
   const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
+  if(lastDropCollection===c.id)card.append(button('Suggest name or destination',()=>actions.dropSuggestions(c),{glyph:'sparkles'}));
   card.append(el('div', {class:'collection-meta'},
     c.pinned ? el('span', {class:'collection-pinned'}, icon('pin'), 'Pinned') : null,
     el('time', {dateTime:new Date(c.updatedAt).toISOString()}, collectionAge(c)),
@@ -1634,19 +1680,18 @@ function collectionCard(c) {
 function savedSelectionToolbar(c, selection) {
   const ids = () => [...selection.ids];
   const members = c.links.filter((l) => selection.ids.has(l.id));
-  const group =
-    members.length && members[0].groupId && members.every((l) => l.groupId === members[0].groupId)
-      ? members[0].groupId
-      : null;
   const control = (label, fn, enabled = members.length, glyph) => {
+    const remove = label === 'Remove from collection';
     const b = button(label, act(fn), {
       glyph: glyph || (label === 'Clear' ? 'clear' : label === 'Move to…' ? 'arrow' : 'select'),
-      quiet: true,
+      quiet: !remove,
+      className: remove ? 'close-selected remove-selected' : '',
     });
+    if(remove)b.replaceChildren(label);
     b.disabled = !enabled;
     return b;
   };
-  return el(
+  const toolbar = el(
     'div',
     { class: 'saved-selection selection-toolbar', 'aria-label': 'Selected links in ' + c.name },
     el('strong', { 'aria-live': 'polite' }, members.length + ' selected'),
@@ -1691,7 +1736,6 @@ function savedSelectionToolbar(c, selection) {
       members.some((l) => l.groupId),
       'ungroup',
     ),
-    control('Rename group', () => beginName(group + ':name'), !!group, 'rename'),
     control('Move to…', () => {
       const search = el('input', {
         type: 'search',
@@ -1752,7 +1796,7 @@ function savedSelectionToolbar(c, selection) {
       search.focus({ preventScroll: true });
     }),
     control(
-      'Remove',
+      'Remove from collection',
       () =>
         change('edit', {
           kind: 'delete-links',
@@ -1764,6 +1808,12 @@ function savedSelectionToolbar(c, selection) {
       'close',
     ),
   );
+  const controls = [...toolbar.children];
+  toolbar.replaceChildren(
+    el('div', { class: 'selection-summary' }, controls.slice(0, 3)),
+    el('div', { class: 'selection-actions' }, controls.slice(3)),
+  );
+  return toolbar;
 }
 function savedRow(c, l) {
   const selection = savedSelections.get(c.id);
@@ -1886,6 +1936,7 @@ function collectionMenu(c, trigger) {
   const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Use a six-digit hex colour, such as #3498db.'); return change('edit', {kind:'collection',collectionId:c.id,color:e.target.value}); })});
   colors.append(el('label', {class:'custom-colour'}, 'Custom', custom, hex));
   const choices = [
+    ['Organisation', () => actions.organisation({type:'collection',id:c.id}), 'group'],
     ['Version history', () => actions.versions(c), 'history'],
     [
       c.pinned ? 'Unpin collection' : 'Pin collection',
@@ -1899,10 +1950,6 @@ function collectionMenu(c, trigger) {
       'pin',
     ],
     null,
-    ['Add link', () => editLink(c, undefined, trigger), 'plus'],
-    ['Add group', () => createGroup(c), 'group'],
-    null,
-    ['Rename', () => beginName(c.id + ':name'), 'rename'],
     [
       'Move to space',
       () =>
@@ -1919,7 +1966,8 @@ function collectionMenu(c, trigger) {
       'arrow',
     ],
     null,
-    ['Organise with AI', () => actions.ai(c), 'sparkles', !c.links.length],
+    ['Organise collection with AI', () => actions.ai(c), 'sparkles', !c.links.length],
+    ['Research overview', () => actions.overview(c), 'note', !c.links.length],
     ['Apply domain rules', () => change('rules', { collectionId: c.id }), 'group'],
     ['Export', () => actions.export(c, trigger), 'tray'],
     [
@@ -1952,7 +2000,7 @@ function groupMenu(c, g, trigger) {
           }),
         'external',
       ],
-      ['Rename group', () => beginName(g.id + ':name'), 'rename'],
+      ['Always group these websites here',()=>actions.ruleSettings(Object.assign(c.links.filter(l=>l.groupId===g.id),{groupName:g.name})),'group'],
       [
         'Ungroup',
         () => change('edit', { kind: 'delete-group', collectionId: c.id, groupId: g.id }),
@@ -2106,6 +2154,7 @@ function searchDialog() {
 async function start() {
   win = await currentWindow();
   actions = createActionDialogs({
+    inLibrary: true,
     getData: () => data,
     windowId: win,
     getTabIds: selectedIds,
@@ -2114,21 +2163,7 @@ async function start() {
   await refresh();
   $('#settings').replaceChildren(icon('settings'));
   $('#settings').onclick = actions.settings;
-  $('#ai-tools').replaceChildren(icon('sparkles'), 'Organise with AI');
-  $('#ai-tools').onclick = (e) => {
-    if (activeCollection) return actions.ai(findCollection());
-    menu(
-      'Organise with AI',
-      [
-        ...data.state.collections
-          .filter((c) => c.spaceId === activeSpace && c.links.length)
-          .map((c) => [c.name, () => actions.ai(c), 'sparkles']),
-        null,
-        ['AI connection settings', () => actions.aiSettings(), 'settings'],
-      ],
-      { anchor: e.currentTarget },
-    );
-  };
+  $('#ai-tools').hidden=true;
 
   $('#imports').onclick = actions.import;
   $('#recovery').onclick = actions.recovery;
@@ -2169,6 +2204,8 @@ async function start() {
     change,
     actions,
     compact: true,
+    showCloseAll: false,
+    showTopicAI: true,
   });
   tabTools.save.id = 'stash-button';
   tabTools.dedup.id = 'dedup';
@@ -2187,7 +2224,8 @@ async function start() {
   );
   selectMode.id = 'library-select-mode';
   selectMode.className = 'selection-mode-button';
-  $('#tab-tools').replaceChildren(tabTools.node, selectMode);
+  tabTools.node.append(selectMode);
+  $('#tab-tools').replaceChildren(tabTools.node);
   renderTabs();
   chrome.runtime.onMessage.addListener((m) => {
     if (m.event === 'navigate')
@@ -2231,6 +2269,7 @@ async function start() {
 }
 function handleNavigation() {
   const params = new URLSearchParams(location.hash.slice(1));
+  if(params.has('q')) {$('#tab-search').value=params.get('q');$('#tab-search').dispatchEvent(new Event('input'));$('#tab-search').focus();}
   if (params.get('collection')) {
     activeCollection = params.get('collection');
     activeSpace = findCollection()?.spaceId || activeSpace;

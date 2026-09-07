@@ -11,6 +11,7 @@ function fixture() {
     { id: 3, windowId: 1, index: 2, url: 'https://pin.test', pinned: true, groupId: -1 },
   ];
   const timeline = new Map();
+  const settings={captureWebStore:false};
   const collections = [
     {
       id: 'b',
@@ -69,7 +70,7 @@ function fixture() {
     },
   };
   const db = {
-    getState: async () => ({ collections }),
+    getState: async () => ({ collections,settings }),
     mutate: async (_, transform) => transform({ collections }),
     all: async () => [...timeline.values()],
     write: async (_, r) => {
@@ -95,6 +96,7 @@ function fixture() {
     browser,
     fail: () => (fail = true),
     collections,
+    settings,
     ops,
   };
 }
@@ -119,12 +121,26 @@ test('global auto-update updates open sessions and preserves one writer for dupl
   assert.equal(JSON.stringify(f.collections[0].links), saved);
 });
 
+test('Web Store pages are ordinary automatically captured pages even with obsolete exclusion settings',async()=>{
+  const f=fixture();
+  const store=await f.browser.tabs.create({windowId:1,url:'https://chromewebstore.google.com/detail/example',title:'Store'});
+  await f.browser.storage.session.set({neoSessions:{active:{1:{collectionId:'b',tracking:true}},parked:{}}});
+  await f.manager.capture(1);
+  assert(f.collections[0].links.some(l=>l.url===store.url));
+  f.settings.captureWebStore=true;await f.manager.capture(1);
+  assert(f.collections[0].links.some(l=>l.url===store.url));
+  await f.manager.closeCurrent({collectionId:'b',windowId:1});
+  assert(!f.tabs.some(t=>t.id===store.id));
+  assert([...f.timeline.values()].some(r=>r.event==='close'));
+});
+
 test('stash pauses only affected active collections and later checkpoints cannot shrink them', async () => {
   const f=fixture();
   f.collections.push({id:'other',name:'Other',autoUpdate:true,links:[],groups:[]});
   await f.browser.storage.session.set({neoSessions:{active:{
     1:{collectionId:'b',tracking:true},2:{collectionId:'other',tracking:true},
   },parked:{}}});
+  await f.manager.capture(1);
   const before=structuredClone(f.collections[0].links);
   await f.manager.pauseForStash([{id:1,windowId:1}]);
   const active=(await f.manager.list()).active;
@@ -326,6 +342,14 @@ test('paused collection keeps saved links despite changes to open tabs', async (
   await f.manager.capture(1);
   assert.equal(f.collections[0].links.length, 1);
 });
+test('pausing saves the last live changes before stopping updates',async()=>{
+ const f=fixture();await f.manager.switchTo({destinationId:'b',windowId:1});
+ await f.browser.tabs.create({windowId:1,url:'https://last-change.test/',title:'Last change',groupId:-1});
+ await f.manager.setAutoUpdate({collectionId:'b',windowId:1,enabled:false});
+ assert(f.collections[0].links.some(l=>l.url==='https://last-change.test/'));
+ await f.browser.tabs.create({windowId:1,url:'https://after-pause.test/',groupId:-1});await f.manager.capture(1);
+ assert(!f.collections[0].links.some(l=>l.url==='https://after-pause.test/'));
+});
 
 test('switching to an empty collection keeps the same browser window alive', async () => {
   const f = fixture();
@@ -334,4 +358,20 @@ test('switching to an empty collection keeps the same browser window alive', asy
   await f.manager.switchTo({ destinationId: 'b', windowId: 1 });
   assert(f.tabs.some((t) => t.windowId === 1 && t.url === 'chrome-extension://neo/app.html'));
   assert.equal(f.collections[0].links.length, 0);
+});
+
+for(const outgoing of ['keep','update'])test('explicit switch '+outgoing+' respects paused source and always saves recovery',async()=>{
+ const f=fixture();const source={id:'a',name:'Paused work',autoUpdate:false,links:[{id:'old',url:'https://old.test/',title:'Old'}],groups:[],note:'Keep note'};f.collections.push(source);
+ await f.browser.storage.session.set({neoSessions:{active:{1:{collectionId:'a',tracking:false}},parked:{}}});
+ await f.manager.switchTo({destinationId:'b',windowId:1,outgoing,expectedSourceId:'a'});
+ assert.equal(source.autoUpdate,false);assert.equal(source.note,'Keep note');
+ assert.equal(source.links.some(l=>l.url==='https://a.test/'),outgoing==='update');
+ assert.equal(source.links.some(l=>l.url==='https://old.test/'),outgoing==='keep');
+ assert.equal(f.collections.length,2);
+ assert([...f.timeline.values()].some(r=>r.snapshot.links.some(l=>l.url==='https://a.test/')));
+});
+test('stale switch source is rejected before changing tabs',async()=>{
+ const f=fixture();const before=structuredClone(f.tabs);
+ await assert.rejects(f.manager.switchTo({destinationId:'b',windowId:1,outgoing:'update',expectedSourceId:'gone'}),/active collection changed/);
+ assert.deepEqual(f.tabs,before);
 });

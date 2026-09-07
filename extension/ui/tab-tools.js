@@ -14,14 +14,28 @@ export function orderedTabs(tabs, order = 'recent') {
 }
 
 // Both tab surfaces use these exact controls, settings and save dialog.
-export function createTabTools({ getTabs, getSettings, change, actions, compact = false }) {
-  const sort = button('Arrange tabs', e => menu('Arrange tabs', [
-    ['Group by rules now', () => actions.arrangeRules(), 'group'],
-    ['Group with AI…', () => actions.aiTabs(), 'sparkles'],
-    [getSettings().autoGroup ? 'Automatic rules: on' : 'Automatic rules: off', () => change('settings',{settings:{autoGroup:!getSettings().autoGroup}}), 'check'],
-    ['Configure rules', () => actions.ruleSettings(), 'settings'], null,
-    ...[['position','Browser order'],['recent','Most recent first'],['title','Title A–Z'],['domain','Website'],['reverse','Reverse browser order']].map(([tabSort,label])=>[label,()=>change('settings',{settings:{tabSort}}),getSettings().tabSort===tabSort?'check':undefined]),
-  ], {anchor:e.currentTarget}), {glyph:'sort',quiet:compact});
+export function createTabTools({ getTabs, getSettings, change, actions, compact = false, showCloseAll = true, showTopicAI = true }) {
+  const openGrouping=()=>{
+    const sort=more;
+    const include=el('input',{type:'checkbox',checked:getSettings().regroupExisting!==false,'aria-label':'Include already grouped tabs'});
+    const apply=button('Group & sort',task(async()=>{
+      const started=performance.now();delete sort.dataset.durationMs;sort.disabled=true;sort.setAttribute('aria-busy','true');close();
+      try {
+        if(include.checked!==(getSettings().regroupExisting!==false))await change('settings',{settings:{regroupExisting:include.checked}});
+        const result=await actions.groupSort({regroupExisting:include.checked});sort.dataset.operationId=result?.id||'';sort.dataset.timings=JSON.stringify({operationMs:result?.durationMs,...result?.timings});
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      }finally{sort.dataset.durationMs=String(Math.round(performance.now()-started));sort.disabled=false;sort.removeAttribute('aria-busy');}
+    }),{className:'primary group-apply'});
+    const {close}=popover('Group tabs',el('div',{},el('p',{class:'hint'},'Use rules, then websites. Order groups and tab titles A–Z.'),el('label',{class:'check-label'},include,'Include already grouped tabs')),[apply],{anchor:sort});
+  };
+  const autoState=el('small',{class:'auto-group-state'});
+  const auto=el('input',{type:'checkbox',role:'switch','aria-label':'Auto-group new tabs',onchange:task(async e=>{const enabled=e.target.checked;auto.disabled=true;try{await change('settings',{settings:{autoGroup:enabled}});}catch(error){auto.checked=!enabled;throw error;}finally{auto.disabled=false;autoState.textContent=auto.checked?'On':'Off';}})});
+  const grouping=el('div',{class:'grouping-controls'},el('label',{class:'settings-preference auto-group-control'},el('span',{},'Auto-group new tabs'),auto,autoState));
+  const more=button('More tab actions',e=>menu('Tab actions',[
+    ['Group & sort',openGrouping,'group'],
+    ...(showTopicAI ? [['Group by topic with AI',()=>actions.aiTabs(),'sparkles'],null] : []),
+    ...[['recent','Most recent first'],['title','Title A–Z'],['domain','Website']].map(([order,label])=>[label,()=>actions.sortTabs(order)]),
+  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Reorder browser tabs in this window. Groups stay together; pinned tabs stay in place.')}),{glyph:'more',quiet:true,className:'tab-more-button'});
   const save = button('Save tabs', () => actions.save(), { glyph: 'tray', quiet: compact });
   const dedup = button(
     'Close duplicate tabs',
@@ -34,12 +48,14 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
   const node = el(
     'div',
     { class: 'tab-tools' + (compact ? ' compact' : ''), 'aria-label': 'Tab actions' },
-    sort,
+    grouping,
+    more,
     save,
     dedup,
-    button('Close tabs', task(()=>actions.closeWindow()), {glyph:'close',quiet:compact,title:'Close unpinned tabs without updating saved collections'}),
+    ...(showCloseAll ? [button('Close all', task(()=>actions.closeWindow()), {className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.'})] : []),
   );
   function update() {
+    auto.checked=getSettings().autoGroup!==false;autoState.textContent=auto.checked?'On':'Off';
     const count = duplicateCandidates(getTabs()).length;
     dedup.replaceChildren(
       icon('broom'),

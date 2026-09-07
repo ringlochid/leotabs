@@ -7,6 +7,7 @@ export function utilityTab(url = '') {
 export function manageableURL(url = '') {
   return /^(?:https?|file|chrome|edge|chrome-extension|extension):/i.test(url) || /^about:(?:blank|newtab)/i.test(url);
 }
+
 export function duplicateKey(tab) {
   const url = tab.resourceUrl || tab.pendingUrl || tab.url || '';
   if (!manageableURL(url)) return null;
