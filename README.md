@@ -1,34 +1,34 @@
-# Neo — Tabs & Collections
+# LeoTabs — Tab Manager & Switcher
 
 A local Chrome/Chromium extension for finding open pages, saving browser work and resuming only what you need. This repository is the implementation, separate from the earlier interactive concepts.
 
-**Neo 0.13 makes grouping immediate.** Group & sort applies local rules and website defaults, short names, varied persistent colours and alphabetical order, with browser-layout Undo. Its compact Group panel remembers whether to include already grouped tabs. Auto-group uses a visible On/Off switch and waits for two matching tabs before creating a group. Open-tab groups accept drag-and-drop moves and Ungroup drops. Grouping uses built-in defaults, without a rule editor. AI topic grouping asks whether to include already grouped tabs, then applies a single batch; Organise collection with AI combines a name, note and topic groups, with no singleton groups; AI organisation is limited to open tabs or one collection. Web Store pages are normal resources. See [0.13 acceptance and performance](docs/grouping-0.13.md).
+**LeoTabs 0.13 makes grouping immediate.** Group & sort applies local rules and website defaults, short names, varied persistent colours and alphabetical order, with browser-layout Undo. Its compact Group panel remembers whether to include already grouped tabs. Auto-group uses a visible On/Off switch and waits for two matching tabs before creating a group. Open-tab groups accept drag-and-drop moves and Ungroup drops. Grouping uses built-in defaults, without a rule editor. AI topic grouping asks whether to include already grouped tabs, then applies a single batch; Organise collection with AI combines a name, note and topic groups, with no singleton groups; AI organisation is limited to open tabs or one collection. Web Store pages are normal resources. See [0.13 acceptance and performance](docs/grouping-0.13.md).
 
 **Organisation settings have been removed.** There are no global, space or collection policy editors, inherited templates, or background AI naming and sorting policies. Built-in Auto-group, explicit Group & sort, and the separate AI actions remain. Old saved policies are ignored when loading or importing a library; tabs, notes and manual choices are preserved.
 
-**Neo 0.8.0 redesigns the overlay around clear search scopes.** This window, All windows and Recently closed are visible choices; Audio is a filter. Individual close/mute controls, a separate session-history view, plain search prompts and labeled selection actions keep everyday work direct. The wider overlay has larger previews, a restrained backdrop and a compact list on short screens. The library sidebar shares the scope choices.
+**LeoTabs 0.8.0 redesigns the overlay around clear search scopes.** This window, All windows and Recently closed are visible choices; Audio is a filter. Individual close/mute controls, a separate session-history view, plain search prompts and labeled selection actions keep everyday work direct. The wider overlay has larger previews, a restrained backdrop and a compact list on short screens. The library sidebar shares the scope choices.
 
-**Neo 0.7.2 adds Ctrl-drag copying and a shared Swap to collection action.** Drag saved tabs normally to move them; hold Ctrl to copy individual tabs, selections or whole groups. Open adds saved pages; Swap replaces the current unpinned session while retaining it for return. Both the library and overlay use the same action.
+**LeoTabs 0.7.2 adds Ctrl-drag copying and a shared Swap to collection action.** Drag saved tabs normally to move them; hold Ctrl to copy individual tabs, selections or whole groups. Open adds saved pages; Swap replaces the current unpinned session while retaining it for return. Both the library and overlay use the same action.
 
-**Neo 0.7.1 adds confirmed workspace removal.** Remove any workspace from its menu, including its collections, saved tabs and notes. Cancel leaves everything intact; removing the last workspace creates a fresh empty one. Open browser tabs stay open.
+**LeoTabs 0.7.1 adds confirmed workspace removal.** Remove any workspace from its menu, including its collections, saved tabs and notes. Cancel leaves everything intact; removing the last workspace creates a fresh empty one. Open browser tabs stay open.
 
-**Neo 0.7.0 adds live collection switching and Previously open session history.** Return to retained tabs without reloading them; browse dated local snapshots and restore individual pages or a whole session. See [research, behavior and validation](docs/workona-0.7.md).
+**LeoTabs 0.7.0 adds live collection switching and Previously open session history.** Return to retained tabs without reloading them; browse dated local snapshots and restore individual pages or a whole session. See [research, behavior and validation](docs/workona-0.7.md).
 
-Neo 0.5.4 added notes directly inside collection cards. Add note focuses an inline editor without expanding the collection. Delete note removes it with Undo; expanding a collection no longer inserts an empty note automatically.
+LeoTabs 0.5.4 added notes directly inside collection cards. Add note focuses an inline editor without expanding the collection. Delete note removes it with Undo; expanding a collection no longer inserts an empty note automatically.
 
-Neo 0.5.3 moved Settings to the top-right toolbar. A compact grouped menu gives instant theme and browsing controls, focused connection dialogs, and separate import/backup screens. See [settings UX validation](docs/settings-0.5.3.md).
+LeoTabs 0.5.3 moved Settings to the top-right toolbar. A compact grouped menu gives instant theme and browsing controls, focused connection dialogs, and separate import/backup screens. See [settings UX validation](docs/settings-0.5.3.md).
 
-Neo 0.5.2 clarified selection controls. Cleanup has a compact circular duplicate count, Done exits selection, and the separate Close tabs action has a visible label. Focus rings stay inside their controls. See [selection UI validation](docs/selection-0.5.2.md).
+LeoTabs 0.5.2 clarified selection controls. Cleanup has a compact circular duplicate count, Done exits selection, and the separate Close tabs action has a visible label. Focus rings stay inside their controls. See [selection UI validation](docs/selection-0.5.2.md).
 
-Neo 0.5.1 added a searchable Switch collection picker with optional saving. Choose a collection to switch immediately; Save current tabs creates a new collection automatically when checked.
+LeoTabs 0.5.1 added a searchable Switch collection picker with optional saving. Choose a collection to switch immediately; Save current tabs creates a new collection automatically when checked.
 
-Neo 0.5.0 made everyday actions direct and compact. Collection, group and link options use anchored menus. Open all opens fresh tabs immediately in the current window; Open in new window does the same in a new window. Stash always saves into a new collection with an optional close checkbox. Collections fold, the expand button becomes Restore, selection uses compact icon tools above the lists, and collection dragging shows a before/after insertion line. Organise with AI is visible in the library header. See [the 0.5 UX report](docs/direct-0.5.md). Earlier reports describe historical releases.
+LeoTabs 0.5.0 made everyday actions direct and compact. Collection, group and link options use anchored menus. Open all opens fresh tabs immediately in the current window; Open in new window does the same in a new window. Stash always saves into a new collection with an optional close checkbox. Collections fold, the expand button becomes Restore, selection uses compact icon tools above the lists, and collection dragging shows a before/after insertion line. Organise with AI is visible in the library header. See [the 0.5 UX report](docs/direct-0.5.md). Earlier reports describe historical releases.
 
 ## Install the local build
 
 1. Open `chrome://extensions` in Chrome (or `edge://extensions` in Edge).
-2. Enable Developer mode, choose **Load unpacked**, and select `C:\Users\ring_\Desktop\Neo tab manger\extension`, or the folder extracted from [neo-0.13.0.zip](output/neo-0.13.0.zip). The project root is not an extension folder.
-3. If Neo is already installed from this folder, click **Reload** on its existing extension card, then refresh open Neo library pages. Keep the existing installation to retain saved data and shortcuts. The toolbar button opens the library. Alt+Q opens the switcher.
+2. Enable Developer mode, choose **Load unpacked**, and select `C:\Users\ring_\Desktop\Neo tab manger\extension`, or the folder extracted from [leotabs-0.13.0.zip](output/leotabs-0.13.0.zip). The project root is not an extension folder.
+3. If LeoTabs is already installed from this folder, click **Reload** on its existing extension card, then refresh open LeoTabs library pages. Keep the existing installation to retain saved data and shortcuts. The toolbar button opens the library. Alt+Q opens the switcher.
 4. Open the shortcut configuration to check or remap Alt+Q (switcher), Alt+Shift+K (search only), and Alt+Shift+L (library). Browser/OS conflicts can leave shortcuts unassigned.
 
 Chrome/Chromium 123 or newer is required. No server, package installation, build step or account is needed for the local core. Node 22 or newer runs the development checks.

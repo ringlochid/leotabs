@@ -229,7 +229,7 @@ export function sessionManager({ browser, db, ops }) {
       await capture(windowId, { reason: 'Switched to collection', force: true }).catch(() => {});
       const outgoingSnapshot=saved||{id:uid(),at:Date.now(),windowId,collectionId:sourceId,snapshot:snapshotTabs(source)};
       await db.write('timeline',{...outgoingSnapshot,event:'switch',name:sourceName+' → '+s.active[windowId].name,reason:'Switched collection',operationId:closeOperation?.id,closedTabIds:closeOperation?.closed||[],closedCount:closeOperation?.closed?.length||0,destinationId});
-      // Keep Neo visible when invoked from the library. Otherwise activate a destination page.
+      // Keep LeoTabs visible when invoked from the library. Otherwise activate a destination page.
       const visible = await browser.tabs.query({ windowId });
       const libraryTab =
         !focusPage && visible.find((t) => t.url?.startsWith(browser.runtime.getURL('app.html')));

@@ -29,7 +29,7 @@ const entity = (s) =>
   });
 export function jsonExport(collections) {
   return JSON.stringify(
-    { format: 'neo-tabs', version: SCHEMA, exportedAt: new Date().toISOString(), collections },
+    { format: 'leotabs-collections', version: SCHEMA, exportedAt: new Date().toISOString(), collections },
     null,
     2,
   );
@@ -48,7 +48,7 @@ export function recoveryLog(records = []) {
 export function backupExport(state, journal = []) {
   return JSON.stringify(
     {
-      format: 'neo-backup',
+      format: 'leotabs-backup',
       spaces: validateSpaces(state.spaces),
       version: 1,
       exportedAt: new Date().toISOString(),
@@ -83,8 +83,8 @@ export function htmlExport(collections) {
   const rows = [
     '<!DOCTYPE NETSCAPE-Bookmark-file-1>',
     '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
-    '<TITLE>Neo bookmarks</TITLE>',
-    '<H1>Neo bookmarks</H1>',
+    '<TITLE>Bookmarks</TITLE>',
+    '<H1>Bookmarks</H1>',
     '<DL><p>',
   ];
   const links = (items) => {
@@ -125,14 +125,17 @@ export function parseImport(source, filename = 'import.json') {
     spaces;
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     const data = JSON.parse(trimmed);
-    if (['neo-tabs', 'neo-backup'].includes(data.format) && data.version !== SCHEMA)
+    // Accept existing backups without migrating or rewriting the user's files.
+    const isBackup = ['leotabs-backup', 'neo-backup'].includes(data.format);
+    const isCollection = ['leotabs-collections', 'neo-tabs'].includes(data.format);
+    if ((isBackup || isCollection) && data.version !== SCHEMA)
       throw new Error('This backup version is unsupported.');
-    if (data.format === 'neo-backup') {
+    if (isBackup) {
       spaces = validateSpaces(data.spaces);
       collections = validateCollections(data.collections, { freshIds: true });
       settings = portableSettings(data.settings);
       recovery = recoveryLog(data.recovery || []);
-    } else if (data.format === 'neo-tabs')
+    } else if (isCollection)
       collections = validateCollections(data.collections, { freshIds: true });
     else if (Array.isArray(data) && data.every((c) => Array.isArray(c.links)))
       collections = validateCollections(data, { freshIds: true });
@@ -163,7 +166,7 @@ export function parseImport(source, filename = 'import.json') {
       });
     } else
       throw new Error(
-        'Unrecognised JSON export. Choose a Neo backup or supported collection export.',
+        'Unrecognised JSON export. Choose a backup JSON or supported collection export.',
       );
   } else if (/<(?:!DOCTYPE NETSCAPE|DL|H3|A\s)/i.test(trimmed)) {
     const stack = [];

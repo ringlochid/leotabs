@@ -371,7 +371,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           el(
             'p',
             { class: 'hint' },
-            'Neo backup, bookmark HTML, Markdown, Toby JSON or OneTab text.',
+            'Backup JSON, bookmark HTML, Markdown, Toby JSON or OneTab text.',
           ),
           el('div', {class:'file-picker'}, input, button('Choose file', () => input.click(), {glyph:'plus',className:'dialog-action'})),
         ),
@@ -443,7 +443,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           { class: 'export-actions' },
           button('Markdown', () => download(markdownExport([c]), c.name + '.md', 'text/markdown')),
           button('Bookmark HTML', () => download(htmlExport([c]), c.name + '.html', 'text/html')),
-          button('Neo JSON', () => download(jsonExport([c]), c.name + '.json', 'application/json')),
+          button('JSON', () => download(jsonExport([c]), c.name + '.json', 'application/json')),
           button(
             'Copy Markdown',
             act(async () => {
@@ -713,24 +713,24 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Export all collections or import saved work. Neo backups also include settings and recovery history; API keys are excluded.',
+          'Export all collections or import saved work. Backups also include settings and recovery history; API keys are excluded.',
         ),
         button(
-          'Download Neo backup',
+          'Backup JSON',
           () =>
-            download(backupExport(data.state, data.journal), 'neo-backup.json', 'application/json'),
+            download(backupExport(data.state, data.journal), 'backup.json', 'application/json'),
           { glyph: 'tray', className: 'transfer-primary' },
         ),
         el(
             'div',
             { class: 'transfer-formats' },
             button('Bookmark HTML', () =>
-              download(htmlExport(data.state.collections), 'neo-bookmarks.html', 'text/html'),
+              download(htmlExport(data.state.collections), 'bookmarks.html', 'text/html'),
             ),
             button('Markdown', () =>
               download(
                 markdownExport(data.state.collections),
-                'neo-collections.md',
+                'collections.md',
                 'text/markdown',
               ),
             ),

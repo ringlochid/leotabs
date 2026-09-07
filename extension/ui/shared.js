@@ -31,9 +31,9 @@ export async function rpc(action, data = {}) {
     (result?.ok && action === 'load' && result.value?.protocol !== PROTOCOL)
   )
     throw new Error(
-      'Neo was updated. Reload Neo at chrome://extensions, then refresh the library.',
+      'LeoTabs was updated. Reload LeoTabs at chrome://extensions, then refresh the library.',
     );
-  if (!result?.ok) throw new Error(result?.error || 'Neo did not respond. Please reopen the page.');
+  if (!result?.ok) throw new Error(result?.error || 'LeoTabs did not respond. Please reopen the page.');
   return result.value;
 }
 export function el(tag, props = {}, ...children) {

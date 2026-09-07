@@ -6,7 +6,7 @@ if (context) {
   const previous = document.activeElement;
   const host = document.createElement('div');
   host.setAttribute('popover', 'manual');
-  host.setAttribute('aria-label', 'Neo tab switcher');
+  host.setAttribute('aria-label', 'LeoTabs tab switcher');
   for (const [key, value] of Object.entries({
     all: 'initial',
     position: 'fixed',

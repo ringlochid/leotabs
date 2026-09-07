@@ -11,7 +11,7 @@ export function libraryAccess(browser) {
     return browser.tabs.create({url:target,active:disposition!=='newBackgroundTab'});
   }
   function register() {
-    browser.omnibox.setDefaultSuggestion({description:'Open Neo Library or search your tabs and collections: %s'});
+    browser.omnibox.setDefaultSuggestion({description:'Open LeoTabs Library or search your tabs and collections: %s'});
     browser.omnibox.onInputEntered.addListener((text,disposition)=>open(text.trim(),disposition).catch(()=>{}));
   }
   return {open,register,url};

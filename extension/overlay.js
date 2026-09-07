@@ -212,7 +212,7 @@
   }
 
   // extension/lib/version.js
-  var PROTOCOL = 35;
+  var PROTOCOL = 36;
 
   // extension/ui/raster.js
   async function rasterCanvas(data) {
@@ -255,9 +255,9 @@
     });
     if (result?.error === "Unknown action." || result?.ok && action === "load" && result.value?.protocol !== PROTOCOL)
       throw new Error(
-        "Neo was updated. Reload Neo at chrome://extensions, then refresh the library."
+        "LeoTabs was updated. Reload LeoTabs at chrome://extensions, then refresh the library."
       );
-    if (!result?.ok) throw new Error(result?.error || "Neo did not respond. Please reopen the page.");
+    if (!result?.ok) throw new Error(result?.error || "LeoTabs did not respond. Please reopen the page.");
     return result.value;
   }
   function el(tag, props = {}, ...children) {
@@ -704,7 +704,7 @@
     {
       id: "history",
       title: "Search closed pages",
-      detail: "Recent browser sessions and retained Neo actions",
+      detail: "Recent browser sessions and retained LeoTabs actions",
       context: false
     },
     {
@@ -1367,7 +1367,7 @@
   });
   function jsonExport(collections) {
     return JSON.stringify(
-      { format: "neo-tabs", version: SCHEMA, exportedAt: (/* @__PURE__ */ new Date()).toISOString(), collections },
+      { format: "leotabs-collections", version: SCHEMA, exportedAt: (/* @__PURE__ */ new Date()).toISOString(), collections },
       null,
       2
     );
@@ -1386,7 +1386,7 @@
   function backupExport(state, journal = []) {
     return JSON.stringify(
       {
-        format: "neo-backup",
+        format: "leotabs-backup",
         spaces: validateSpaces(state.spaces),
         version: 1,
         exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -1419,8 +1419,8 @@
     const rows = [
       "<!DOCTYPE NETSCAPE-Bookmark-file-1>",
       '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
-      "<TITLE>Neo bookmarks</TITLE>",
-      "<H1>Neo bookmarks</H1>",
+      "<TITLE>Bookmarks</TITLE>",
+      "<H1>Bookmarks</H1>",
       "<DL><p>"
     ];
     const links = (items) => {
@@ -1454,14 +1454,16 @@
     let collections = [], skipped = 0, settings, recovery, spaces;
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       const data = JSON.parse(trimmed);
-      if (["neo-tabs", "neo-backup"].includes(data.format) && data.version !== SCHEMA)
+      const isBackup = ["leotabs-backup", "neo-backup"].includes(data.format);
+      const isCollection = ["leotabs-collections", "neo-tabs"].includes(data.format);
+      if ((isBackup || isCollection) && data.version !== SCHEMA)
         throw new Error("This backup version is unsupported.");
-      if (data.format === "neo-backup") {
+      if (isBackup) {
         spaces = validateSpaces(data.spaces);
         collections = validateCollections(data.collections, { freshIds: true });
         settings = portableSettings(data.settings);
         recovery = recoveryLog(data.recovery || []);
-      } else if (data.format === "neo-tabs")
+      } else if (isCollection)
         collections = validateCollections(data.collections, { freshIds: true });
       else if (Array.isArray(data) && data.every((c) => Array.isArray(c.links)))
         collections = validateCollections(data, { freshIds: true });
@@ -1488,7 +1490,7 @@
         });
       } else
         throw new Error(
-          "Unrecognised JSON export. Choose a Neo backup or supported collection export."
+          "Unrecognised JSON export. Choose a backup JSON or supported collection export."
         );
     } else if (/<(?:!DOCTYPE NETSCAPE|DL|H3|A\s)/i.test(trimmed)) {
       const stack = [];
@@ -1994,7 +1996,7 @@
             el(
               "p",
               { class: "hint" },
-              "Neo backup, bookmark HTML, Markdown, Toby JSON or OneTab text."
+              "Backup JSON, bookmark HTML, Markdown, Toby JSON or OneTab text."
             ),
             el("div", { class: "file-picker" }, input, button("Choose file", () => input.click(), { glyph: "plus", className: "dialog-action" }))
           ),
@@ -2060,7 +2062,7 @@
             { class: "export-actions" },
             button("Markdown", () => download(markdownExport([c]), c.name + ".md", "text/markdown")),
             button("Bookmark HTML", () => download(htmlExport([c]), c.name + ".html", "text/html")),
-            button("Neo JSON", () => download(jsonExport([c]), c.name + ".json", "application/json")),
+            button("JSON", () => download(jsonExport([c]), c.name + ".json", "application/json")),
             button(
               "Copy Markdown",
               act(async () => {
@@ -2319,11 +2321,11 @@
           el(
             "p",
             { class: "hint" },
-            "Export all collections or import saved work. Neo backups also include settings and recovery history; API keys are excluded."
+            "Export all collections or import saved work. Backups also include settings and recovery history; API keys are excluded."
           ),
           button(
-            "Download Neo backup",
-            () => download(backupExport(data.state, data.journal), "neo-backup.json", "application/json"),
+            "Backup JSON",
+            () => download(backupExport(data.state, data.journal), "backup.json", "application/json"),
             { glyph: "tray", className: "transfer-primary" }
           ),
           el(
@@ -2331,13 +2333,13 @@
             { class: "transfer-formats" },
             button(
               "Bookmark HTML",
-              () => download(htmlExport(data.state.collections), "neo-bookmarks.html", "text/html")
+              () => download(htmlExport(data.state.collections), "bookmarks.html", "text/html")
             ),
             button(
               "Markdown",
               () => download(
                 markdownExport(data.state.collections),
-                "neo-collections.md",
+                "collections.md",
                 "text/markdown"
               )
             ),
@@ -3997,7 +3999,7 @@
     const previous = document.activeElement;
     const host = document.createElement("div");
     host.setAttribute("popover", "manual");
-    host.setAttribute("aria-label", "Neo tab switcher");
+    host.setAttribute("aria-label", "LeoTabs tab switcher");
     for (const [key, value] of Object.entries({
       all: "initial",
       position: "fixed",

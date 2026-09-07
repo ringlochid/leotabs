@@ -1,4 +1,4 @@
-Already installed Neo? Reload its existing card at chrome://extensions, then refresh your Neo library tabs.
+Already installed LeoTabs? Reload its existing card at chrome://extensions, then refresh your LeoTabs library tabs.
 
 For a first installation, choose Load unpacked and select:
 C:\Users\ring_\Desktop\Neo tab manger\extension

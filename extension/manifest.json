@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "omnibox": {
-    "keyword": "neo"
+    "keyword": "leotabs"
   },
   "name": "LeoTabs \u2014 Tab Manager & Switcher",
   "version": "0.13.0",

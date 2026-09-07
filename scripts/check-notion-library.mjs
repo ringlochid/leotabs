@@ -30,7 +30,7 @@ export async function checkNotionLibrary({ app, rpc, results, delay, out, notion
       assert.equal(metrics.title, 'Export & import');
       assert.equal(metrics.folds, 0);
       assert.equal(metrics.overflow, false);
-      assert.deepEqual(metrics.buttons.map(b => b.label), ['Download Neo backup', 'Bookmark HTML', 'Markdown', 'Send to Notion…', 'Import data']);
+      assert.deepEqual(metrics.buttons.map(b => b.label), ['Backup JSON', 'Bookmark HTML', 'Markdown', 'Send to Notion…', 'Import data']);
       assert(metrics.buttons.every((b, i, rows) => !i || b.y >= rows[i-1].bottom));
       assert(metrics.buttons.every(b => Math.abs(b.width - metrics.buttons[0].width) < 1));
       await fs.writeFile(path.join(out, `export-import-${theme}-${width}.png`), Buffer.from((await app.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));

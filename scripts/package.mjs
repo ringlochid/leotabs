@@ -73,7 +73,7 @@ end.writeUInt32LE(directory.length, 12);
 end.writeUInt32LE(offset, 16);
 const version = JSON.parse(await fs.readFile(path.join(root, 'manifest.json'))).version;
 const zip = Buffer.concat([...locals, directory, end]);
-const name = `neo-${version}.zip`;
+const name = `leotabs-${version}.zip`;
 await fs.writeFile(path.join(out, name), zip);
 await fs.writeFile(
   path.join(out, 'package-inventory.json'),

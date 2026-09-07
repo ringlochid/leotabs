@@ -1,11 +1,11 @@
-Neo — Tabs & Collections
+LeoTabs — Tab Manager & Switcher
 
 Source code and accompanying project assets are available under the Mozilla
 Public License 2.0. The full license is included in LICENSE.txt.
 
 The readable JavaScript, HTML and CSS source is included directly in this
 extension package. No runtime third-party library or hosted application
-backend is required. Neo's icon and interface assets were created for this
+backend is required. LeoTabs's icon and interface assets were created for this
 project. Tabme and Notion were design references; their screenshots, branding
 and application code are not bundled.
 

@@ -1163,15 +1163,15 @@ async function dispatch(action, data = {}) {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!message?.action) return;
   if (sender.id !== chrome.runtime.id) {
-    respond({ ok: false, error: 'This action is only available inside Neo.' });
+    respond({ ok: false, error: 'This action is only available inside LeoTabs.' });
     return;
   }
   (async () => {
     if (!sender.url?.startsWith(own) && !(await isOverlaySender(message, sender)))
-      throw new Error('Open Neo with its shortcut first.');
+      throw new Error('Open LeoTabs with its shortcut first.');
     if (message.protocol && message.protocol !== PROTOCOL)
       throw new Error(
-        'Neo was updated. Reload Neo at chrome://extensions, then refresh the library.',
+        'LeoTabs was updated. Reload LeoTabs at chrome://extensions, then refresh the library.',
       );
     return dispatch(message.action, message.data);
   })().then(

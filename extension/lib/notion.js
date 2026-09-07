@@ -79,7 +79,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
   if (job.status === 'complete') return job;
   if (['sending', 'uncertain'].includes(job.status))
     throw new Error(
-      'This batch may already be in Notion. Inspect the destination; Neo will not send it again.',
+      'This batch may already be in Notion. Inspect the destination; LeoTabs will not send it again.',
     );
   if (!['ready', 'waiting', 'partial', 'failed'].includes(job.status))
     throw new Error('This export cannot continue.');

@@ -47,7 +47,7 @@ export const COMMANDS = [
   {
     id: 'history',
     title: 'Search closed pages',
-    detail: 'Recent browser sessions and retained Neo actions',
+    detail: 'Recent browser sessions and retained LeoTabs actions',
     context: false,
   },
   {

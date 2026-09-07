@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { initialState, newCollection, validatePlan } from '../extension/lib/model.js';
 import {
   backupExport,
+  jsonExport,
   parseImport,
   htmlExport,
   markdownExport,
@@ -56,6 +57,28 @@ test('empty library backup roundtrips saved preferences', () => {
   const result = parseImport(backupExport(initialState()));
   assert.equal(result.collections.length, 0);
   assert(result.settings);
+});
+test('new LeoTabs exports and existing Neo backups preserve content and settings', () => {
+  const state=initialState();
+  state.collections=[example()];
+  state.settings.theme='dark';
+  const backup=JSON.parse(backupExport(state));
+  const collections=JSON.parse(jsonExport(state.collections));
+  assert.equal(backup.format,'leotabs-backup');
+  assert.equal(collections.format,'leotabs-collections');
+  for(const format of ['leotabs-backup','neo-backup']) {
+    const result=parseImport(JSON.stringify({...backup,format}));
+    assert.equal(result.settings.theme,'dark');
+    assert.equal(result.collections[0].links[0].note,state.collections[0].links[0].note);
+    assert.deepEqual(result.spaces,state.spaces);
+    assert.throws(()=>parseImport(JSON.stringify({...backup,format,version:99})),/unsupported/);
+  }
+  for(const format of ['leotabs-collections','neo-tabs']) {
+    const result=parseImport(JSON.stringify({...collections,format}));
+    assert.equal(result.collections[0].name,state.collections[0].name);
+    assert.equal(result.collections[0].groups[0].name,state.collections[0].groups[0].name);
+    assert.throws(()=>parseImport(JSON.stringify({...collections,format,version:99})),/unsupported/);
+  }
 });
 test('unknown JSON shape does not silently become empty Toby collections', () =>
   assert.throws(() => parseImport('{"collections":[{"name":"unsupported"}]}'), /Unrecognised/));
