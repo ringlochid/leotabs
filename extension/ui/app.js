@@ -2323,6 +2323,7 @@ function handleNavigation() {
     renderBoard();
   }
   if (location.hash === '#settings') actions.settings();
+  if (params.get('action') === 'ai-connection') actions.aiConnection();
   if (location.hash === '#search') $('#tab-search').focus();
   if (['settings', 'import', 'export', 'ai'].includes(params.get('action')))
     actions[params.get('action')](findCollection());

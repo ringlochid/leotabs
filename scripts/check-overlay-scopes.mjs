@@ -53,6 +53,10 @@ export async function checkOverlayScopes({
     ),
   );
   assert(await read('return root.querySelector(".collection-dock").hidden'));
+  if(process.argv.includes('--overlay-ai')) {
+    await (await import('./check-overlay-ai.mjs')).checkOverlayAI({app,rpc,read,click,wait,results,triggerSwitcher,pin});
+    return;
+  }
   const key = async (value,code=value) => {
     await native.send('Input.dispatchKeyEvent',{type:'keyDown',key:value,code,...(value==='/'?{text:'/'}:{})});
     await native.send('Input.dispatchKeyEvent',{type:'keyUp',key:value,code});

@@ -16,7 +16,7 @@ if (
   process.argv.includes('--connections') ||
   process.argv.includes('--ai-workflow') ||
   process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') ||
-  process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') ||
+  process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') || process.argv.includes('--overlay-ai') ||
   process.argv.includes('--history-access')
 ) {
   const fixture = path.join(out, 'granted-access-fixture');
@@ -31,7 +31,7 @@ if (
     manifest.permissions.push('history');
     manifest.optional_permissions = manifest.optional_permissions.filter((p) => p !== 'history');
   }
-  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow') || process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') || process.argv.includes('--proposal') || process.argv.includes('--topic-regroup'))
+  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow') || process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') || process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') || process.argv.includes('--overlay-ai'))
     manifest.host_permissions = ['http://127.0.0.1/*', 'https://api.notion.com/*'];
   await fs.writeFile(path.join(fixture, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }

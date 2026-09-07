@@ -4,7 +4,7 @@
   "lib/organisation.js": "daad4410d14481ad6762b637b852cdc85b5080d0d870da81ca529718bed07326",
   "lib/arrange.js": "bd674a286dbf40caeb2d4af96d82ca4f174caef9bbcd872812ac2361093d8dca",
   "lib/model.js": "6a7a1e4dcef4b8e07df565400925ca34c3ef952dbd05387ca6fae4781b776967",
-  "lib/version.js": "151cbc801c7564564449970d46c316ef06e03d4f70cb101ef22c103bfa788051",
+  "lib/version.js": "d311fad6025549e103e9d3a8640e45fbbb8f2956905dac68ff6e2ea862bc3cff",
   "ui/raster.js": "4615461f6e59db342c69afa9b93566a67e9c2e64f59fbb7ab5568745f7c52b76",
   "ui/shared.js": "43bb6d2a1a859e35df961e091957c02a33cb662845021793dfec26d3d54cb2e6",
   "lib/collection-workflow.js": "00f9ef5f4d7a51581002502aa36ed20894b78120c2c280ed5ecb7edfd5b1368b",
@@ -17,11 +17,11 @@
   "ui/link-picker.js": "595e189addc8e39bb0989dcae99e53a40a5def1798dc32605d965150b5c1d8b3",
   "ui/organisation-dialog.js": "29e00de02c2d349647a30a8f775636f7452486e3d6d432db41d7ff4835c8d358",
   "ui/contextual-ai.js": "6a09d8bf018e033fe30c5a313f9ad0b0602b6839248ff3641855983046a8311c",
-  "ui/action-dialogs.js": "17200227281c7a964b86ba22568682c537e5b42904d174b58e88cd69bcffea97",
+  "ui/action-dialogs.js": "ec47a6692fee86ab2378fb912982a0cb1bb4ac2cff394450e5754734bf65ea78",
   "ui/session-list.js": "fc43323a8a4cc28370d68ba3e5676f9462fdab6525b057df054688546434f2db",
   "ui/tab-tools.js": "54b3796c389752016d469413dfe790eba417c772524202a05b3ceec2073a9300",
   "ui/quick.js": "d52bd97467fa32536ad421f70ec0eb089c943148dded22ac7800ccae77361fb7",
   "ui/styles.css": "27290a317fe1b0e7ffb47e58e43c6b2da21c14ffa10805c73c24e1091dfb6f3e",
   "ui/overlay-entry.js": "77f4895cdd501f76d08bda5d8020c6de110b3a9e4f59f1bf346cbca641882862",
-  "overlay.js": "ef3d5028c763d1cad5040431f4358daf24182a440fea5fb0a276bffd273f68c3"
+  "overlay.js": "36cf819bd8b03f69f0a93f85b19e2a80202fb3e2725c362ebc68b0384f1a4b13"
 }

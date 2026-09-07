@@ -88,3 +88,11 @@ Verified in the isolated Chrome injected overlay: real slash/arrow input, previe
 Collection menus no longer expose the Organisation policy editor. Group & sort sits immediately above Organise collection with AI, replacing Apply default grouping. It groups saved links by the built-in website defaults and sorts groups and links alphabetically; the include-existing-groups checkbox controls regrouping. Single links remain ungrouped, notes and names are preserved, and the operation supports Undo. Active tracked collections use the native grouping path so browser tabs and the saved collection update together.
 
 Validation: 161 unit tests; isolated Chrome collection menu, saved grouping/sorting/Undo and active browser/collection grouping/Undo checks passed.
+
+## Topic grouping in the injected switcher
+
+The 20260907-1134 recording shows Topic Apply failing with an undefined permissions.request call. Reproduced in an isolated Chrome content script before the fix (`output/chrome-1788781127698`). Chrome exposes only selected extension APIs to content scripts; permissions requests belong in an extension context ([content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts), [permissions](https://developer.chrome.com/docs/extensions/reference/api/permissions)).
+
+Topic Apply now asks the authenticated background handler whether the configured provider origin is allowed. Existing access proceeds directly; missing access or connection setup opens Library AI connection settings. The provider operation still independently enforces permission. Library Apply keeps its user-gesture permission request. No real API key or provider was used for validation.
+
+After-fix injected-overlay test (`output/chrome-1788781316745`) verifies one local provider call, native grouping, Undo, and missing-permission navigation without a request. Library include/exclude and stable-grouping checks passed (`output/chrome-1788781273675`); all 161 unit tests passed.

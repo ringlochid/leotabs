@@ -233,7 +233,7 @@
   }
 
   // extension/lib/version.js
-  var PROTOCOL = 26;
+  var PROTOCOL = 27;
 
   // extension/ui/raster.js
   async function rasterCanvas(data) {
@@ -1916,9 +1916,16 @@
       }
       const include = el("input", { type: "checkbox", checked: data.state.settings.regroupExisting !== false, "aria-label": "Include already grouped tabs" });
       const apply = button("Organise by topic", act(async () => {
-        if (!await chrome.permissions.request({ origins: [endpointOrigin(providerEndpoint(data.state.settings)) + "/*"] })) return;
         apply.disabled = true;
         try {
+          const granted = globalThis.__neoSurface ? await rpc("ai-connection-access") : await chrome.permissions.request({ origins: [endpointOrigin(providerEndpoint(data.state.settings)) + "/*"] });
+          if (!granted) {
+            if (globalThis.__neoSurface) {
+              close();
+              settingsDetails("AI connection");
+            }
+            return;
+          }
           if (include.checked !== (data.state.settings.regroupExisting !== false)) await change("settings", { settings: { regroupExisting: include.checked } });
           close();
           await run(include.checked);
@@ -2689,6 +2696,10 @@
       body.querySelector("select").focus({ preventScroll: true });
     }
     function settingsDetails(sectionName = "AI connection") {
+      if (globalThis.__neoSurface) return act(async () => {
+        await rpc("open-library", { hash: sectionName === "AI connection" ? "#action=ai-connection" : "#action=settings" });
+        onOpen?.();
+      })();
       const s = data.state.settings;
       const fields = {};
       const input = (name, type = "text") => fields[name] = el("input", { value: s[name] || "", type });
@@ -3108,6 +3119,7 @@
       organisation: (scope) => organisationDialog({ state: data.state, scope, change }),
       recovery: recoveryDialog,
       settings: settingsDialog,
+      aiConnection: () => settingsDetails("AI connection"),
       aiSettings: () => settingsDetails("AI connection"),
       import: importDialog,
       previewImport

@@ -923,6 +923,10 @@ async function dispatch(action, data = {}) {
           await sessions.applyAutoUpdateToOpen(data.settings.autoUpdateDefault);
         return result;
       });
+    case 'ai-connection-access': {
+      const state = await db.getState();
+      return chrome.permissions.contains({origins:[endpointOrigin(providerEndpoint(state.settings))+'/*']});
+    }
     case 'credentials':
       return serial(async () => {
         await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
@@ -1246,6 +1250,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (
         ![
           'load',
+          'ai-connection-access',
           'preview',
           'favicon',
           'capture',
