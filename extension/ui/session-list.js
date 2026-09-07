@@ -2,7 +2,7 @@
 import { el, button, task, rpc, domain, favicon } from './shared.js';
 import { score } from '../lib/model.js';
 
-// Closed items and historical snapshots are separate views with explicit verbs.
+// Closed items and historical snapshots share clickable page rows.
 export function sessionList({ data, query = '', windowId, history = false, refresh = () => {} }) {
   const root = el('div', { class: 'session-results' });
   const rows = (history ? data.timeline || [] : data.recentSessions || [])
@@ -23,6 +23,8 @@ export function sessionList({ data, query = '', windowId, history = false, refre
         : await rpc('restore-session', { sessionId: row.id });
     if (result?.failed?.length || result?.groupFailures?.length)
       throw Error('Some pages could not be restored. The snapshot is still available.');
+    const focusId=link&&(result?.created?.[0]||result?.reused?.[0]);
+    if(focusId)await rpc('activate',{tabId:focusId});
     await refresh();
   };
   const pageButton = (r, t) => {
@@ -34,7 +36,6 @@ export function sessionList({ data, query = '', windowId, history = false, refre
     b.replaceChildren(
       favicon(t),
       el('span', { class: 'row-title' }, t.title || domain(t.url), el('small', {}, domain(t.url))),
-      el('span', { class: 'result-verb' }, 'Reopen tab'),
     );
     return b;
   };

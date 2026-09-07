@@ -67,6 +67,7 @@ const icons = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   chevron: 'm9 5 7 7-7 7',
   down: 'm5 9 7 7 7-7',
+  up: 'm5 15 7-7 7 7',
   back: 'm14 5-7 7 7 7',
   settings: 'M4 7h16M4 17h16M8 4v6M16 14v6',
   grid: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
@@ -351,6 +352,16 @@ export function popover(
     ) + 'px';
   panel.style.top =
     Math.max(12, Math.min(innerHeight - bounds.height - 12, (anchor?.bottom || 80) + 6)) + 'px';
+  const switcher = $('.task-view');
+  if (switcher && !menu) {
+    const area = switcher.getBoundingClientRect();
+    panel.classList.add('switcher-dialog');
+    panel.style.left = Math.max(12, Math.min(innerWidth - bounds.width - 12,
+      area.left + (area.width - bounds.width) / 2)) + 'px';
+    panel.style.top = Math.max(12, Math.min(innerHeight - bounds.height - 12,
+      area.top + (area.height - bounds.height) / 2)) + 'px';
+    panel.querySelector('input:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
+  }
   if (menu) {
     panel.addEventListener('toggle', (e) => {
       if (e.newState === 'closed') trigger?.setAttribute('aria-expanded', 'false');
@@ -412,7 +423,7 @@ export function menu(title, entries, { anchor, prefix } = {}) {
       12,
       Math.min(innerHeight - rect.height - 12, (a?.bottom || parseFloat(dialog.style.top) - 6) + 6),
     ) + 'px';
-  dialog.querySelector('button:not(:disabled)')?.focus({ preventScroll: true });
+  (list.querySelector('button:not(:disabled)') || dialog.querySelector('button:not(:disabled)'))?.focus({ preventScroll: true });
   return { close, dialog };
 }
 

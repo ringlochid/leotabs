@@ -27,7 +27,6 @@ import {
 } from '../lib/portable.js';
 import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
-import {rulesDialog} from './rules-dialog.js';
 import {organisationDialog} from './organisation-dialog.js';
 import {assist,researchOverview} from './contextual-ai.js';
 
@@ -94,7 +93,17 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         close();await run(include.checked);
       }finally{apply.disabled=false;}
     }),{className:'primary topic-apply'});
-    const {close}=modal(title,el('div',{},el('label',{class:'check-label'},include,'Include already grouped tabs'),el('p',{class:'hint'},'Included tabs are grouped afresh by topic. Existing group names and membership are ignored. Uncheck to leave grouped tabs unchanged.')),[button('Cancel',()=>close()),apply]);
+    const {close}=modal(title,el('div',{},el('label',{class:'check-label'},include,'Include already grouped tabs'),el('p',{class:'hint'},'Regroup included tabs by topic. Uncheck to keep existing groups.')),[button('Cancel',()=>close()),apply]);
+  }
+  function groupCollection(c) {
+    const include = el('input', {type:'checkbox', checked:data.state.settings.regroupExisting!==false});
+    const {close} = popover('Group & sort', el('div', {},
+      el('p', {class:'hint'}, 'Group by website, then sort A–Z.'),
+      el('label', {class:'check-label'}, include, 'Include already grouped tabs')),
+      [button('Cancel', () => close()), button('Group & sort', act(async () => {
+        close();
+        await change('collection-group-sort', {collectionId:c.id, regroupExisting:include.checked});
+      }), {className:'primary'})]);
   }
   function aiTabs(){return topicOptions('Group open tabs by topic',runTopicTabs);}
   async function runTopicTabs(regroupExisting){
@@ -121,7 +130,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         linkIds,
         target,
         windowId: win,
-        deferred: false,
+        deferred: true,
       });
       toast('Opening ' + job.total + ' tabs…');
       clearTimeout($('#toast')?._timer);
@@ -139,7 +148,8 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         { error: !!result.failed.length || !!result.groupFailures.length },
       );
       onOpen();
-      if (result.focusFirst && result.created[0])
+      if (result.focusTabId) await rpc('activate', { tabId: result.focusTabId });
+      else if (result.focusFirst && result.created[0])
         await rpc('activate', { tabId: result.created[0] });
     } catch (e) {
       toast(e.message, { error: true });
@@ -393,7 +403,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
               'label',
               { class: 'check-label' },
               preferences,
-              'Restore saved preferences and domain rules',
+              'Restore saved preferences',
             )
           : null,
         result.settings
@@ -725,6 +735,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
   }
   function settingsDialog() {
     const s = data.state.settings;
+    const allCollapsed = data.state.collections.length > 0 && data.state.collections.every(c => c.collapsed);
     const body = el('div', { class: 'settings-list' });
     let close;
     const row = (label, run, glyph) =>
@@ -792,11 +803,11 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       toggle('Auto-update all collections', 'autoUpdateDefault'),
       ...(!inLibrary ? [toggle('Auto-group new tabs', 'autoGroup')] : []),
 
-      row('Collapse all collections', act(() => change('collapse-collections', {})), 'chevron'),
+      row(allCollapsed ? 'Expand all collections' : 'Collapse all collections',
+        act(() => change('collapse-collections', { collapsed: !allCollapsed })), 'chevron'),
       el('hr'),
       row('AI connection', () => settingsDetails('AI connection'), 'sparkles'),
       row('Notion', () => settingsDetails('Notion'), 'note'),
-      row('Grouping rules', () => rulesDialog({state:data.state,tabs:data.tabs,change}), 'group'),
       row('Open Library in its own window', () => change('library-window',{}), 'external'),
       el('hr'),
       ...(!inLibrary ? [row('Import data', importDialog, 'plus')] : []),
@@ -867,12 +878,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           ? 'Saved · leave blank to keep'
           : 'Your internal integration token',
       });
-    const autoGroup=el('input',{type:'checkbox',checked:s.autoGroup});
-    const rules = el('textarea', {
-      rows: 3,
-      value: s.rules.map((r) => `${r.domain} => ${r.group}`).join('\n'),
-      placeholder: 'github.com => Development',
-    });
     const body = el(
       'div',
       {},
@@ -912,18 +917,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         button(
           'Forget Notion token',
           act(() => change('credentials', { notionKey: '' })),
-        ),
-      ),
-      el(
-        'section',
-        { class: 'settings-section' },
-        el('h3', {}, 'Domain rules'),
-        field('One URL pattern => group per line', rules),
-        el('label',{class:'check-label'},autoGroup,'Automatically group new ungrouped tabs using these rules'),
-        el(
-          'p',
-          { class: 'hint' },
-          'Example: github.com/* => Github. First matching rule wins. Existing groups stay intact. AI is not needed.',
         ),
       ),
       el(
@@ -1013,16 +1006,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                 const settings = Object.fromEntries(
                   Object.entries(activeFields).map(([k, v]) => [k, v.value]),
                 );
-                if (sectionName === 'Domain rules')
-                  settings.rules = rules.value
-                    .split('\n')
-                    .filter((x) => x.trim())
-                    .map((line) => {
-                      const [domain, ...parts] = line.split('=>');
-                      if (!parts.length) throw new Error('Use domain => group for each rule.');
-                      return { domain: domain.trim(), group: parts.join('=>').trim() };
-                    });
-                if(sectionName==='Domain rules')settings.autoGroup=autoGroup.checked;
                 const origins = [];
                 if (
                   sectionName === 'AI connection' &&
@@ -1300,8 +1283,8 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     dropSuggestions,
     arrangeRules: () => change('arrange-tabs', {windowId:win}),
     groupSort,
+    groupCollection,
     sortTabs: order => change('sort-open-tabs', {windowId:win,order}),
-    ruleSettings: seed => rulesDialog({state:data.state,tabs:data.tabs,change,seed}),
     organisation: scope => organisationDialog({state:data.state,scope,change}),
     recovery: recoveryDialog,
     settings: settingsDialog,

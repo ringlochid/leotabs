@@ -30,11 +30,12 @@ test('custom colours roundtrip and contrasting foreground covers light and dark 
   assert.equal(colorHex(c.color),'#123456');assert.equal(colorInk('#ffffff'),'#17221e');assert.equal(colorInk('#000000'),'#ffffff');
   assert(!validColor('url(https://tracking.test)'));
 });
-test('AI stays opt-in, preferences persist, and default rules migrate only once',()=>{
+test('AI stays opt-in, preferences persist, and old custom rules fall back to defaults',()=>{
   const old=initialState();delete old.settings.autoGroup;old.settings.rules=[];
   assert.equal(migrate(old).settings.rules[0].group,'GitHub');
-  const modern=initialState();modern.settings.rules=[];
-  assert.equal(migrate(modern).settings.rules.length,0);
+  const modern=initialState();modern.settings.rules=[{domain:"example.org",group:"Custom"}];modern.settings.websiteGrouping=false;
+  assert.deepEqual(migrate(modern).settings.rules,initialState().settings.rules);
+  assert.equal(migrate(modern).settings.websiteGrouping,true);
   assert.equal(initialState().settings.aiNaming,false);
   assert.equal(sanitizeSettings({aiNaming:true,autoGroup:false}).aiNaming,true);
   assert.equal(newCollection().autoUpdate,false);

@@ -36,7 +36,7 @@ export async function checkSaveFlow({app,rpc,results,delay,origin,out}) {
  await rpc('collection-auto-update',{windowId:wid,collectionId:a.id,enabled:false});
  await rpc('import',{collections:[{name:'Destination',autoUpdate:false,groups:[],links:[{title:'Destination',url:origin+'/destination'}]}]});
  const b=(await rpc('load')).state.collections.find(c=>c.name==='Destination');
- const openSwitch=async id=>{await wait(()=>app.evaluate(`!!document.querySelector('[data-collection-id="${id}"] .collection-switch')`),'Card');await app.evaluate(`[...document.querySelectorAll('[data-collection-id="${id}"] button')].find(b=>b.textContent==='Switch to collection').click()`);};
+ const openSwitch=async id=>{await wait(()=>app.evaluate(`!!document.querySelector('[data-collection-id="${id}"] .collection-switch')`),'Card');await app.evaluate(`[...document.querySelectorAll('[data-collection-id="${id}"] button')].find(b=>b.getAttribute('aria-label')==='Switch to collection').click()`);};
  const submit=()=>click('dialog[open] .primary');
  await createTab('/unsaved');await delay(350);
  await openSwitch(b.id);

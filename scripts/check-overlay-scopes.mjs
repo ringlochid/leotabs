@@ -53,6 +53,25 @@ export async function checkOverlayScopes({
     ),
   );
   assert(await read('return root.querySelector(".collection-dock").hidden'));
+  const key = async (value,code=value) => {
+    await native.send('Input.dispatchKeyEvent',{type:'keyDown',key:value,code,...(value==='/'?{text:'/'}:{})});
+    await native.send('Input.dispatchKeyEvent',{type:'keyUp',key:value,code});
+  };
+  assert(await read(`return !!root.activeElement?.matches('.preview-tile,.tab-choice')`), 'Switcher opens on a tab');
+  const toolbarOrder = await read(`return [...root.querySelector('.overlay-navigation').children].map(n=>n.className)`);
+  assert(toolbarOrder[0].includes('audio-filter') && toolbarOrder[1].includes('tab-tools') && toolbarOrder[2].includes('selection-mode-button'),JSON.stringify(toolbarOrder));
+  await key('/','Slash');
+  assert(await read(`return root.activeElement?.id==='quick-search' && root.activeElement.value===''`), '/ focuses search without inserting a slash');
+  for (const mode of ['This window','All windows']) {
+    await click(mode);
+    for (const arrow of ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight']) {
+      await read(`root.querySelector('[data-mode="${mode==='This window'?'window':'all'}"]').focus()`);
+      await key(arrow);
+      assert(await read(`return !!root.activeElement?.matches('.preview-tile,.tab-choice')`), mode+' '+arrow+' focuses tab');
+    }
+  }
+  await click('This window');
+  results.push('Switcher opens focused on tabs; slash focuses search; all four arrows return from scope controls to tabs; shared Sort, Save and Duplicates controls sit between Audio and Select');
   const other = await app.evaluate(
     `chrome.windows.create({url:'https://example.test/other-scope',focused:false})`,
   );
@@ -148,7 +167,7 @@ export async function checkOverlayScopes({
     await rpc('settings', { settings: { theme } });
     await wait(() => read(`return root.host.dataset.theme===${JSON.stringify(theme)}`));
     await click('Switch to collection');
-    assert(await read(`const d=root.querySelector('#dialog'),s=getComputedStyle(d);return d.open && s.borderTopWidth==='1px' && s.borderRadius==='4px' && s.boxShadow==='none' && !d.textContent.includes('Keep a snapshot') && !d.textContent.includes('Replaces unpinned') && !!d.querySelector('input[aria-label="Save current tabs"]');`));
+    assert(await read(`const d=root.querySelector('#dialog'),s=getComputedStyle(d);return d.open && s.borderTopWidth==='1px' && s.borderRadius==='4px' && s.boxShadow==='none' && !d.textContent.includes('Keep a snapshot') && !d.textContent.includes('Replaces unpinned') && !!d.querySelector('input[type="checkbox"]') && !d.querySelector('input[type="checkbox"]').checked && d.textContent.includes("Save current tabs as a new collection");`));
     await shot('flat-switch-modal-' + theme);
     await read(`root.querySelector('#dialog footer button').click()`);
     await wait(() => read('return !root.querySelector("#dialog[open]")'));
@@ -165,7 +184,7 @@ export async function checkOverlayScopes({
   assert(await read('return !!root.querySelector(".overlay-navigation > .audio-filter")'));
   assert(
     await read(
-      'return root.querySelector(".overlay-more").previousElementSibling.id==="select-mode" && !root.querySelector(".overlay-more").textContent.trim()',
+      'return root.querySelector(".overlay-navigation .tab-tools").nextElementSibling.id==="select-mode" && !root.querySelector(".overlay-more")',
     ),
   );
   assert(await read('return !!root.querySelector(".browse-scopes .overlay-navigation")'));
@@ -312,16 +331,23 @@ export async function checkOverlayScopes({
   results.push(
     'Overlay groups: inline rename in normal and selection modes, Escape cancels, preview opens folders, checkbox selects whole/partial groups, direct Ungroup works; coloured collection rows and no Browse group or selection More button',
   );
-  await click('More actions');
-  assert(
-    await read('return root.querySelector("#action-popover").textContent.includes("All actions")'),
-  );
-  assert(
-    await read(
-      'return !root.querySelector("#action-popover").textContent.includes("Session history")',
-    ),
-  );
-  await read('root.querySelector("#action-popover").hidePopover()');
+  assert(await read('return !root.querySelector(".overlay-more")'));
+  await read('root.querySelector(".overlay-navigation .tab-tools>button").focus()');
+  await click('Save tabs');
+  const geometry = await read(`const p=root.querySelector('#action-popover').getBoundingClientRect(),v=root.querySelector('.task-view').getBoundingClientRect();return {dx:Math.abs(p.left+p.width/2-v.left-v.width/2),dy:Math.abs(p.top+p.height/2-v.top-v.height/2),top:p.top,left:p.left,right:p.right,bottom:p.bottom,w:innerWidth,h:innerHeight}`);
+  assert(geometry.dx<2 && geometry.dy<2, JSON.stringify(geometry));
+  assert(geometry.top>=0 && geometry.left>=0 && geometry.right<=geometry.w && geometry.bottom<=geometry.h);
+  await shot('switcher-save-centred');
+  await click('Cancel');
+  // Exercise the visible overlay sort menu, including the actual browser order.
+  const sortOrigin=new URL(livePin.url).origin;
+  const sortTabs=await app.evaluate(`Promise.all(['/research-sort','/brief-sort'].map(p=>chrome.tabs.create({windowId:${pin.windowId},url:${JSON.stringify(sortOrigin)}+p,active:false})))`);
+  await wait(()=>app.evaluate(`Promise.all(${JSON.stringify(sortTabs.map(t=>t.id))}.map(id=>chrome.tabs.get(id))).then(ts=>ts.every(t=>t.status==='complete'))`));
+  await click('Group and sort tabs');
+  assert(await read(`return root.querySelector('#action-popover').textContent.includes('Group & sort') && root.querySelector('#action-popover').textContent.includes('Group by topic with AI')`));
+  await read(`[...root.querySelectorAll('[role="menuitem"]')].find(b=>b.textContent==='Title A–Z').click()`);
+  await wait(()=>app.evaluate(`Promise.all(${JSON.stringify(sortTabs.map(t=>t.id))}.map(id=>chrome.tabs.get(id))).then(([research,brief])=>brief.index<research.index)`));
+  results.push('The overlay Title A–Z menu changes actual browser tab order');
   await query('keep text');
   await read(
     'root.querySelector("#quick-search").dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}));',
@@ -345,7 +371,7 @@ export async function checkOverlayScopes({
     'Explicit scopes preserve queries and exclude other windows; individual close keeps overlay and active tab; Recently closed reopens; separate session history',
   );
   results.push(
-    'Audio filter/unmute, readable selection actions, collection Open/Swap, Actions menu, safe Delete editing and Escape dismissal; matching library scopes',
+    'Audio filter/unmute, readable selection actions, collection Open/Swap, shared action toolbar, safe Delete editing and Escape dismissal; matching library scopes',
   );
   // Bounded narrow-layout screenshot of the new overlay.
   await triggerSwitcher(pin);
@@ -444,8 +470,8 @@ export async function checkOverlayScopes({
     await invoke(source);
     await wait(() => read('return !root'));
     await invoke(source);
-    await wait(() => read('return !!root?.querySelector(".overlay-more")'));
-    await click('More actions');
+    await wait(() => read('return !!root?.querySelector(".tab-more-button")'));
+    await click('Group and sort tabs');
     await invoke(source);
     await wait(() => read('return !root'));
     await invoke(source, 'search');
@@ -480,6 +506,6 @@ export async function checkOverlayScopes({
     );
   }
   results.push(
-    'Flat overlay fits a 620px viewport; no redundant heading/footer/empty action; Audio on the right and an icon menu beside Select; folder groups show previews, browse into individual tabs and support whole/partial group selection without activating pages',
+    'Flat overlay fits a 620px viewport; no redundant heading/footer/empty action; Audio followed by shared action buttons beside Select; folder groups show previews, browse into individual tabs and support whole/partial group selection without activating pages',
   );
 }

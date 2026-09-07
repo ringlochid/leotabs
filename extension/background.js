@@ -5,8 +5,8 @@ import {tabArrangement} from './lib/tab-arrangement.js';
 import {variedColour} from './lib/website-groups.js';
 import { repairParkedTabs } from './lib/parked.js';
 import { validColor, randomCollectionColor } from './lib/colors.js';
-import { arrangeSaved } from './lib/arrange.js';
-import {policyFor,sanitizePolicy,sanitizeRules,applySavedPolicy,rankItems} from './lib/organisation.js';
+import { groupAndSortCollection } from './lib/collection-arrangement.js';
+import {policyFor,sanitizePolicy,applySavedPolicy,rankItems} from './lib/organisation.js';
 import {nativeOrganisation} from './lib/native-organisation.js';
 import {automaticAI} from './lib/automatic-ai.js';
 import {libraryAccess} from './lib/library-access.js';
@@ -88,7 +88,7 @@ function runResume(id) {
     try {
       if (job.target === 'new') {
         const created = await chrome.windows.create({
-          url: 'about:blank',
+          url: job.deferred ? chrome.runtime.getURL('app.html') : 'about:blank',
           type: 'normal',
           focused: false,
         });
@@ -117,7 +117,8 @@ function runResume(id) {
       return {
         ...result,
         windowId: job.windowId,
-        focusFirst: !result.cancelled && (job.target === 'new' || !job.deferred),
+        focusFirst: !result.cancelled && !job.deferred,
+        focusTabId: !result.cancelled && job.deferred && job.target === 'new' ? guardId : undefined,
       };
     } catch (error) {
       job.status = 'partial';
@@ -125,7 +126,7 @@ function runResume(id) {
       await db.write('journal', job).catch(() => {});
       throw error;
     } finally {
-      if (guardId) {
+      if (guardId && !job.deferred) {
         const guard = await chrome.tabs.get(guardId).catch(() => null);
         if (guard?.url === 'about:blank') await chrome.tabs.remove(guardId).catch(() => {});
       }
@@ -423,7 +424,7 @@ async function dispatch(action, data = {}) {
     case 'resume':
       return runResume((await startResume(data)).id);
     case 'resume-start':
-      if (!data.deferred && data.target !== 'new') {
+      if (data.target !== 'new') {
         const wid = await windowId(data);
         await serial(async () => { await sessions.capture(wid, {sync:false}); await sessions.forgetWindow(wid); });
       }
@@ -501,7 +502,6 @@ async function dispatch(action, data = {}) {
           if(!target)throw Error('Organisation scope no longer exists.');
           if(data.organisation===null&&scope.type!=='global')delete target.organisation;
           else target.organisation=sanitizePolicy(data.organisation);
-          if(scope.type==='global'&&data.rules!==undefined)s.settings.rules=sanitizeRules(data.rules);
         });
         scheduleCheckpoint();return result;
       });
@@ -657,11 +657,13 @@ async function dispatch(action, data = {}) {
           return { added: selected.additions.length };
         });
       });
-    case 'collapse-collections':
-      return serial(() => db.mutate('Collapse all collections', s => {
-        if (s.collections.every(c => c.collapsed)) return { unchanged: true };
-        for (const c of s.collections) c.collapsed = true;
+    case 'collapse-collections': {
+      const collapsed = data.collapsed !== false;
+      return serial(() => db.mutate(collapsed ? 'Collapse all collections' : 'Expand all collections', s => {
+        if (s.collections.every(c => !!c.collapsed === collapsed)) return { unchanged: true };
+        for (const c of s.collections) c.collapsed = collapsed;
       }));
+    }
     case 'edit':
       return serial(async () => {
         const activeIds = new Set(
@@ -1127,14 +1129,21 @@ async function dispatch(action, data = {}) {
         }),
       );
     case 'rules':
-      return serial(() =>
-        db.mutate('Apply domain rules', (s) => {
-          const c = collection(s, data.collectionId);
-          const before = JSON.stringify(c);
-          arrangeSaved(c, s.settings.rules);
-          if (JSON.stringify(c) !== before) c.updatedAt = stamp();
-        }),
-      );
+    case 'collection-group-sort':
+      return arrangeSerial(async () => {
+        if (Date.now() < draggingUntil) throw Error('Finish dragging first.');
+        const state = await db.getState(), c = collection(state, data.collectionId);
+        const active = Object.entries((await sessions.list()).active).find(([, session]) =>
+          session.collectionId === c.id && session.tracking !== false && c.autoUpdate !== false);
+        if (active) {
+          const wid = Number(active[0]);
+          await sessions.capture(wid, {force:true});
+          return quickArrangement.arrange({windowId:wid, regroupExisting:data.regroupExisting!==false});
+        }
+        return db.mutate('Group & sort collection', s => {
+          groupAndSortCollection(collection(s, data.collectionId), {regroupExisting:data.regroupExisting!==false});
+        });
+      });
     case 'notion-export': {
       await requirePermission({ origins: ['https://api.notion.com/*'] });
       const state = await db.getState();

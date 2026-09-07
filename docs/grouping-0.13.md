@@ -6,7 +6,7 @@ This supersedes the ordinary grouping plan review and Web Store exclusion decisi
 
 ## Implemented flow
 
-- The Open tabs … menu contains Group & sort, Group by topic with AI, and native sorting. Grouping rules lives in Settings; Auto-group new tabs remains a sidebar switch. The later-requested compact Group panel remembers Include already grouped tabs. Applying runs locally without an AI plan; local grouping works without rules or credentials. Both live-tab and collection topic AI open their own options modal with the same remembered Include already grouped tabs choice. Included links are regrouped without existing group labels or memberships in the provider input; excluded groups retain their membership.
+- The Open tabs three-bar menu contains Group & sort, Group by topic with AI, and native sorting. Grouping rules lives in Settings; Auto-group new tabs remains a sidebar switch. The later-requested compact Group panel remembers Include already grouped tabs. Applying runs locally without an AI plan; local grouping works without rules or credentials. Both live-tab and collection topic AI open their own options modal with the same remembered Include already grouped tabs choice. Included links are regrouped without existing group labels or memberships in the provider input; excluded groups retain their membership.
 - Settings → Grouping rules opens a separate editor with website defaults, presets, current-tab suggestions, match counts, ordered priority, colours and advanced conditions. Tab/group context menus prefill rules.
 - Website identities use the complete hostname while readable names use local aliases and the vendored Public Suffix List. Distinct services and identically named unrelated domains stay separate. Repository presets use {project}.
 - The Group & sort apply action batches native group and ordering operations, persists once at the operation boundary, and returns one Undo action. Undo restores membership, order, labels, colours and collapsed state; records manual exceptions so automation does not immediately reverse it. Later structural edits prevent an old Undo from overwriting the new layout.
@@ -50,7 +50,7 @@ The baseline met the proposed P95 target, but **two seconds is not a hard bound*
 
 AI tests use a deterministic local provider and validate request shape and application/Undo, not real model quality or latency. No personal browser data or keys were used. Personal Chrome automation was rejected by its URL policy; no alternate route was used to access that profile. The user's two-second remote-AI target remains unverified. Their 14.46-second recording is evidence of a long visible wait, not a measured network timing breakdown.
 
-Final package: `output/neo-0.13.0.zip`, 64 files. ZIP CRC and every extracted byte match the current extension source. SHA-256: `68e63a5a5f7cf7e7edd383e29a81f91af362106fdd8b672fbf3f77ea3d2ddaff`. Module syntax, entry points, asset references, overlay source hashes and no mandatory host permissions passed.
+Final package: `output/neo-0.13.0.zip`, 66 files. ZIP CRC and every extracted byte match the current extension source. SHA-256: `84d7c045c3c02c283444f94b1ba558a31ab7c960aa970e3b5ca91a414cbce309`. Module syntax, entry points, asset references, overlay source hashes and no mandatory host permissions passed.
 
 Collection note readability follow-up: notes now use 15px main text, 1.65 line spacing, 12px/14px padding and a 100px minimum editor height. Visually checked with the actual stylesheet in isolated Chrome in light and dark themes; rebuilt the overlay and package.
 
@@ -91,3 +91,5 @@ Open-tab menu follow-up (supersedes earlier direct-button placement): removed th
 Settings now offers Collapse all collections. It stores the existing collapsed flag for every collection across spaces in one undoable library operation, without changing contents or tracking. Package syntax and source-byte checks pass.
 
 Save-flow follow-up: the Save popover is two mutually exclusive checkboxes (close or adopt as active); switch dialogs default to unchecked create-new or update-source according to current association, with unconditional Timeline capture. Configured AI names new minimal saves asynchronously, retaining time and respecting manual edits/content changes. See auto-update-audit.md. Protocol is now 20 so stale UI/worker combinations request a reload. Native Chrome/Edge fixtures and 155 unit tests cover the implementation.
+
+Tabme reference UI refresh: see [UI refresh and native drag verification](ui-refresh.md) for the wider sidebar, shared typography, compact toolbar, simplified collection/rule UI, drag scrolling and current verification evidence.

@@ -20,7 +20,7 @@ if (context) {
     border: '0',
     overflow: 'hidden',
     background: 'transparent',
-    font: '14px/1.5 "Segoe UI", Tahoma, sans-serif',
+    font: '15px/1.5 "Segoe UI", Tahoma, sans-serif',
     'z-index': '2147483647',
   }))
     host.style.setProperty(key, value, 'important');

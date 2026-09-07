@@ -47,7 +47,7 @@ export async function checkSelectionHover({app,rpc,results,delay,origin,out}) {
   for(const width of [1440,390]){
     await app.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});await delay(150);
     assert(await app.evaluate(`(()=>{const b=document.querySelector(${JSON.stringify(card+' .remove-selected')}),r=b.getBoundingClientRect(),a=b.parentElement.getBoundingClientRect();return r.left>=a.left&&r.right<=a.right+1&&b.scrollWidth<=b.clientWidth+1})()`),'Remove label overflowed at '+width);
-    assert(await app.evaluate(`(()=>{const b=document.querySelector('#current-collection .close-all-tabs'),r=b.getBoundingClientRect(),a=b.parentElement.getBoundingClientRect();return b.textContent==='Close all'&&!b.querySelector('svg')&&r.left>=a.left&&r.right<=a.right+1&&b.scrollWidth<=b.clientWidth+1})()`),'Close all text button missing or clipped at '+width);
+    assert(await app.evaluate(`(()=>{const b=document.querySelector('#current-collection .close-all-tabs'),r=b.getBoundingClientRect(),a=b.parentElement.getBoundingClientRect();return b.textContent==='Close all currently open tabs'&&!b.querySelector('svg')&&r.left>=a.left&&r.right<=a.right+1&&b.scrollWidth<=b.clientWidth+1})()`),'Close all text button missing or clipped at '+width);
   }
   await app.send('Emulation.setDeviceMetricsOverride',{width:1440,height:900,deviceScaleFactor:1,mobile:false});
   await fs.writeFile(path.join(out,'selection-toolbar.png'),Buffer.from((await app.send('Page.captureScreenshot')).data,'base64'));

@@ -24,7 +24,7 @@ function example() {
   ];
   return c;
 }
-test('library backup preserves preferences/rules/timestamps and excludes secrets, previews and action IDs', () => {
+test('library backup preserves preferences/timestamps with built-in rules and excludes secrets, previews and action IDs', () => {
   const s = initialState();
   s.collections = [example()];
   s.collections[0].createdAt = 12345;
@@ -47,7 +47,7 @@ test('library backup preserves preferences/rules/timestamps and excludes secrets
   assert(!json.includes('"tabs"'));
   const read = parseImport(json);
   assert.equal(read.settings.theme, 'dark');
-  assert.equal(read.settings.rules[0].group, 'Research');
+  assert.deepEqual(read.settings.rules, initialState().settings.rules);
   assert.equal(read.collections[0].createdAt, 12345);
   assert.equal(read.recovery[0].status, 'archived');
   assert(!read.recovery[0].before);

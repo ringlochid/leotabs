@@ -12,7 +12,7 @@ test('collection policy overrides space, space overrides global, absent choices 
   assert.deepEqual([policyFor(s,c).group,policyFor(s,c).tabOrder,policyFor(s,c).collectionName],['ai','title','template']);
   assert.equal(policyFor(s).group,'rules-ai');
 });
-test('priority, title conditions and exclusion rules work together and survive settings',()=>{
+test('priority, title conditions and exclusion rules work internally but settings keep built-in defaults',()=>{
   const rules=sanitizeRules([
     {domain:'github.com/*',group:'Code',color:'mint',priority:1},
     {domain:'github.com/private/*',title:'Confidential',exclude:true,priority:10},
@@ -21,7 +21,8 @@ test('priority, title conditions and exclusion rules work together and survive s
   assert(findRule({url:'https://github.com/private/a',title:'Confidential guide'},rules).exclude);
   assert.equal(findRule({url:'https://github.com/private/a',title:'Public guide'},rules).group,'Code');
   assert.equal(findRule({url:'https://github.com.evil.test/x',title:'guide'},rules),null);
-  assert.deepEqual(sanitizeSettings({rules}).rules,rules);
+  assert.deepEqual(sanitizeSettings({rules,websiteGrouping:false}).rules,initialState().settings.rules);
+  assert.equal(sanitizeSettings({rules,websiteGrouping:false}).websiteGrouping,true);
 });
 test('templates, rule colours and saved ordering respect manual decisions',()=>{
   const c={name:'New collection',links:[{id:'b',url:'https://docs.test/b',title:'Zebra'},{id:'a',url:'https://docs.test/a',title:'Apple'},{id:'m',url:'https://docs.test/m',title:'Manual',manualGroup:true}],groups:[]};

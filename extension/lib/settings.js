@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import { initialState, text } from './model.js';
 import { endpointOrigin } from './integrations.js';
-import {sanitizePolicy,sanitizeRules} from './organisation.js';
+import {sanitizePolicy} from './organisation.js';
 
 // Explicit allowlist shared by Settings and portable backups. Credentials never enter state.
 export function sanitizeSettings(input = {}, base = initialState().settings) {
@@ -24,7 +24,7 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
     provider: ['openai', 'claude', 'gemini', 'deepseek', 'compatible'],
   }))
     if (values.includes(input[key])) next[key] = input[key];
-  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault', 'websiteGrouping', 'regroupExisting'])
+  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault', 'regroupExisting'])
     if (typeof input[key] === 'boolean') next[key] = input[key];
   for (const key of ['model', 'notionParent'])
     if (input[key] !== undefined) next[key] = text(input[key], 200);
@@ -32,11 +32,8 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
     if (input.aiEndpoint) endpointOrigin(input.aiEndpoint);
     next.aiEndpoint = text(input.aiEndpoint, 1000);
   }
-  if (input.rules !== undefined) {
-    if (!Array.isArray(input.rules) || input.rules.length > 50)
-      throw new Error('Use at most 50 rules.');
-    next.rules = sanitizeRules(input.rules);
-  }
+  next.rules = initialState().settings.rules;
+  next.websiteGrouping = true;
   return next;
 }
 export function portableSettings(settings) {

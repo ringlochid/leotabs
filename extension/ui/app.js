@@ -21,6 +21,8 @@ import {
   menu,
   collectionChoice,
 } from './shared.js';
+import {installDragScroll,captureMoveAnimation} from './drag-scroll.js';
+import {collectionSlot,rowSlot,createInsertionIndicator} from './insertion.js';
 import { colorHex, colorInk } from '../lib/colors.js';
 import { drawIdentity } from '../lib/identity.js';
 import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
@@ -30,7 +32,7 @@ import { highlightMatches, matchesPage } from './library-search.js';
 import { createActionDialogs } from './action-dialogs.js';
 import { createSearchController } from './search-controller.js';
 import { createTabTools, orderedTabs } from './tab-tools.js';
-let libraryScope = null;
+let libraryScope = 'window';
 let tabTools,
   selectingTabs = false;
 const savedSelections = new Map();
@@ -65,6 +67,10 @@ let actions,
   searchController;
 const linkLimits = new Map();
 let dragActive = false;
+let savedDragKind = null;
+let nativeDragIds = [];
+const insertionIndicator = createInsertionIndicator();
+const nativeTargets = new WeakMap();
 let refreshAfterDrag = false;
 document.addEventListener('dragstart', (event) => {
   if (!event.target.closest('[draggable="true"]')) return;
@@ -76,8 +82,10 @@ document.addEventListener('dragstart', (event) => {
 function finishDrag() {
   if (!dragActive) return;
   dragActive = false;
+  savedDragKind = null;
+  nativeDragIds = [];
+  insertionIndicator.clear();
   document.body.classList.remove('dragging-open-tabs');
-  document.querySelectorAll('.native-drop-over').forEach(n=>n.classList.remove('native-drop-over'));
   rpc('interaction-drag',{active:false}).catch(()=>{});
   clearDropFeedback();
   if (refreshAfterDrag) {
@@ -88,6 +96,7 @@ function finishDrag() {
 }
 document.addEventListener('dragend', finishDrag, true);
 document.addEventListener('drop', () => queueMicrotask(finishDrag), true);
+installDragScroll({containers:()=>[$('#sidebar'),$('#main'),document.scrollingElement],onScroll:updateInsertion});
 function retainScroll() {
   const positions = [...new Set([document.scrollingElement, $('#main'), $('#sidebar')])]
     .filter(Boolean).map(node => [node, node.scrollLeft, node.scrollTop]);
@@ -97,44 +106,33 @@ let refreshGeneration = 0;
 let rendering = 0;
 let draggingCollection = null;
 let reorderBefore;
-let reorderMarker;
 function clearCollectionDrag() {
   draggingCollection = null;
-  reorderMarker?.remove();
-  reorderMarker = null;
-  document.querySelectorAll('.collection.dragging').forEach((n) => n.classList.remove('dragging'));
+  insertionIndicator.clear();
+  document.querySelectorAll('.collection.dragging').forEach(n=>n.classList.remove('dragging'));
 }
-function markCollectionDrop(c, card, e) {
-  if (c.id === draggingCollection) return;
-  const rect = card.getBoundingClientRect();
-  const list = $('#board').classList.contains('list-view');
-  const after = list
-    ? e.clientY > rect.top + rect.height / 2
-    : e.clientX > rect.left + rect.width / 2;
-  const visible = data.state.collections.filter(
-    (x) => x.spaceId === activeSpace && x.id !== draggingCollection,
-  );
-  reorderBefore = after ? visible[visible.findIndex((x) => x.id === c.id) + 1]?.id : c.id;
-  if (!reorderMarker) {
-    reorderMarker = el('div', { class: 'collection-insertion', 'aria-hidden': 'true' });
-    document.body.append(reorderMarker);
+function markCollectionAtPoint(point) {
+  const board=$('#board'),bounds=board.getBoundingClientRect();
+  if(point.x<bounds.left||point.x>bounds.right||point.y<bounds.top||point.y>bounds.bottom){insertionIndicator.clear();return null;}
+  const items=[...board.querySelectorAll(':scope>.collection')].filter(n=>n.dataset.collectionId!==draggingCollection).map(n=>({id:n.dataset.collectionId,rect:n.getBoundingClientRect()}));
+  const nearest=items.reduce((best,item)=>{
+    const r=item.rect,dx=Math.max(r.left-point.x,0,point.x-r.right),dy=Math.max(r.top-point.y,0,point.y-r.bottom),distance=dx*dx+dy*dy;
+    return !best||distance<best.distance?{item,distance}:best;
+  },null)?.item;
+  const style=getComputedStyle(board);
+  const singleColumn=style.gridTemplateColumns.split(' ').length===1;
+  const slot=collectionSlot(items,nearest?.id,point,{list:singleColumn,gapX:parseFloat(style.columnGap)||28,gapY:parseFloat(style.rowGap)||30});
+  reorderBefore=slot?.beforeId;
+  insertionIndicator.show(slot,$('#main'),'collection');
+  return slot;
+}
+function updateInsertion(point) {
+  if(draggingCollection)return markCollectionAtPoint(point);
+  if(nativeDragIds.length){
+    const node=document.elementFromPoint(point.x,point.y)?.closest('.tab-row,.open-tab-group,.native-ungroup-drop');
+    if(node&&nativeTargets.has(node))return nativeDropPlan(node,point);
   }
-  Object.assign(
-    reorderMarker.style,
-    list
-      ? {
-          left: rect.left + 'px',
-          top: (after ? rect.bottom + 8 : rect.top - 8) + 'px',
-          width: rect.width + 'px',
-          height: '3px',
-        }
-      : {
-          left: (after ? rect.right + 10 : rect.left - 10) + 'px',
-          top: rect.top + 'px',
-          width: '3px',
-          height: Math.min(rect.height, 100) + 'px',
-        },
-  );
+  markSavedDrop(point);
 }
 const act = (fn) => task(fn);
 async function refresh() {
@@ -160,13 +158,19 @@ async function refresh() {
   if (boardChanged) renderBoard();
   if(recentChanged) renderRecent();
   if (boardChanged) renderCurrentCollection();
+  const closeAll=$('#current-collection .close-all-tabs');
+  if(closeAll)closeAll.disabled=!data.tabs.some(t=>t.windowId===win&&!t.pinned);
   searchController?.update();
   restoreScroll();
 }
 async function change(action, payload) {
   if (action === 'save' || action === 'switch') payload.spaceId ||= activeSpace;
+  const moving=action==='move-open-tabs'||action==='edit'&&['move-collection','move-link','move-links','move-group'].includes(payload.kind);
+  const animateBoard=moving?captureMoveAnimation($('#board'),'.collection','collectionId'):()=>{};
+  const animateTabs=moving?captureMoveAnimation($('#tabs'),'.tab-row','tabId'):()=>{};
   const result = await rpc(action, payload);
   await refresh();
+  animateBoard();animateTabs();
   const op = result?.operation || result;
   if (op?.label && action !== 'settings')
     toast(
@@ -237,18 +241,32 @@ function renderTabs() {
     restoreScroll();
   }
 }
+function nativeDropPlan(node,point,show=true) {
+  const target={...nativeTargets.get(node)};
+  if(node.classList.contains('tab-row')){
+    const nodes=[...node.parentElement.children].filter(n=>n.classList.contains('tab-row'));
+    const slot=rowSlot(nodes,node,point.y);
+    if(slot.after){target.afterTabId=target.beforeTabId;delete target.beforeTabId;}
+    if(show)insertionIndicator.show(slot,$('#sidebar'),'tab');
+  }else{
+    const r=node.getBoundingClientRect();
+    if(show)insertionIndicator.show({left:r.left+6,top:r.bottom-1,width:r.width-12,height:2},$('#sidebar'),'tab');
+  }
+  return target;
+}
 function nativeDropTarget(node, target) {
-  node.ondragover=e=>{if(!e.dataTransfer.types.includes('application/x-neo'))return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';node.classList.add('native-drop-over');};
-  node.ondragleave=e=>{if(!node.contains(e.relatedTarget))node.classList.remove('native-drop-over');};
+  nativeTargets.set(node,target);
+  node.ondragover=e=>{if(!nativeDragIds.length)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';nativeDropPlan(node,{x:e.clientX,y:e.clientY});};
   node.ondrop=act(async e=>{
-    e.preventDefault();e.stopPropagation();node.classList.remove('native-drop-over');
+    e.preventDefault();e.stopPropagation();
     let payload;try{payload=JSON.parse(e.dataTransfer.getData('application/x-neo'));}catch{return;}
     if(payload.type!=='tabs')return;
     const ids=payload.ids.filter(id=>data.tabs.some(t=>t.id===id&&!t.pinned));
     if(!ids.length)return;
-    const windowId=target.windowId||data.tabs.find(t=>t.id===ids[0]).windowId;
+    const plan=nativeDropPlan(node,{x:e.clientX,y:e.clientY},false);
+    const windowId=plan.windowId||data.tabs.find(t=>t.id===ids[0]).windowId;
     finishDrag();
-    await change('move-open-tabs',{tabIds:ids,windowId,groupId:-1,...target});
+    await change('move-open-tabs',{tabIds:ids,windowId,groupId:-1,...plan});
   });
 }
 function renderTabsContent() {
@@ -286,7 +304,7 @@ function renderTabsContent() {
   const selectMode = $('#library-select-mode');
   if (selectMode) {
     selectMode.removeAttribute('aria-pressed');
-    selectMode.textContent = selectingTabs ? 'Done' : 'Select';
+    selectMode.replaceChildren(icon(selectingTabs ? 'check' : 'select'));
     selectMode.title = selectingTabs ? 'Done selecting' : 'Select tabs';
     selectMode.setAttribute('aria-label', selectMode.title);
   }
@@ -387,13 +405,13 @@ function renderTabsContent() {
           body,
         );
         nativeDropTarget(container,{windowId:t.windowId,groupId:t.groupId});
-        header.oncontextmenu=e=>{e.preventDefault();menu('Group actions', [['Always group these websites here',()=>actions.ruleSettings(Object.assign([...members],{groupName:name})),'group']],{anchor:header});};
         header.ondragstart = (e) => {
           if (e.target.tagName === 'INPUT' || e.target.closest('.open-group-fold')) {
             e.preventDefault();
             return;
           }
           clearNativeGroupDrag();
+          nativeDragIds = members.map(tab=>tab.id);
           e.dataTransfer.setData(
             'application/x-neo',
             JSON.stringify({ type: 'tabs', ids: members.map((tab) => tab.id) }),
@@ -447,6 +465,7 @@ function renderTabsContent() {
         draggable: true,
         dataset: { tabId: t.id },
         ondragstart: (e) => {
+          nativeDragIds = selected.has(t.id)?[...selected]:[t.id];
           e.dataTransfer.setData(
             'application/x-neo',
             JSON.stringify({ type: 'tabs', ids: selected.has(t.id) ? [...selected] : [t.id] }),
@@ -473,7 +492,7 @@ function renderTabsContent() {
           ),
     );
     if(!t.pinned)nativeDropTarget(row,{windowId:t.windowId,groupId:t.groupId,beforeTabId:t.id});
-    row.oncontextmenu=e=>{e.preventDefault();menu('Tab actions', [['Create rule from this tab',()=>actions.ruleSettings([t]),'group'],...(t.groupId>=0?[['Move out of group',()=>change('move-open-tabs',{tabIds:[t.id],windowId:t.windowId,groupId:-1}),'ungroup']]:[])],{anchor:row});};
+    if(t.groupId>=0)row.oncontextmenu=e=>{e.preventDefault();menu('Tab actions', [['Move out of group',()=>change('move-open-tabs',{tabIds:[t.id],windowId:t.windowId,groupId:-1}),'ungroup']],{anchor:row});};
     if (t.parked) row.title = 'Parked · loads when opened';
     if (groupContainer) {
       if (groupContainer.expanded) groupContainer.body.append(row);
@@ -667,7 +686,6 @@ function renderRecent() {
         el('span', { class: 'row-title' }, page.title || page.url),
         el('small', {}, domain(page.url)),
       ),
-      el('span', { class: 'recent-page-verb' }, live ? 'Switch' : closed ? 'Reopen' : 'Open'),
     );
     b.dataset.focusKey = 'recent-page:' + page.url;
     b.setAttribute('aria-label', label + ': ' + (page.title || page.url));
@@ -833,6 +851,7 @@ function renderSessionTimeline(root) {
         });
     if (result?.failed?.length || result?.groupFailures?.length)
       throw Error('Some tabs could not be restored. This snapshot is still available.');
+    if(link&&result?.created?.[0])await rpc('activate',{tabId:result.created[0]});
     await refresh();
   };
   const list = el('div', { class: 'history-tabs' });
@@ -862,7 +881,6 @@ function renderSessionTimeline(root) {
         el('span', { class: 'row-title' }, link.title || link.url),
         el('small', {}, domain(link.url)),
       ),
-      el('span', { class: 'recent-page-verb' }, verb),
     );
     list.append(page);
   }
@@ -1180,8 +1198,8 @@ function renderBoardContent() {
     return;
   }
   board.style.display = '';
-  board.ondragover = null;
-  board.ondrop = null;
+  board.ondragover = e=>{if(draggingCollection){e.preventDefault();markCollectionAtPoint({x:e.clientX,y:e.clientY});}};
+  board.ondrop = act(async e=>{if(!draggingCollection)return;e.preventDefault();const id=draggingCollection,slot=markCollectionAtPoint({x:e.clientX,y:e.clientY});clearCollectionDrag();if(slot)await change('edit',{kind:'move-collection',collectionId:id,beforeId:slot.beforeId,label:'Move collection'});});
   board.replaceChildren(...collections.map(collectionCard));
   if (!activeCollection && !query)
     board.append(
@@ -1199,7 +1217,23 @@ function renderBoardContent() {
 const copyDrag = (e) => e.ctrlKey || e.metaKey;
 function clearDropFeedback() {
   document.querySelectorAll('.drag-over').forEach((node) => node.classList.remove('drag-over'));
+  insertionIndicator.clear();
 }
+function savedRowSlot(node,y) {
+  return rowSlot([...node.parentElement.children].filter(n=>n.classList.contains('saved-row')),node,y);
+}
+function savedGroupSlot(node,y) {
+  return rowSlot([...node.parentElement.children].filter(n=>n.classList.contains('saved-group')),node,y);
+}
+function markSavedDrop(point) {
+  if(!savedDragKind){insertionIndicator.clear();return;}
+  const hit=document.elementFromPoint(point.x,point.y),group=hit?.closest('.saved-group'),row=hit?.closest('.saved-row');
+  if(savedDragKind==='group'&&group)insertionIndicator.show(savedGroupSlot(group,point.y),$('#main'),'group');
+  else if(row&&savedDragKind!=='group')insertionIndicator.show(savedRowSlot(row,point.y),$('#main'),'link');
+  else if(group){const r=group.getBoundingClientRect();insertionIndicator.show({left:r.left,top:r.bottom-1,width:r.width,height:2},$('#main'),'link');}
+  else insertionIndicator.clear();
+}
+document.addEventListener('dragover',event=>updateInsertion({x:event.clientX,y:event.clientY}),true);
 document.addEventListener('dragend', clearDropFeedback);
 function dragFeedback(e) {
   e.preventDefault();
@@ -1253,7 +1287,7 @@ function renderCurrentCollection() {
     host.append(label, autoUpdate,button('Close current collection',act(()=>actions.closeCollection(c)),{glyph:'close',className:'close-current'}));
   } else {
     host.style.removeProperty('--current-color');
-    host.append(button('Close all',act(()=>actions.closeWindow()),{className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.'}));
+    host.append(button('Close all currently open tabs',act(()=>actions.closeWindow()),{className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.',disabled:!data.tabs.some(t=>t.windowId===win&&!t.pinned)}));
   }
   const color=c?.color || 'lavender';
   const mark=document.querySelector('.brand-mark');
@@ -1280,11 +1314,12 @@ function collectionCard(c) {
     e.preventDefault();
     if (draggingCollection) {
       e.dataTransfer.dropEffect = 'move';
-      markCollectionDrop(c, card, e);
+      markCollectionAtPoint({x:e.clientX,y:e.clientY});
       return;
     }
     dragFeedback(e);
-    card.classList.add('drag-over');
+    if(!document.querySelector('.drop-insertion'))card.classList.add('drag-over');
+    else card.classList.remove('drag-over');
   };
   card.ondragleave = (e) => {
     if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over');
@@ -1299,7 +1334,7 @@ function collectionCard(c) {
         clearCollectionDrag();
         return;
       }
-      markCollectionDrop(c, card, e);
+      markCollectionAtPoint({x:e.clientX,y:e.clientY});
       const beforeId = reorderBefore;
       clearCollectionDrag();
       await change('edit', {
@@ -1404,14 +1439,14 @@ function collectionCard(c) {
   if(lastDropCollection===c.id)card.append(button('Suggest name or destination',()=>actions.dropSuggestions(c),{glyph:'sparkles'}));
   card.append(el('div', {class:'collection-meta'},
     c.pinned ? el('span', {class:'collection-pinned'}, icon('pin'), 'Pinned') : null,
-    el('time', {dateTime:new Date(c.updatedAt).toISOString()}, collectionAge(c)),
-    currentSession ? el('span', {class:'collection-current-label'},
-      data.sessionState.active[win].tracking !== false && c.autoUpdate !== false ? 'Auto-update on' : 'Auto-update paused') : null));
+
+    currentSession ? el('span', {class:'collection-current-label'}, 'Current') : null));
   card.classList.toggle('current-collection-card', currentSession);
+  card.querySelector('.collection-head').title=c.name+' · '+collectionAge(c);
   card.append(el('div', {class:'collection-primary-actions'},
     button('Open', act(() => actions.resume(c)), {glyph:'external', title:'Open fresh tabs; keep saved collection unchanged', disabled:!c.links.length}),
-    button('New window', act(() => actions.resume(c, { target: 'new' })), {glyph:'external', title:'Open in new window', className:'collection-open-window', disabled:!c.links.length}),
-    button('Switch to collection', act(() => actions.swap(c)), {glyph:'arrow', className:'collection-switch', disabled:currentSession, title:currentSession?'This collection is already current':'Make this collection current in this window; choose whether to save the current tabs'})));
+    button('Switch', act(() => actions.swap(c)), {glyph:'arrow', className:'collection-switch', 'aria-label':'Switch to collection', disabled:currentSession, title:currentSession?'This collection is already current':'Make this collection current in this window; choose whether to save the current tabs'})));
+  card.querySelector('.collection-switch').setAttribute('aria-label','Switch to collection');
   const header = card.querySelector('.collection-head');
   header.draggable = !activeCollection;
   header.ondragstart = (e) => {
@@ -1487,7 +1522,7 @@ function collectionCard(c) {
       !children.some((l) => matchesPage(l, query))
     )
       continue;
-    const wrap = el('div', { class: 'saved-group' });
+    const wrap = el('div', { class: 'saved-group', dataset:{groupId:g.id} });
     const toggle = button(
       '',
       act(() =>
@@ -1528,6 +1563,7 @@ function collectionCard(c) {
               return;
             }
             e.stopPropagation();
+            savedDragKind = 'group';
             e.dataTransfer.setData(
               'application/x-neo',
               JSON.stringify({
@@ -1582,7 +1618,7 @@ function collectionCard(c) {
           collectionId: p.collectionId,
           groupId: p.groupId,
           destinationId: c.id,
-          beforeId: g.id,
+          beforeId: savedGroupSlot(wrap,e.clientY).next?.dataset.groupId,
           label: copyDrag(e) ? 'Copy group' : 'Move group',
         });
       }
@@ -1845,6 +1881,7 @@ function savedRow(c, l) {
       title: (l.note || l.url) + '\nDrag to move. Hold Ctrl to copy.',
       ondragstart: (e) => {
         e.stopPropagation();
+        savedDragKind = 'links';
         e.dataTransfer.effectAllowed = 'copyMove';
         e.dataTransfer.setData(
           'application/x-neo',
@@ -1911,7 +1948,7 @@ function savedRow(c, l) {
         linkId: p.linkId,
         linkIds: p.linkIds,
         destinationId: c.id,
-        beforeId: l.id,
+        beforeId: savedRowSlot(row,e.clientY).next?.dataset.linkId,
         groupId: l.groupId,
       });
     }
@@ -1919,24 +1956,34 @@ function savedRow(c, l) {
   return row;
 }
 function collectionMenu(c, trigger) {
+  const applyColour=async colour=>{
+    await change('edit',{kind:'collection',collectionId:c.id,color:colour});
+    for(const swatch of colors.querySelectorAll('.swatch')){
+      const chosen=colorHex(swatch.dataset.color)===colorHex(colour);
+      swatch.classList.toggle('selected',chosen);swatch.setAttribute('aria-pressed',String(chosen));
+    }
+    custom.value=colorHex(colour);hex.value=colorHex(colour);
+  };
   const colors = el(
     'div',
     { class: 'swatches' },
     ...PALETTE.map((color) =>
       el('button', {
-        class: 'swatch' + (color === c.color ? ' selected' : ''),
-        style: `background:var(--${color})`,
+        class: 'swatch' + (colorHex(color) === colorHex(c.color) ? ' selected' : ''),
+        style: `--swatch-color:${colorHex(color)}`,
+        dataset:{color},
+        'aria-pressed':String(colorHex(color)===colorHex(c.color)),
         title: color,
         'aria-label': color,
-        onclick: act(() => change('edit', { kind: 'collection', collectionId: c.id, color })),
+        onclick: act(() => applyColour(color)),
       }),
     ),
   );
-  const custom = el('input', {type:'color', value:colorHex(c.color), 'aria-label':'Custom collection colour', onchange:act(e => change('edit', {kind:'collection', collectionId:c.id, color:e.target.value}))});
-  const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Use a six-digit hex colour, such as #3498db.'); return change('edit', {kind:'collection',collectionId:c.id,color:e.target.value}); })});
+  const custom = el('input', {type:'color', value:colorHex(c.color), 'aria-label':'Custom collection colour', onchange:act(e => applyColour(e.target.value))});
+  const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Use a six-digit hex colour, such as #3498db.'); return applyColour(e.target.value); })});
   colors.append(el('label', {class:'custom-colour'}, 'Custom', custom, hex));
   const choices = [
-    ['Organisation', () => actions.organisation({type:'collection',id:c.id}), 'group'],
+    ['Open in new window',()=>actions.resume(c,{target:'new'}),'external',!c.links.length],
     ['Version history', () => actions.versions(c), 'history'],
     [
       c.pinned ? 'Unpin collection' : 'Pin collection',
@@ -1966,9 +2013,9 @@ function collectionMenu(c, trigger) {
       'arrow',
     ],
     null,
+    ['Group & sort', () => actions.groupCollection(c), 'group', !c.links.length],
     ['Organise collection with AI', () => actions.ai(c), 'sparkles', !c.links.length],
     ['Research overview', () => actions.overview(c), 'note', !c.links.length],
-    ['Apply domain rules', () => change('rules', { collectionId: c.id }), 'group'],
     ['Export', () => actions.export(c, trigger), 'tray'],
     [
       'Duplicate collection',
@@ -2000,7 +2047,6 @@ function groupMenu(c, g, trigger) {
           }),
         'external',
       ],
-      ['Always group these websites here',()=>actions.ruleSettings(Object.assign(c.links.filter(l=>l.groupId===g.id),{groupName:g.name})),'group'],
       [
         'Ungroup',
         () => change('edit', { kind: 'delete-group', collectionId: c.id, groupId: g.id }),
@@ -2215,7 +2261,7 @@ async function start() {
       selectingTabs = !selectingTabs;
       if (!selectingTabs) selected.clear();
       selectMode.removeAttribute('aria-pressed');
-      selectMode.textContent = selectingTabs ? 'Done' : 'Select';
+      selectMode.replaceChildren(icon(selectingTabs ? 'check' : 'select'));
       selectMode.title = selectingTabs ? 'Done selecting' : 'Select tabs';
       selectMode.setAttribute('aria-label', selectMode.title);
       renderTabs();
@@ -2223,9 +2269,10 @@ async function start() {
     { glyph: 'select', quiet: true },
   );
   selectMode.id = 'library-select-mode';
-  selectMode.className = 'selection-mode-button';
+  selectMode.className = 'selection-mode-button icon-button';
   tabTools.node.append(selectMode);
   $('#tab-tools').replaceChildren(tabTools.node);
+  $('#tab-preferences').replaceChildren(tabTools.grouping);
   renderTabs();
   chrome.runtime.onMessage.addListener((m) => {
     if (m.event === 'navigate')

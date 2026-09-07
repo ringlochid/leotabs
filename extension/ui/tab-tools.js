@@ -14,7 +14,7 @@ export function orderedTabs(tabs, order = 'recent') {
 }
 
 // Both tab surfaces use these exact controls, settings and save dialog.
-export function createTabTools({ getTabs, getSettings, change, actions, compact = false, showCloseAll = true, showTopicAI = true }) {
+export function createTabTools({ getTabs, getSettings, change, actions, compact = false, showCloseAll = true, showTopicAI = true, showAutoGroup = true }) {
   const openGrouping=()=>{
     const sort=more;
     const include=el('input',{type:'checkbox',checked:getSettings().regroupExisting!==false,'aria-label':'Include already grouped tabs'});
@@ -26,16 +26,16 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       }finally{sort.dataset.durationMs=String(Math.round(performance.now()-started));sort.disabled=false;sort.removeAttribute('aria-busy');}
     }),{className:'primary group-apply'});
-    const {close}=popover('Group tabs',el('div',{},el('p',{class:'hint'},'Use rules, then websites. Order groups and tab titles A–Z.'),el('label',{class:'check-label'},include,'Include already grouped tabs')),[apply],{anchor:sort});
+    const {close}=popover('Group tabs',el('div',{},el('p',{class:'hint'},'Group by website, then sort A–Z.'),el('label',{class:'check-label'},include,'Include already grouped tabs')),[apply],{anchor:sort});
   };
   const autoState=el('small',{class:'auto-group-state'});
   const auto=el('input',{type:'checkbox',role:'switch','aria-label':'Auto-group new tabs',onchange:task(async e=>{const enabled=e.target.checked;auto.disabled=true;try{await change('settings',{settings:{autoGroup:enabled}});}catch(error){auto.checked=!enabled;throw error;}finally{auto.disabled=false;autoState.textContent=auto.checked?'On':'Off';}})});
   const grouping=el('div',{class:'grouping-controls'},el('label',{class:'settings-preference auto-group-control'},el('span',{},'Auto-group new tabs'),auto,autoState));
-  const more=button('More tab actions',e=>menu('Tab actions',[
+  const more=button('Group and sort tabs',e=>menu('Tab actions',[
     ['Group & sort',openGrouping,'group'],
     ...(showTopicAI ? [['Group by topic with AI',()=>actions.aiTabs(),'sparkles'],null] : []),
     ...[['recent','Most recent first'],['title','Title A–Z'],['domain','Website']].map(([order,label])=>[label,()=>actions.sortTabs(order)]),
-  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Reorder browser tabs in this window. Groups stay together; pinned tabs stay in place.')}),{glyph:'more',quiet:true,className:'tab-more-button'});
+  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Sort browser tabs. Keep existing groups.')}),{glyph:'sort',quiet:true,className:'tab-more-button'});
   const save = button('Save tabs', () => actions.save(), { glyph: 'tray', quiet: compact });
   const dedup = button(
     'Close duplicate tabs',
@@ -48,11 +48,11 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
   const node = el(
     'div',
     { class: 'tab-tools' + (compact ? ' compact' : ''), 'aria-label': 'Tab actions' },
-    grouping,
+    ...(showAutoGroup ? [grouping] : []),
     more,
     save,
     dedup,
-    ...(showCloseAll ? [button('Close all', task(()=>actions.closeWindow()), {className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.'})] : []),
+    ...(showCloseAll ? [button('Close all currently open tabs', task(()=>actions.closeWindow()), {className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.'})] : []),
   );
   function update() {
     auto.checked=getSettings().autoGroup!==false;autoState.textContent=auto.checked?'On':'Off';
@@ -72,5 +72,5 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
     save.disabled = !getTabs().some((t) => !t.pinned);
   }
   update();
-  return { node, update, save, dedup };
+  return { node, update, save, dedup, grouping };
 }

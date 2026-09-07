@@ -16,6 +16,7 @@ export async function checkNativeDrag({app,rpc,results,delay,origin,out}) {
   await app.send('Input.setInterceptDrags',{enabled:true});
   const point=selector=>app.evaluate(`(()=>{const n=document.querySelector(${JSON.stringify(selector)});n.scrollIntoView({block:'nearest'});const r=n.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
   const drag=async(from,to)=>{
+    await wait(()=>app.evaluate(`!document.getAnimations().some(a=>a.playState==='running')`),'Previous move animation did not settle');
     app.dragEvents.length=0;
     const start=await point(from);
     await app.send('Input.dispatchMouseEvent',{type:'mouseMoved',...start});

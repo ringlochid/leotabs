@@ -124,14 +124,15 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       return {id:op.id,label:op.label,undoable:true};
     }catch(error){op.status='partial';op.after=layoutSignature(await live(windowId),await browser.tabGroups.query({windowId}));await db.write('journal',op);try{await undo(op.id);}catch{}throw error;}
   }
-  async function move({windowId,tabIds,groupId=-1,beforeTabId}) {
+  async function move({windowId,tabIds,groupId=-1,beforeTabId,afterTabId}) {
     const all=await live(windowId),selected=new Set(tabIds||[]);
     const tabs=all.filter(t=>selected.has(t.id)&&!t.pinned);
     if(!tabs.length||tabs.length!==selected.size)throw Error('Choose unpinned tabs from this window.');
     const sourceGroups=await browser.tabGroups.query({windowId});
     if(groupId>=0&&!sourceGroups.some(g=>g.id===groupId))throw Error('This group is no longer available.');
     if(beforeTabId!==undefined&&!all.some(t=>t.id===beforeTabId&&!t.pinned&&t.groupId===groupId))throw Error('The drop target changed.');
-    if(selected.has(beforeTabId))return {label:'Tabs already here'};
+    if(afterTabId!==undefined&&!all.some(t=>t.id===afterTabId&&!t.pinned&&t.groupId===groupId))throw Error('The drop target changed.');
+    if(selected.has(beforeTabId)||selected.has(afterTabId))return {label:'Tabs already here'};
     const scope=(await sessions.list()).active[windowId]?.collectionId||'unassigned';
     const op={id:crypto.randomUUID(),kind:'arrange',label:`Moved ${tabs.length} tab${tabs.length===1?'':'s'}`,at:Date.now(),status:'applying',windowId,tabs:all.map(t=>({id:t.id,url:t.url,groupId:t.groupId,index:t.index,pinned:t.pinned,active:t.active})),sourceGroups,undoable:true,scope};
     await db.write('journal',op);
@@ -140,6 +141,7 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       if(groupId>=0)await browser.tabs.group({tabIds:ids,groupId});
       else await browser.tabs.ungroup(ids);
       if(beforeTabId!==undefined){const now=await live(windowId);const target=now.find(t=>t.id===beforeTabId);const index=target.index-now.filter(t=>selected.has(t.id)&&t.index<target.index).length;await browser.tabs.move(ids,{index});}
+      else if(afterTabId!==undefined){const now=await live(windowId);const target=now.find(t=>t.id===afterTabId);const index=target.index+1-now.filter(t=>selected.has(t.id)&&t.index<=target.index).length;await browser.tabs.move(ids,{index});}
       else if(groupId<0)await browser.tabs.move(ids,{index:-1});
       if((await db.getState()).settings.tabSort!=='position')await db.mutate('Show browser order',s=>{s.settings.tabSort='position';});
       const corrections=(await browser.storage.local.get('neoOrganisationCorrections')).neoOrganisationCorrections||[];

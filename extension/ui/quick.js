@@ -13,7 +13,6 @@ import {
   task,
   toast,
   surface,
-  menu,
   revealResult,
   collectionChoice,
 } from './shared.js';
@@ -49,7 +48,7 @@ export async function startQuick() {
   theme(data.state.settings.theme);
   const close = () =>
     globalThis.__neoCloseOverlay ? globalThis.__neoCloseOverlay() : window.close();
-  const search = el('input', { id: 'quick-search', type: 'search' });
+  const search = el('input', { id: 'quick-search', type: 'search', 'aria-label': 'Search tabs', 'aria-keyshortcuts': '/', title: 'Press / to search' });
   const results = el('main', { id: 'quick-results', class: 'quick-grid' });
   const scope = el('div', { class: 'search-scope', hidden: true });
   const scopeBar = el('div', {
@@ -90,11 +89,6 @@ export async function startQuick() {
   const collectionsButton = button('Collections', () => setBrowseMode('collections'), {
     glyph: 'group',
   });
-  const actionButton = button('More actions', (e) => showActions(e.currentTarget), {
-    glyph: 'more',
-    quiet: true,
-    className: 'overlay-more',
-  });
   const title = el('h1', {}, 'Open tabs'),
     summary = el('span', { class: 'muted' });
   const back = button(
@@ -102,7 +96,7 @@ export async function startQuick() {
     () => {
       groupId = null;
       controller.render();
-      search.focus();
+      focusFirstTab();
     },
     { glyph: 'back' },
   );
@@ -205,7 +199,7 @@ export async function startQuick() {
   const dismissButton = button('Close switcher', close, { glyph: 'close', quiet: true });
   scopeBar.append(
     collectionsButton,
-    el('div', { class: 'overlay-navigation' }, audioButton, selectButton, actionButton),
+    el('div', { class: 'overlay-navigation' }, audioButton, selectButton),
   );
   const view = el(
     'section',
@@ -214,6 +208,7 @@ export async function startQuick() {
       role: 'dialog',
       'aria-modal': 'true',
       'aria-label': 'Tab switcher',
+      tabindex: -1,
     },
     el(
       'div',
@@ -288,9 +283,9 @@ export async function startQuick() {
         });
       return result;
     },
-    actions,
+    actions, compact: true, showCloseAll: false, showAutoGroup: false,
   });
-  // Tab tools are available through Actions, keeping the initial view calm.
+  view.querySelector('.overlay-navigation').insertBefore(tools.node, selectButton);
   if (globalThis.__neoSurface) {
     for (const action of ['settings', 'import', 'export', 'ai'])
       actions[action] = async (c) => {
@@ -307,7 +302,8 @@ export async function startQuick() {
     selected.clear();
     search.value = search.value.replace(/^[/@]/, '');
     controller.resetContext();
-    search.focus();
+    if (['window', 'all'].includes(mode)) focusFirstTab();
+    else search.focus();
   }
   function updateScopes() {
     for (const [id, b] of scopeButtons) {
@@ -329,50 +325,8 @@ export async function startQuick() {
     dock.hidden = true;
     view.querySelector('.view-choices').hidden = !['window', 'all'].includes(browseMode);
   }
-  function showActions(anchor) {
-    menu(
-      'Actions',
-      [
-        ['Save tabs', () => actions.save(), 'tray', !['window', 'all'].includes(browseMode)],
-        [
-          'Sort tabs',
-          () =>
-            menu(
-              'Sort tabs',
-              [
-                ['recent', 'Most recent first'],
-                ['position', 'Tab order'],
-                ['reverse', 'Reverse tab order'],
-              ].map(([tabSort, label]) => [
-                label,
-                async () => {
-                  await rpc('settings', { settings: { tabSort } });
-                  await refresh();
-                },
-              ]),
-              { anchor },
-            ),
-          'sort',
-        ],
-        [
-          'Close duplicate tabs',
-          () => tools.node.querySelector('.dedup-button').click(),
-          'broom',
-          tools.node.querySelector('.dedup-button').disabled,
-        ],
-        null,
-        [
-          'All actions',
-          () => {
-            search.value = '/';
-            controller.setContext(null);
-            search.focus();
-          },
-          'more',
-        ],
-      ],
-      { anchor },
-    );
+  function focusFirstTab() {
+    focusResult(results.querySelector('.preview-tile, .tab-choice') || view);
   }
   function focusResult(node) {
     if (!node) return;
@@ -696,7 +650,7 @@ export async function startQuick() {
           if (isGroup) {
             groupId = entry.tab.groupId;
             controller.render();
-            search.focus();
+            focusFirstTab();
           } else if (selecting) {
             const remove = entry.ids.every((id) => selected.has(id));
             entry.ids.forEach((id) => (remove ? selected.delete(id) : selected.add(id)));
@@ -920,7 +874,7 @@ export async function startQuick() {
     if (groupId !== null) {
       groupId = null;
       controller.render();
-      search.focus();
+      focusFirstTab();
       return;
     }
     close();
@@ -971,10 +925,16 @@ export async function startQuick() {
     },
   });
   renderDock();
-  search.focus();
+  if (searchOnly) search.focus();
+  else focusFirstTab();
   const onKey = (e) => {
     if (e.isComposing || $('#dialog')?.open || $('#action-popover')?.matches(':popover-open'))
       return;
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input,textarea,[contenteditable=true]')) {
+      e.preventDefault();
+      search.focus();
+      return;
+    }
     if (e.key === 'Tab') {
       const controls = [
         ...view.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]'),
@@ -994,7 +954,7 @@ export async function startQuick() {
       dismiss();
       return;
     }
-    if (e.target.closest('.group-name-slot')) return;
+    if (e.target.closest('.group-name-slot input')) return;
     if (
       e.key === 'Delete' &&
       !selecting &&
@@ -1014,27 +974,18 @@ export async function startQuick() {
       return;
     }
     const buttons = [...results.querySelectorAll('.preview-tile, .tab-choice')];
-    if (e.target === search && !search.value.match(/^[@/]/) && !scope.children.length) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        focusResult(buttons[0]);
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        buttons[0]?.click();
-      }
-    } else if (
-      results.contains(e.target) &&
-      ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)
-    ) {
+    const live = ['window', 'all'].includes(browseMode) && !search.value.match(/^[@/]/) && !scope.children.length;
+    if (live && ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key) &&
+        (e.target === search || !e.target.closest('input,textarea,[contenteditable=true]'))) {
       e.preventDefault();
+      const current = root.activeElement?.closest('.switcher-card')?.querySelector('.preview-tile,.tab-choice');
+      const index = buttons.indexOf(current);
       const columns = list ? 1 : getComputedStyle(results).gridTemplateColumns.split(' ').length;
       const step = { ArrowDown: columns, ArrowUp: -columns, ArrowLeft: -1, ArrowRight: 1 }[e.key];
-      focusResult(
-        buttons[
-          Math.max(0, Math.min(buttons.length - 1, buttons.indexOf(root.activeElement) + step))
-        ],
-      );
+      focusResult(buttons[index < 0 ? 0 : Math.max(0, Math.min(buttons.length - 1, index + step))]);
+    } else if (live && e.target === search && e.key === 'Enter') {
+      e.preventDefault();
+      buttons[0]?.click();
     }
   };
   const containKeys = (e) => e.stopPropagation();

@@ -62,7 +62,7 @@ export function migrate(state) {
       ...c,
       spaceId: spaces.some((s) => s.id === c.spaceId) ? c.spaceId : spaces[0].id,
     })),
-    settings: { ...initialState().settings, ...state.settings, rules: state.settings?.autoGroup === undefined && !state.settings?.rules?.length ? structuredClone(DEFAULT_RULES) : (state.settings?.rules || structuredClone(DEFAULT_RULES)) },
+    settings: { ...initialState().settings, ...state.settings, rules: structuredClone(DEFAULT_RULES), websiteGrouping: true },
   };
 }
 export function validateSpaces(spaces) {
