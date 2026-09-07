@@ -27,43 +27,13 @@ export async function checkAIWorkflow({ app, rpc, results, delay, origin }) {
   const collection = async id => (await rpc('load')).state.collections.find(c => c.id === id);
   try {
     const own = await app.evaluate('chrome.tabs.getCurrent()');
-    await rpc('settings', { settings: { provider: 'compatible', model: 'local-fixture', aiEndpoint: `http://127.0.0.1:${server.address().port}/chat/completions`, aiNaming: false, autoGroup: false } });
+    await rpc('settings', { settings: { provider: 'compatible', model: 'local-fixture', aiEndpoint: `http://127.0.0.1:${server.address().port}/chat/completions`, autoGroup: false } });
     assert.equal((await rpc('load')).connections.ai, true);
     const tabs = await app.evaluate(`Promise.all([0,1].map(i=>chrome.tabs.create({windowId:${own.windowId},url:${JSON.stringify(origin)}+'/ai-'+i,active:false})))`);
     const first = await rpc('save', { tabIds: tabs.map(t => t.id), close: false });
     await delay(300);
     assert.equal(calls.length, 0, 'AI-off save called provider');
-    await rpc('settings', { settings: { aiNaming: true } });
-    const named = await rpc('save', { tabIds: tabs.map(t => t.id), close: false });
-    await wait(async () => (await collection(named.collectionId)).name === 'AI collection', 'automatic collection naming failed');
-    assert(calls.find(c => c.context.links.some(l => l.url === origin+'/ai-0')).context.links.every(l => [origin+'/ai-0', origin+'/ai-1'].includes(l.url)));
-    results.push('AI-off saving makes no provider request; opt-in automatic collection naming works through the real worker with a keyless local provider');
-
-    const manual = await rpc('save', { tabIds: tabs.map(t => t.id), close: false, name: 'Saved 3 manual references' });
-    await delay(300);
-    assert.equal((await collection(manual.collectionId)).name, 'Saved 3 manual references');
-    const saved = await collection(named.collectionId);
-    await rpc('edit', { kind: 'group-links', collectionId: saved.id, linkIds: saved.links.map(l => l.id), name: 'Group' });
-    await wait(async () => (await collection(saved.id)).groups.some(g => g.name === 'AI group'), 'new saved group was not named');
-    const grouped = await collection(saved.id);
-    assert.equal(grouped.links.length, saved.links.length);
-    assert.equal(new Set(grouped.links.map(l => l.groupId)).size, 1);
-    results.push('Automatic naming names a newly created saved group without changing membership or replacing an explicit collection name');
-
-    slow = true;
-    const before = calls.length;
-    const pending = await rpc('save', { tabIds: tabs.map(t => t.id), close: false });
-    await wait(() => calls.length > before, 'delayed naming request not started');
-    await rpc('edit', { kind: 'collection', collectionId: pending.collectionId, name: 'My later name' });
-    await delay(900);
-    assert.equal((await collection(pending.collectionId)).name, 'My later name');
-    slow = false;
     const native = await rpc('group-tabs', { tabIds: tabs.map(t => t.id), name: 'Group' });
-    await wait(() => app.evaluate(`chrome.tabGroups.get(${native.groupId}).then(g=>g.title==='AI group')`), 'native group was not named');
-    assert.deepEqual((await app.evaluate(`chrome.tabs.query({groupId:${native.groupId}})`)).map(t => t.id).sort(), tabs.map(t => t.id).sort());
-    results.push('Delayed AI naming cannot overwrite a later manual rename; automatic native group naming preserves exact tab membership');
-
-    await rpc('settings', { settings: { aiNaming: false } });
     const context = await rpc('ai-tabs-context', { windowId: own.windowId, tabIds: tabs.map(t => t.id).reverse() });
     const chosen = context.collection.links[0];
     const plan = await rpc('ai-tabs-plan', { context, requestId: 'subset-fixture', linkIds: [chosen.id], instruction: 'LIVE_PLAN' });
@@ -101,7 +71,6 @@ export async function checkAIWorkflow({ app, rpc, results, delay, origin }) {
     assert.equal(reviewed.groups[0].name, 'Reviewed UI group');
     assert.equal(reviewed.links.filter(l => l.groupId).length, 1);
     results.push('The actual AI review dialog supports edited collection/group names and individual placement changes with an accurate preview before Apply');
-    await rpc('settings', { settings: { aiNaming: false } });
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

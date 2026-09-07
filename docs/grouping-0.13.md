@@ -50,7 +50,7 @@ The baseline met the proposed P95 target, but **two seconds is not a hard bound*
 
 AI tests use a deterministic local provider and validate request shape and application/Undo, not real model quality or latency. No personal browser data or keys were used. Personal Chrome automation was rejected by its URL policy; no alternate route was used to access that profile. The user's two-second remote-AI target remains unverified. Their 14.46-second recording is evidence of a long visible wait, not a measured network timing breakdown.
 
-Final package: `output/neo-0.13.0.zip`, 66 files. ZIP CRC and every extracted byte match the current extension source. SHA-256: `4cef39021c3183fcd65e4abb8a1b9228c24b9c8f3190cf84d586d84995b8a18e`. Module syntax, entry points, asset references, overlay source hashes and no mandatory host permissions passed.
+Final package: `output/neo-0.13.0.zip`, 66 files. ZIP CRC and every extracted byte match the current extension source. SHA-256: `61798d353dc67f951e0ad9cb74b3938a22f75bb933e809475a7450de79e9e8a9`. Module syntax, entry points, asset references, overlay source hashes and no mandatory host permissions passed.
 
 Collection note readability follow-up: notes now use 15px main text, 1.65 line spacing, 12px/14px padding and a 100px minimum editor height. Visually checked with the actual stylesheet in isolated Chrome in light and dark themes; rebuilt the overlay and package.
 

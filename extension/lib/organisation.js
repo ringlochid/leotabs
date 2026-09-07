@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { validColor, randomCollectionColor } from './colors.js';
 
-export const POLICY_CHOICES = {
-  group: ['keep','rules','ai','rules-ai'],
-  collectionName: ['keep','template','ai'],
-  groupName: ['keep','template','ai'],
-  tabOrder: ['manual','title','domain','recent','rule','ai'],
-  groupOrder: ['manual','title','rule','ai'],
-  collectionOrder: ['manual','title','recent','rule','ai'],
-};
 export const DEFAULT_POLICY = {
   group:'rules', collectionName:'keep', groupName:'keep',
   tabOrder:'manual', groupOrder:'manual', collectionOrder:'manual', automatic:true,
@@ -16,33 +8,10 @@ export const DEFAULT_POLICY = {
   orderInstruction:'Arrange in a useful reading sequence: overview, explanation, examples, reference.',
 };
 const short=(value,max=500)=>String(value??'').slice(0,max).trim();
-export function sanitizePolicy(input={}) {
-  if(!input || typeof input!=='object' || Array.isArray(input)) throw Error('Invalid organisation policy.');
-  const result={};
-  for(const [key,choices] of Object.entries(POLICY_CHOICES)) {
-    if(input[key]===undefined) continue;
-    if(!choices.includes(input[key])) throw Error('Invalid organisation choice: '+key);
-    result[key]=input[key];
-  }
-  if(input.automatic!==undefined) {
-    if(typeof input.automatic!=='boolean')throw Error('Choose whether organisation runs automatically.');
-    result.automatic=input.automatic;
-  }
-  for(const key of ['collectionTemplate','groupTemplate','orderInstruction'])
-    if(input[key]!==undefined)result[key]=short(input[key],1500);
-  return result;
-}
-export function policyFor(state,collection,spaceId=collection?.spaceId) {
-  const settings=state.settings||{};
-  const result={...DEFAULT_POLICY,
-    group:settings.autoGroup===false?'keep':'rules',
-    collectionName:settings.aiNaming?'ai':'keep',groupName:settings.aiNaming?'ai':'keep',
-    ...sanitizePolicy(settings.organisation||{}),
-    ...sanitizePolicy(state.spaces?.find(s=>s.id===spaceId)?.organisation||{}),
-    ...sanitizePolicy(collection?.organisation||{}),
-  };
-  if(settings.autoGroup===false)result.group='keep';
-  return result;
+// Legacy global, space and collection policies are deliberately ignored.
+// Only the Auto-group switch controls the built-in automatic grouping.
+export function policyFor(state) {
+  return {...DEFAULT_POLICY,group:state.settings?.autoGroup===false?'keep':'rules'};
 }
 export function sanitizeRules(rules) {
   if(!Array.isArray(rules)||rules.length>50)throw Error('Use at most 50 rules.');

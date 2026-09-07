@@ -36,8 +36,8 @@ test('AI stays opt-in, preferences persist, and old custom rules fall back to de
   const modern=initialState();modern.settings.rules=[{domain:"example.org",group:"Custom"}];modern.settings.websiteGrouping=false;
   assert.deepEqual(migrate(modern).settings.rules,initialState().settings.rules);
   assert.equal(migrate(modern).settings.websiteGrouping,true);
-  assert.equal(initialState().settings.aiNaming,false);
-  assert.equal(sanitizeSettings({aiNaming:true,autoGroup:false}).aiNaming,true);
+  assert.equal(initialState().settings.aiNaming,undefined);
+  assert.equal(sanitizeSettings({aiNaming:true,autoGroup:false}).aiNaming,undefined);
   assert.equal(newCollection().autoUpdate,false);
 });
 

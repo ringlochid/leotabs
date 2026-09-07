@@ -96,3 +96,17 @@ The 20260907-1134 recording shows Topic Apply failing with an undefined permissi
 Topic Apply now asks the authenticated background handler whether the configured provider origin is allowed. Existing access proceeds directly; missing access or connection setup opens Library AI connection settings. The provider operation still independently enforces permission. Library Apply keeps its user-gesture permission request. No real API key or provider was used for validation.
 
 After-fix injected-overlay test (`output/chrome-1788781316745`) verifies one local provider call, native grouping, Undo, and missing-permission navigation without a request. Library include/exclude and stable-grouping checks passed (`output/chrome-1788781273675`); all 161 unit tests passed.
+
+## Dialog hierarchy and controls
+
+Shared dialog and panel headings now use a 20px title / 17px section scale, with 15px controls and consistent focus rings. Import uses a styled Choose file button, Import/Export actions align left, alternative export formats have matching buttons, and panel footers share control height and spacing.
+
+Privacy & permissions now has three aligned rows for cached previews, browser history and optional access. It removes the duplicate backup action and general account/telemetry/uninstall paragraph. History shows its enabled state; clearing previews and revoking access retain the original operations.
+
+Verified Import, Export and Privacy in Chrome and Edge at 1440px and 390px, in light and dark themes. File selection reaches import review; cache clearing and access revocation work in isolated profiles. Evidence: `output/chrome-1788787890116`, `output/edge-1788787912265`.
+
+## Organisation settings removed (2026-09-07)
+
+Removed the remaining space menu entry, shared policy editor, configuration endpoints, inherited policies and automatic AI policy scheduler. Loading, importing and saving preferences discard legacy organisation and aiNaming fields while preserving collections, notes and manual choices. Built-in Auto-group, explicit Group & sort, collection AI, topic AI and short descriptions on new saves remain.
+
+Validation: 161 unit tests passed. Isolated Chrome checks verified all menu entry points, retired endpoints, old-state migration, native Auto-group (`output/chrome-1788788524822`), saved/active collection Group & sort and Undo (`output/chrome-1788788538221`), and injected AI grouping/Undo/permission fallback (`output/chrome-1788788539591`). Package rebuilt with 63 files; ZIP integrity and source-byte equality checked. The earlier dialog polish remains included.

@@ -1065,7 +1065,6 @@ function renderSpaces() {
                   'plus',
                 ],
                 null,
-                ['Organisation', () => actions.organisation({type:'space',id:s.id}), 'group'],
                 ['Remove workspace', () => confirmRemoveWorkspace(s), 'close'],
               ],
               { anchor: event.currentTarget },

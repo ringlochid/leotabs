@@ -27,7 +27,7 @@ export async function checkProposal({app,rpc,results,delay,origin,out,extensionO
   const snapshot=async file=>fs.writeFile(path.join(out,file),Buffer.from((await app.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
   try {
     const own=await app.evaluate('chrome.tabs.getCurrent()');
-    await rpc('organisation-policy',{scope:{type:'global'},organisation:{group:'keep',collectionName:'keep',groupName:'keep',tabOrder:'manual',groupOrder:'manual',collectionOrder:'manual',automatic:false},rules:[]});
+    await rpc('settings',{settings:{autoGroup:false}});
     await rpc('settings',{settings:{provider:'compatible',model:'fixture',aiEndpoint:`http://127.0.0.1:${server.address().port}/chat/completions`}});
     const tabs=await app.evaluate(`Promise.all(['source-a','source-b'].map(p=>chrome.tabs.create({windowId:${own.windowId},url:${JSON.stringify(origin)}+'/'+p,active:false})))`);
     await wait(()=>app.evaluate(`chrome.tabs.get(${tabs[0].id}).then(t=>t.status==='complete')`),'source did not load');

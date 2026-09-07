@@ -3,7 +3,6 @@ export const SCHEMA = 1;
 import { validColor } from './colors.js';
 import { duplicateKey } from './tab-policy.js';
 import { DEFAULT_RULES } from './arrange.js';
-import {sanitizePolicy} from './organisation.js';
 export const PALETTE = ['mint', 'blue', 'lavender', 'peach', 'rose', 'teal', 'yellow', 'grey'];
 export const uid = () => crypto.randomUUID();
 export const stamp = () => Date.now();
@@ -41,8 +40,6 @@ export function initialState() {
       rules: structuredClone(DEFAULT_RULES),
       autoGroup: true,
       regroupExisting: true,
-      aiNaming: false,
-      organisation: {},
       websiteGrouping: true,
     },
   };
@@ -54,15 +51,16 @@ export function migrate(state) {
       'This library version is not supported. Your stored data has not been changed.',
     );
   const spaces = validateSpaces(state.spaces);
+  const {organisation, aiNaming, ...settings} = state.settings || {};
   return {
     ...initialState(),
     ...state,
     spaces,
-    collections: state.collections.map((c) => ({
+    collections: state.collections.map(({organisation, ...c}) => ({
       ...c,
       spaceId: spaces.some((s) => s.id === c.spaceId) ? c.spaceId : spaces[0].id,
     })),
-    settings: { ...initialState().settings, ...state.settings, rules: structuredClone(DEFAULT_RULES), websiteGrouping: true },
+    settings: { ...initialState().settings, ...settings, rules: structuredClone(DEFAULT_RULES), websiteGrouping: true },
   };
 }
 export function validateSpaces(spaces) {
@@ -73,7 +71,7 @@ export function validateSpaces(spaces) {
   return spaces.map((s) => {
     if (!s || typeof s.id !== 'string' || !s.id || ids.has(s.id)) throw new Error('Invalid space.');
     ids.add(s.id);
-    return { id: text(s.id, 100), name: text(s.name).trim() || 'New space', ...(s.organisation?{organisation:sanitizePolicy(s.organisation)}:{}) };
+    return { id: text(s.id, 100), name: text(s.name).trim() || 'New space' };
   });
 }
 export function newCollection(name = 'Untitled', color = 'blue') {
@@ -143,7 +141,6 @@ export function validateCollections(input, { freshIds = false } = {}) {
     c.collapsed = !!raw.collapsed;
     c.pinned = !!raw.pinned;
     c.autoUpdate = raw.autoUpdate !== false;
-    if(raw.organisation)c.organisation=sanitizePolicy(raw.organisation);
     if(raw.manualName)c.manualName=true;
     if(raw.manualOrder)c.manualOrder=true;
     if(raw.manualPlacement)c.manualPlacement=true;

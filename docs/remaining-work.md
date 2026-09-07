@@ -1,3 +1,5 @@
+> Historical 0.12 evidence below: Organisation policy editors, inheritance and background AI policy automation were removed on 2026-09-07. Use built-in Auto-group and explicit Group & sort / AI actions instead.
+
 # Remaining proposal implementation
 
 Baseline: 7a74689. User authorised completing the remaining items from the audit.

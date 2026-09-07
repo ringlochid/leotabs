@@ -6,9 +6,7 @@ import {variedColour} from './lib/website-groups.js';
 import { repairParkedTabs } from './lib/parked.js';
 import { validColor, randomCollectionColor } from './lib/colors.js';
 import { groupAndSortCollection } from './lib/collection-arrangement.js';
-import {policyFor,sanitizePolicy,applySavedPolicy,rankItems} from './lib/organisation.js';
 import {nativeOrganisation} from './lib/native-organisation.js';
-import {automaticAI} from './lib/automatic-ai.js';
 import {libraryAccess} from './lib/library-access.js';
 import { updateIdentity, invalidateIdentity } from './lib/identity.js';
 import { providerEndpoint, aiConnectionId, readAIKeys, PROVIDERS } from './lib/providers.js';
@@ -452,59 +450,15 @@ async function dispatch(action, data = {}) {
         if(data.minimal)for(const wid of new Set((await ops.live(data.tabIds)).map(t=>t.windowId)))await sessions.capture(wid,{reason:'Before saving tabs',force:true});
         return ops.save({...data,...(data.minimal?{destinationId:undefined,name:undefined,automaticName:true,preserveLayout:true}:{})});
       });
-      if(op.collectionId)(data.minimal||data.adopt?describeSavedCollection(op.collectionId):autoName(op.collectionId, { renameCollection: !data.name })).catch(()=>{});
+      if(op.collectionId&&(data.minimal||data.adopt))describeSavedCollection(op.collectionId).catch(()=>{});
       return op;
     }
     case 'organisation-run':
-      return serial(async()=>{
-        const state=await db.getState(),scope=data.scope||{type:'global'},active=(await sessions.list()).active;
-        const selected=state.collections.filter(c=>scope.type==='global'||scope.type==='space'&&c.spaceId===scope.id||scope.type==='collection'&&c.id===scope.id);
-        const ids=new Set(selected.map(c=>c.id));
-        for(const w of await chrome.windows.getAll({windowTypes:['normal']}))if(!w.incognito&&(scope.type==='global'||ids.has(active[w.id]?.collectionId))) {
-          await nativeOrganiser.run(w.id,{force:true});await sessions.capture(w.id);
-        }
-        await db.mutate('Arrange once',s=>{
-          const activeIds=new Set(Object.values(active).map(x=>x.collectionId));
-          for(const c of s.collections)if(ids.has(c.id)&&!activeIds.has(c.id))applySavedPolicy(c,policyFor(s,c),s.settings.rules,{space:s.spaces.find(x=>x.id===c.spaceId)?.name||''});
-          for(const space of s.spaces)if(scope.type==='global'||scope.type==='space'&&space.id===scope.id) {
-            const items=rankItems(s.collections.filter(c=>c.spaceId===space.id&&!c.manualPlacement),policyFor(s,null,space.id).collectionOrder,s.settings.rules,{links:c=>c.links});
-            s.collections=s.collections.map(c=>c.spaceId===space.id&&!c.manualPlacement?items.shift():c);
-          }
-        });
-        automaticOrganiser.runOnce(scope);return {label:'Organisation applied; any AI changes are queued'};
-      });
     case 'organisation-retry':
-      automaticOrganiser.retry();scheduleCheckpoint();return;
-    case 'organisation-status': {
-      const s=await db.getState(),scope=data.scope||{type:'global'};
-      const ids=scope.type==='global'?null:new Set(scope.type==='collection'?[scope.id]:s.collections.filter(c=>c.spaceId===scope.id).map(c=>c.id));
-      const rows=(await chrome.storage.local.get('neoOrganisationCorrections')).neoOrganisationCorrections||[];
-      const status=(await chrome.storage.session.get('neoOrganisationStatus')).neoOrganisationStatus;
-      return {count:rows.filter(r=>!ids||ids.has(r.scope)).length,error:status?.error};
-    }
+    case 'organisation-status':
     case 'organisation-reset':
-      return serial(async()=>{
-        const state=await db.getState(),scope=data.scope||{type:'global'};
-        const ids=scope.type==='global'?null:new Set(scope.type==='collection'?[scope.id]:state.collections.filter(c=>c.spaceId===scope.id).map(c=>c.id));
-        const rows=(await chrome.storage.local.get('neoOrganisationCorrections')).neoOrganisationCorrections||[];
-        await chrome.storage.local.set({neoOrganisationCorrections:rows.filter(r=>ids&&!ids.has(r.scope))});
-        await chrome.storage.session.remove('neoOrganisationObserved');
-        await db.mutate('Forget manual organisation exceptions',s=>{
-          for(const c of s.collections.filter(c=>!ids||ids.has(c.id))){delete c.manualOrder;delete c.manualPlacement;delete c.manualName;for(const l of c.links)delete l.manualGroup;for(const g of c.groups)delete g.manualName;}
-        });
-        scheduleCheckpoint();
-      });
     case 'organisation-policy':
-      return serial(async()=>{
-        const result=await db.mutate('Organisation settings',s=>{
-          const scope=data.scope||{type:'global'};
-          const target=scope.type==='global'?s.settings:scope.type==='space'?s.spaces.find(x=>x.id===scope.id):scope.type==='collection'?s.collections.find(x=>x.id===scope.id):null;
-          if(!target)throw Error('Organisation scope no longer exists.');
-          if(data.organisation===null&&scope.type!=='global')delete target.organisation;
-          else target.organisation=sanitizePolicy(data.organisation);
-        });
-        scheduleCheckpoint();return result;
-      });
+      throw Error('Organisation settings are no longer available.');
     case 'arrange-tabs':
       return serial(() => applyNativeRules(data.windowId, true));
     case 'drop-new': {
@@ -522,7 +476,6 @@ async function dispatch(action, data = {}) {
         if(!data.copy){source.links=source.links.filter(l=>!ids.includes(l.id));source.groups=source.groups.filter(g=>source.links.some(l=>l.groupId===g.id));source.updatedAt=stamp();}
         return {collectionId:created.id};
       }));
-      if(result.operation?.collectionId) autoName(result.operation.collectionId).catch(()=>{});
       return result;
     }
     case 'close':
@@ -873,8 +826,6 @@ async function dispatch(action, data = {}) {
           }
         });
         if (data.autoUpdate === true) scheduleCheckpoint();
-        if (['group-links', 'link', 'move-link', 'move-links', 'move-group', 'create-group'].includes(data.kind))
-          autoName(data.destinationId || data.collectionId).catch(() => {});
         return result;
       });
     case 'import':
@@ -1359,24 +1310,8 @@ async function checkpointAll() {
       if(layoutMutation)return;
       for (const w of await chrome.windows.getAll({ windowTypes: ['normal'] }))
         if (!w.incognito) { if(Date.now()>=draggingUntil)await nativeOrganiser.run(w.id); await sessions.capture(w.id); }
-      const activeIds=new Set(Object.values((await sessions.list()).active).map(x=>x.collectionId));
-      await db.mutate('Automatic organisation',state=>{
-        const before=JSON.stringify(state.collections);
-        for(const c of state.collections) {
-          const policy=policyFor(state,c);
-          if(policy.automatic&&!activeIds.has(c.id))applySavedPolicy(c,policy,state.settings.rules,{space:state.spaces.find(s=>s.id===c.spaceId)?.name||''});
-        }
-        for(const space of state.spaces) {
-          const policy=policyFor(state,null,space.id);
-          if(!policy.automatic)continue;
-          const ordered=rankItems(state.collections.filter(c=>c.spaceId===space.id&&!c.manualPlacement),policy.collectionOrder,state.settings.rules,{links:c=>c.links});
-          state.collections=state.collections.map(c=>c.spaceId===space.id&&!c.manualPlacement?ordered.shift():c);
-        }
-        if(JSON.stringify(state.collections)===before)return {unchanged:true};
-      });
     });
     await changed();
-    nameNativeGroups().catch(() => {});
   } catch {
     // A later tab event or the durable alarm retries a failed checkpoint.
   } finally {
@@ -1412,10 +1347,6 @@ scheduleCheckpoint();
 async function applyNativeRules(windowId, force=false) {
   return nativeOrganiser.run(windowId,{force,rulesOnly:force});
 }
-
-const automaticOrganiser=automaticAI({browser:chrome,db,ops,sessions,nativeOrganiser,serial,changed});
-function autoName() {automaticOrganiser.schedule();return Promise.resolve();}
-function nameNativeGroups() {automaticOrganiser.schedule();return Promise.resolve();}
 
 // Naming never blocks saving and never replaces a user's edit.
 async function describeSavedCollection(collectionId) {

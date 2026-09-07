@@ -27,7 +27,6 @@ import {
 } from '../lib/portable.js';
 import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
-import {organisationDialog} from './organisation-dialog.js';
 import {assist,researchOverview} from './contextual-ai.js';
 
 export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false }) {
@@ -345,7 +344,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     search.focus({ preventScroll: true });
   }
   function importDialog() {
-    const input = el('input', { type: 'file', accept: '.json,.html,.htm,.md,.markdown,.txt' });
+    const input = el('input', { type: 'file', hidden:true, 'aria-label':'Import file', accept: '.json,.html,.htm,.md,.markdown,.txt' });
     input.onchange = act(async () => {
       const f = input.files[0];
       if (!f) return;
@@ -357,11 +356,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       el(
         'div',
         { class: 'transfer-options' },
-        el(
-          'p',
-          { class: 'hint' },
-          'Bring your saved work into Neo. Your current collections are kept.',
-        ),
         button(
           'Import browser bookmarks',
           act(async () => {
@@ -379,9 +373,9 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             { class: 'hint' },
             'Neo backup, bookmark HTML, Markdown, Toby JSON or OneTab text.',
           ),
-          field('Choose a file', input),
+          el('div', {class:'file-picker'}, input, button('Choose file', () => input.click(), {glyph:'plus',className:'dialog-action'})),
         ),
-        button('Switch to Export & backup', backupDialog),
+        button('Export & backup', backupDialog, {glyph:'arrow',className:'transfer-switch'}),
       ),
     );
   }
@@ -708,7 +702,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Keep a copy of your collections, notes, preferences and recovery log. API keys are excluded.',
+          'Back up collections, notes, settings and recovery history. API keys are excluded.',
         ),
         button(
           'Download Neo backup',
@@ -735,7 +729,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             ),
           ),
         ),
-        button('Switch to Import data', importDialog),
+        button('Import data', importDialog, {glyph:'arrow',className:'transfer-switch'}),
       ),
     );
   }
@@ -855,11 +849,45 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     });
     body.querySelector('select').focus({ preventScroll: true });
   }
+  function privacyDialog() {
+    const row = (title, description, action) => el('div', {class:'dialog-setting-row'},
+      el('div', {class:'dialog-setting-copy'}, el('h3', {}, title), el('p', {class:'hint'}, description)), action);
+    const history = button('Enable', act(async()=>{
+      history.disabled=true;
+      try {
+        const granted=await chrome.permissions.request({permissions:['history']});
+        toast(granted?'History search enabled':'History access was not enabled');
+      } finally {await updateHistory();}
+    }), {className:'dialog-action'});
+    async function updateHistory() {
+      const granted=await chrome.permissions.contains({permissions:['history']});
+      history.textContent=granted?'Enabled':'Enable';
+      history.setAttribute('aria-label',granted?'Browser history enabled':'Enable browser history search');
+      history.disabled=granted;
+    }
+    const revoke = button('Revoke access', act(async()=>{
+      revoke.disabled=true;
+      try {
+        const access=await chrome.permissions.getAll();
+        await chrome.permissions.remove({origins:access.origins||[],permissions:(access.permissions||[]).filter(p=>['history','bookmarks'].includes(p))});
+        await change('settings',{settings:{previewCapture:false}});
+        await updateHistory();
+        toast('Optional access revoked');
+      } finally {revoke.disabled=false;}
+    }), {className:'dialog-action danger-action'});
+    focusedDialog('Privacy & permissions', el('div', {class:'dialog-settings'},
+      row('Cached previews', 'Stored on this device · 50 MB limit',
+        button('Clear previews', act(async()=>{await change('clear-previews',{});toast('Cached previews cleared');}), {className:'dialog-action'})),
+      row('Browser history', 'Include browser history in search.', history),
+      row('Optional access', 'Remove website, bookmark and history permissions.', revoke)));
+    updateHistory().catch(error=>toast(error.message,{error:true}));
+  }
   function settingsDetails(sectionName = 'AI connection') {
     if(globalThis.__neoSurface) return act(async()=>{
       await rpc('open-library',{hash:sectionName==='AI connection'?'#action=ai-connection':'#action=settings'});
       onOpen?.();
     })();
+    if(sectionName==='Data & permissions') return privacyDialog();
     const s = data.state.settings;
     const fields = {};
     const input = (name, type = 'text') =>
@@ -929,57 +957,12 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           act(() => change('credentials', { notionKey: '' })),
         ),
       ),
-      el(
-        'section',
-        { class: 'settings-section' },
-        el('h3', {}, 'Data & permissions'),
-        button('Export & backup', backupDialog),
-        button(
-          'Enable browser history search',
-          act(async () => {
-            const granted = await chrome.permissions.request({ permissions: ['history'] });
-            toast(granted ? 'History search enabled' : 'History access was not enabled');
-          }),
-        ),
-        button(
-          'Revoke optional access',
-          act(async () => {
-            const p = await chrome.permissions.getAll();
-            await chrome.permissions.remove({
-              origins: p.origins || [],
-              permissions: (p.permissions || []).filter((x) =>
-                ['history', 'bookmarks'].includes(x),
-              ),
-            });
-            await change('settings', { settings: { previewCapture: false } });
-            toast('Optional access revoked');
-          }),
-        ),
-        el(
-          'p',
-          { class: 'hint' },
-          'No account, telemetry or server is required. Export a backup before uninstalling, which removes this extension’s local data.',
-        ),
-      ),
     );
     const section = [...body.querySelectorAll('.settings-section')].find(
       (node) => node.querySelector('h3').textContent === sectionName,
     );
     section.querySelector('h3').remove();
     body.replaceChildren(section);
-    if (sectionName === 'Data & permissions') {
-      section.prepend(
-        el(
-          'p',
-          { class: 'hint' },
-          'Previews stay on this device. Only active pages are captured. The cache is limited to 50 MB.',
-        ),
-        button(
-          'Clear cached previews',
-          act(() => change('clear-previews', {})),
-        ),
-      );
-    }
     function draftConnection() {
       return { provider: fields.provider.value, aiEndpoint: fields.aiEndpoint.value };
     }
@@ -1295,7 +1278,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     groupSort,
     groupCollection,
     sortTabs: order => change('sort-open-tabs', {windowId:win,order}),
-    organisation: scope => organisationDialog({state:data.state,scope,change}),
     recovery: recoveryDialog,
     settings: settingsDialog,
     aiConnection: () => settingsDetails('AI connection'),

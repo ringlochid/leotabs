@@ -40,9 +40,9 @@ export async function checkSettingsUX({ app, rpc, out, results, delay }) {
   await wait(async () => (await rpc('load')).state.settings.theme === 'dark');
   assert(await app.evaluate('document.querySelector("#action-popover").matches(":popover-open")'));
   await shot('settings-menu');
-  const previous = (await rpc('load')).state.settings.currentWindowOnly;
+  const previous = (await rpc('load')).state.settings.autoUpdateDefault;
   await app.evaluate('document.querySelector("input[role=switch]").click()');
-  await wait(async () => (await rpc('load')).state.settings.currentWindowOnly !== previous);
+  await wait(async () => (await rpc('load')).state.settings.autoUpdateDefault !== previous);
   await click('AI connection');
   assert(
     await app.evaluate(
@@ -65,9 +65,9 @@ export async function checkSettingsUX({ app, rpc, out, results, delay }) {
   assert.equal(after.model, 'settings-ui-test');
   assert.deepEqual(after.rules, before.rules);
   assert.equal(after.theme, 'dark');
-  assert.equal(after.currentWindowOnly, !previous);
+  assert.equal(after.autoUpdateDefault, !previous);
   await open();
-  await click('Import data');
+  await app.evaluate(`document.querySelector('#action-popover').hidePopover();document.querySelector('#imports').click()`);
   assert(
     await app.evaluate(
       'document.querySelector("dialog h2").textContent==="Import data" && !document.querySelector("dialog details").open',
@@ -77,7 +77,7 @@ export async function checkSettingsUX({ app, rpc, out, results, delay }) {
   assert(await app.evaluate('document.querySelector("dialog details").open'));
   await shot('settings-import');
   await app.evaluate(
-    '(()=>{const b=[...document.querySelectorAll("dialog button")].find(b=>b.textContent==="Switch to Export & backup");b.click();})()',
+    '(()=>{const b=[...document.querySelectorAll("dialog button")].find(b=>b.textContent==="Export & backup");b.click();})()',
   );
   assert(await app.evaluate('document.querySelector("dialog h2").textContent==="Export & backup"'));
   await shot('settings-backup');

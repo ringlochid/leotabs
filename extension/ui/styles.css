@@ -2355,34 +2355,20 @@ progress {
 .settings-detail footer {
   padding: 16px 30px 22px;
 }
-.transfer-options {
-  display: grid;
-  gap: 18px;
-}
+/* Transfer panels share the same left edge and compact action rows. */
+.transfer-options {display:grid;gap:20px;}
 .transfer-options .transfer-primary {
-  justify-content: flex-start;
-  text-align: left;
-  gap: 12px;
-  padding: 20px;
-  min-height: 70px;
-  border-radius: 9px;
-  background: var(--hover);
-  font-size: 15px;
-  font-weight: 600;
+  justify-content:flex-start;text-align:left;gap:12px;padding:12px 14px;
+  min-height:48px;border:1px solid var(--line);border-radius:5px;
+  background:var(--hover);font-size:15px;font-weight:600;
 }
-.transfer-options summary {
-  padding: 12px 0;
-  cursor: pointer;
-  font-weight: 550;
-}
-.transfer-options details {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
-}
-.transfer-formats {
-  display: grid;
-  gap: 6px;
-}
+.transfer-options details {border-bottom:1px solid var(--line);padding-bottom:16px;}
+.transfer-options details>.hint {margin:4px 0 14px;}
+.transfer-formats {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;}
+.transfer-formats>button {text-align:left;justify-content:flex-start;}
+.transfer-options .transfer-switch {justify-self:start;text-align:left;justify-content:flex-start;}
+.file-picker {display:flex;align-items:center;gap:12px;}
+.file-picker input[hidden] {display:none;}
 @media (max-width: 600px) {
   .settings-detail .dialog-head {
     padding: 20px 20px 10px;
@@ -3532,12 +3518,6 @@ dialog {
   box-shadow: none;
   outline: none;
 }
-.organisation-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
-.organisation-fields .field { margin:0;min-width:0; }
-.organisation-fields input,.organisation-fields select { width:100%;min-width:0; }
-.organisation-fields .check-label input { width:auto; }
-.organisation-rule { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px 0;border-bottom:1px solid var(--line); }
-.organisation-rule input,.organisation-rule select {min-width:0;max-width:100%;}
 .inline-name-editor {display:inline-flex;align-items:center;gap:4px;position:relative;min-width:0;max-width:100%;}
 .inline-name-editor .inline-name {min-width:0;flex:1;}
 .inline-name-suggestions:not(:empty) {position:absolute;top:100%;left:0;min-width:220px;z-index:20;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);padding:6px;}
@@ -3545,7 +3525,6 @@ dialog {
 .timeline-event-list {max-height:240px;overflow:auto;margin:8px 0;}
 .timeline-event-list>strong {display:block;margin:12px 0 4px;font-size: var(--type-small);}
 .timeline-event-list>button {display:block;width:100%;text-align:left;white-space:normal;font-size: var(--type-small);}
-@media(max-width:540px) {.organisation-fields,.organisation-rule{grid-template-columns:1fr;}}
 dialog::backdrop, .settings-detail::backdrop {
   background: #10121640;
   backdrop-filter: none;
@@ -3740,3 +3719,37 @@ dialog .primary:hover {background:var(--accent-fill);filter:brightness(.96);}
   width:auto;min-width:14px;height:14px;padding:0 3px;box-sizing:border-box;
   font-size:10px;line-height:1;border-radius:7px;
 }
+
+/* One readable hierarchy and control rhythm for dialogs and action panels. */
+:where(dialog,.action-popover) {font-size:15px;line-height:1.5;}
+.dialog-head h2,.settings-detail .dialog-head h2,.action-popover h2 {font-size:20px;line-height:1.3;font-weight:600;}
+:where(dialog,.action-popover) h3,
+:where(dialog,.action-popover) summary {font-size:17px;line-height:1.4;font-weight:600;color:var(--text);}
+:where(dialog,.action-popover) summary {padding:10px 0;cursor:pointer;}
+:where(dialog,.action-popover) summary:focus-visible {outline:2px solid var(--accent);outline-offset:3px;border-radius:3px;}
+:where(dialog,.action-popover) :is(button,input,select,textarea) {font-size:15px;}
+:where(dialog,.action-popover) :is(button,input,select,textarea):focus-visible {outline:2px solid var(--accent);outline-offset:2px;}
+.dialog-body .dialog-action,.dialog-body .transfer-formats>button,
+dialog footer>button,.action-popover footer>button {
+  min-height:40px;padding:8px 14px;border:1px solid var(--line);border-radius:5px;
+  background:var(--bg);color:var(--text);line-height:1.4;
+}
+.dialog-body .dialog-action:hover,.dialog-body .transfer-formats>button:hover,
+dialog footer>button:hover,.action-popover footer>button:hover {background:var(--hover);}
+dialog footer,.action-popover footer {align-items:center;flex-wrap:wrap;gap:10px;}
+dialog footer>.primary,.action-popover footer>.primary {background:var(--accent-fill);color:var(--on-accent);border-color:transparent;}
+.dialog-settings {display:grid;}
+.dialog-setting-row {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line);}
+.dialog-setting-row:first-child {padding-top:4px;}
+.dialog-setting-row:last-child {border-bottom:0;padding-bottom:4px;}
+.dialog-setting-copy {display:grid;gap:6px;min-width:0;}
+.dialog-setting-copy .hint {margin:0;}
+.dialog-setting-row>.dialog-action {min-width:130px;}
+.dialog-body .danger-action {color:light-dark(#b22c37,#f39ca4);}
+@media(max-width:540px) {
+  .dialog-setting-row {grid-template-columns:minmax(0,1fr);gap:12px;}
+  .dialog-setting-row>.dialog-action {justify-self:start;min-width:130px;}
+  .transfer-formats {grid-template-columns:minmax(0,1fr);}
+}
+
+dialog footer>.primary:hover,.action-popover footer>.primary:hover {background:var(--accent-fill);color:var(--on-accent);}

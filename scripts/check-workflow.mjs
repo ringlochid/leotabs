@@ -7,7 +7,7 @@ export async function checkWorkflow({app,rpc,out,results,delay,origin,extensionO
   await app.evaluate(`document.querySelector('#action-popover')?.hidePopover()`);
   const own=await app.evaluate('chrome.tabs.getCurrent()');const windowId=own.windowId;
   const beforeSettings=(await rpc('load')).state.settings;
-  assert.equal(beforeSettings.aiNaming,false);assert(beforeSettings.rules.some(r=>r.domain==='github.com/*'&&r.group==='GitHub'));
+  assert.equal(beforeSettings.aiNaming,undefined);assert(beforeSettings.rules.some(r=>r.domain==='github.com/*'&&r.group==='GitHub'));
   await rpc('import',{collections:[
     {id:'source',name:'Workflow source',autoUpdate:true,color:'#123456',groups:[],links:[{id:'s',title:'Source',url:origin+'/workflow-source'}]},
     {id:'dest',name:'Workflow destination',autoUpdate:false,color:'#fcf0b4',groups:[],links:[{id:'d',title:'Destination',url:origin+'/workflow-destination',note:'Preserve me'}]},

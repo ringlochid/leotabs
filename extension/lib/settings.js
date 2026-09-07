@@ -1,20 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 import { initialState, text } from './model.js';
 import { endpointOrigin } from './integrations.js';
-import {sanitizePolicy} from './organisation.js';
 
 // Explicit allowlist shared by Settings and portable backups. Credentials never enter state.
 export function sanitizeSettings(input = {}, base = initialState().settings) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw new Error('Invalid saved preferences.');
   const next = { ...base };
-  if(input.organisation!==undefined)next.organisation=sanitizePolicy(input.organisation);
-  else {
-    if(input.autoGroup!==undefined && Object.keys(next.organisation||{}).length)
-      next.organisation={...next.organisation,group:input.autoGroup?'rules':'keep'};
-    if(input.aiNaming!==undefined && Object.keys(next.organisation||{}).length)
-      next.organisation={...next.organisation,collectionName:input.aiNaming?'ai':'keep',groupName:input.aiNaming?'ai':'keep'};
-  }
+  delete next.organisation;
+  delete next.aiNaming;
   delete next.obsidianVault;
   delete next.captureWebStore;
   for (const [key, values] of Object.entries({
@@ -24,7 +18,7 @@ export function sanitizeSettings(input = {}, base = initialState().settings) {
     provider: ['openai', 'claude', 'gemini', 'deepseek', 'compatible'],
   }))
     if (values.includes(input[key])) next[key] = input[key];
-  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'aiNaming', 'autoUpdateDefault', 'regroupExisting'])
+  for (const key of ['previewCapture', 'currentWindowOnly', 'closeAfterStash', 'autoGroup', 'autoUpdateDefault', 'regroupExisting'])
     if (typeof input[key] === 'boolean') next[key] = input[key];
   for (const key of ['model', 'notionParent'])
     if (input[key] !== undefined) next[key] = text(input[key], 200);
