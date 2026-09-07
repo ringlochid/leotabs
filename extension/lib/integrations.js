@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { validatePlan, text } from './model.js';
-import { providerEndpoint } from './providers.js';
+import { providerEndpoint, minimalReasoning } from './providers.js';
 const GEMINI = 'https://generativelanguage.googleapis.com';
 export function endpointOrigin(value) {
   const u = new URL(value);
@@ -66,7 +66,7 @@ export async function askJSON(prompt,settings,key,fetcher=fetch,{signal,fast=fal
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
+          generationConfig: { responseMimeType: 'application/json', ...minimalReasoning(settings) },
         }),
       },
       fetcher,
@@ -87,6 +87,7 @@ export async function askJSON(prompt,settings,key,fetcher=fetch,{signal,fast=fal
         body: JSON.stringify({
           model: settings.model,
           max_tokens: 8192,
+          ...minimalReasoning(settings),
           messages: [{ role: 'user', content: prompt }],
         }),
       },
@@ -113,6 +114,7 @@ export async function askJSON(prompt,settings,key,fetcher=fetch,{signal,fast=fal
           model: settings.model,
           messages: [{ role: 'user', content: prompt }],
           response_format: { type: 'json_object' },
+          ...minimalReasoning(settings),
           ...(fast&&/^gpt-5(?:-mini|-nano)?(?:-\d{4}-\d{2}-\d{2})?$/.test(settings.model)?{reasoning_effort:'minimal',verbosity:'low'}:{}),
         }),
       },

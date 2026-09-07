@@ -13,8 +13,7 @@ export async function checkProposal({app,rpc,results,delay,origin,out,extensionO
     const data=JSON.parse(prompt.slice(prompt.indexOf('\nData: ')+7));calls.push({prompt,data});
     if(slow)await delay(1000);
     let reply;
-    if(data.sources)reply={note:'The fixture page describes a local integration-test page [S1]. Suggested next step: compare the sources.'};
-    else if(prompt.includes('alternative names'))reply={names:['Clear research name','Second name']};
+    if(prompt.includes('alternative names'))reply={names:['Clear research name','Second name']};
     else if(data.tabs)reply={name:'Suggested save',destinations:[{id:data.collections[0]?.id,reason:'Related source'}]};
     else if(Array.isArray(data))reply={collectionIds:data.map(c=>c.id).reverse()};
     else if(data.collections) {
@@ -58,18 +57,9 @@ export async function checkProposal({app,rpc,results,delay,origin,out,extensionO
     await click('Keep here');
     results.push('Inline AI names are selectable and persist; save destination suggestions work; drag-created collections expose contextual filing and naming without interrupting the drop');
 
-    const overview=await rpc('ai-assist',{kind:'overview',collectionId:source.id});
-    assert.equal(overview.sources[0].url,origin+'/source-a');assert.match(overview.note,/\[S1\]/);
-    assert(calls.some(c=>c.data.sources?.[0].text.includes('Local integration-test page')));
-    state=(await rpc('load')).state;
-    await app.evaluate(`import(chrome.runtime.getURL('ui/contextual-ai.js')).then(async m=>{const r=await chrome.runtime.sendMessage({action:'load'});m.researchOverview({state:r.value.state,collection:r.value.state.collections.find(c=>c.id===${JSON.stringify(source.id)}),change:(action,data)=>chrome.runtime.sendMessage({action,data}).then(r=>{if(!r.ok)throw Error(r.error);return r.value})});})`);
-    await click('Read pages and draft');
-    await wait(()=>app.evaluate(`!!document.querySelector('[aria-label="Research overview draft"]')`),'overview review absent');
-    await snapshot('research-review.png');await click('Save collection note');
-    await wait(async()=>(await rpc('load')).state.collections.find(c=>c.id===source.id).note.includes('[S1]'),'reviewed note not saved');
     slow=true;const pending=rpc('ai-assist',{kind:'names',collectionId:source.id,requestId:'cancel-assist'});
     await delay(150);await rpc('ai-cancel',{requestId:'cancel-assist'});await assert.rejects(pending);slow=false;
-    results.push('Research overview sends actual page text, returns source references and saves only after review; pending contextual AI requests can be cancelled');
+    results.push('Pending contextual AI requests can be cancelled');
 
     const windows=await app.evaluate('chrome.windows.getAll({})');
     await rpc('library-window');

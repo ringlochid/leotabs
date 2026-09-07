@@ -3,6 +3,7 @@ export const SCHEMA = 1;
 import { validColor } from './colors.js';
 import { duplicateKey } from './tab-policy.js';
 import { DEFAULT_RULES } from './arrange.js';
+import {PROVIDERS, MODEL_DEFAULTS_VERSION, migrateModelDefaults} from './providers.js';
 export const PALETTE = ['mint', 'blue', 'lavender', 'peach', 'rose', 'teal', 'yellow', 'grey'];
 export const uid = () => crypto.randomUUID();
 export const stamp = () => Date.now();
@@ -34,7 +35,8 @@ export function initialState() {
       closeAfterStash: true,
       autoUpdateDefault: false,
       provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      model: PROVIDERS.gemini.model,
+      modelDefaultsVersion: MODEL_DEFAULTS_VERSION,
       aiEndpoint: '',
       notionParent: '',
       rules: structuredClone(DEFAULT_RULES),
@@ -60,7 +62,7 @@ export function migrate(state) {
       ...c,
       spaceId: spaces.some((s) => s.id === c.spaceId) ? c.spaceId : spaces[0].id,
     })),
-    settings: { ...initialState().settings, ...settings, rules: structuredClone(DEFAULT_RULES), websiteGrouping: true },
+    settings: { ...initialState().settings, ...migrateModelDefaults(settings), rules: structuredClone(DEFAULT_RULES), websiteGrouping: true },
   };
 }
 export function validateSpaces(spaces) {

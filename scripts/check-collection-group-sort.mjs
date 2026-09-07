@@ -16,6 +16,11 @@ export async function checkCollectionGroupSort({app,rpc,results,delay,origin,out
   await app.evaluate(`document.querySelector('[aria-label="Options for Collection grouping check"]').click()`);
   const labels=await app.evaluate(`Array.from(document.querySelectorAll('[role="menuitem"]'),n=>n.textContent.trim())`);
   assert(!labels.includes('Organisation') && !labels.includes('Apply default grouping'));
+  assert(!labels.includes('Research overview'));
+  await assert.rejects(rpc('ai-assist',{kind:'overview',collectionId:before.id}),/no longer available/);
+  await assert.rejects(rpc('ai-overview-apply',{collectionId:before.id,note:'Overwrite attempt',revision:(await rpc('load')).state.revision}),/no longer available/);
+  assert.equal((await rpc('load')).state.collections[0].note,before.note);
+  results.push('Research overview is absent from the collection menu; retired generate/apply requests are rejected without changing saved notes');
   assert.equal(labels.indexOf('Group & sort')+1,labels.indexOf('Organise collection with AI'));
   await fs.writeFile(path.join(out,'collection-menu.png'),Buffer.from((await app.send('Page.captureScreenshot',{format:'png'})).data,'base64'));
   await app.evaluate(`[...document.querySelectorAll('[role="menuitem"]')].find(n=>n.textContent==='Group & sort').click();document.querySelector('#action-popover .primary').click()`);

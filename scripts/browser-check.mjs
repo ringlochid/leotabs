@@ -14,6 +14,7 @@ await fs.mkdir(out, { recursive: true });
 if (
   process.argv.includes('--native-bookmarks') ||
   process.argv.includes('--connections') ||
+  process.argv.includes('--notion-library') ||
   process.argv.includes('--ai-workflow') ||
   process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') ||
   process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') || process.argv.includes('--overlay-ai') ||
@@ -31,7 +32,7 @@ if (
     manifest.permissions.push('history');
     manifest.optional_permissions = manifest.optional_permissions.filter((p) => p !== 'history');
   }
-  if (process.argv.includes('--connections') || process.argv.includes('--ai-workflow') || process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') || process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') || process.argv.includes('--overlay-ai'))
+  if (process.argv.includes('--notion-library') || process.argv.includes('--connections') || process.argv.includes('--ai-workflow') || process.argv.includes('--organisation') || process.argv.includes('--group-sort') || process.argv.includes('--save-flow') || process.argv.includes('--ui-refresh') || process.argv.includes('--proposal') || process.argv.includes('--topic-regroup') || process.argv.includes('--overlay-ai'))
     manifest.host_permissions = ['http://127.0.0.1/*', 'https://api.notion.com/*'];
   await fs.writeFile(path.join(fixture, 'manifest.json'), JSON.stringify(manifest, null, 2));
 }
@@ -53,7 +54,7 @@ const server = http.createServer(async (req, res) => {
     return res.end(
       JSON.stringify(
         req.url === '/v1/pages'
-          ? { id: 'c'.repeat(32), url: 'https://app.notion.com/p/' + 'c'.repeat(32) }
+          ? { id: notionCalls.length.toString(16).padStart(32, '0'), url: 'https://app.notion.com/p/' + notionCalls.length.toString(16).padStart(32, '0') }
           : { results: body.children },
       ),
     );
@@ -69,7 +70,7 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
-if (process.argv.includes('--connections')) {
+if (process.argv.includes('--connections') || process.argv.includes('--notion-library')) {
   // Only this isolated copy changes transport origin. No request can escape to
   // a hosted Notion account, even if the browser restarts its worker.
   const file = path.join(extensionPath, 'lib', 'notion.js'),
@@ -229,7 +230,9 @@ try {
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
-  if (process.argv.includes('--dialog-polish')) {
+  if (process.argv.includes('--notion-library')) {
+    await (await import('./check-notion-library.mjs')).checkNotionLibrary({app,rpc,results,delay,out,notionCalls});
+  } else if (process.argv.includes('--dialog-polish')) {
     await (await import('./check-dialog-polish.mjs')).checkDialogPolish({app,rpc,results,delay,out});
   } else if (process.argv.includes('--collection-group-sort')) {
     await (await import('./check-collection-group-sort.mjs')).checkCollectionGroupSort({app,rpc,results,delay,origin,out});
@@ -255,6 +258,8 @@ try {
     await (await import('./check-group-sort.mjs')).checkGroupSort({app,rpc,results,delay,origin,out});
   } else if (process.argv.includes('--proposal')) {
     await (await import('./check-proposal.mjs')).checkProposal({app,rpc,results,delay,origin,out,extensionOrigin});
+  } else if (process.argv.includes('--model-defaults')) {
+    await (await import('./check-model-defaults.mjs')).checkModelDefaults({app,rpc,results,delay});
   } else if (process.argv.includes('--organisation')) {
     await (await import('./check-organisation.mjs')).checkOrganisation({app,rpc,results,delay,origin,out});
   } else if (process.argv.includes('--stash-safety')) {

@@ -2364,9 +2364,9 @@ progress {
 }
 .transfer-options details {border-bottom:1px solid var(--line);padding-bottom:16px;}
 .transfer-options details>.hint {margin:4px 0 14px;}
-.transfer-formats {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px;}
+.transfer-formats {display:flex;flex-direction:column;align-items:stretch;gap:10px;}
 .transfer-formats>button {text-align:left;justify-content:flex-start;}
-.transfer-options .transfer-switch {justify-self:start;text-align:left;justify-content:flex-start;}
+.transfer-options .transfer-switch {justify-self:stretch;text-align:left;justify-content:flex-start;}
 .file-picker {display:flex;align-items:center;gap:12px;}
 .file-picker input[hidden] {display:none;}
 @media (max-width: 600px) {
@@ -3749,7 +3749,35 @@ dialog footer>.primary,.action-popover footer>.primary {background:var(--accent-
 @media(max-width:540px) {
   .dialog-setting-row {grid-template-columns:minmax(0,1fr);gap:12px;}
   .dialog-setting-row>.dialog-action {justify-self:start;min-width:130px;}
-  .transfer-formats {grid-template-columns:minmax(0,1fr);}
 }
 
 dialog footer>.primary:hover,.action-popover footer>.primary:hover {background:var(--accent-fill);color:var(--on-accent);}
+
+/* Collection export actions stay one per row at every popover width. */
+.export-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.export-actions > button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Flat focus treatment for Settings and its detail dialogs. */
+:is(.settings-menu,.settings-detail) :is(input,select,textarea):focus {
+  border-color: var(--muted);
+  box-shadow: none;
+  outline: 0;
+}
+:is(.settings-menu,.settings-detail) :is(button,a,summary,input[type='checkbox'],input[type='radio']):focus-visible {
+  outline: 1px solid var(--muted);
+  outline-offset: -1px;
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  :is(.settings-menu,.settings-detail) :is(input,select,textarea):focus {border-color:Highlight;}
+  :is(.settings-menu,.settings-detail) :is(button,a,summary,input[type='checkbox'],input[type='radio']):focus-visible {outline-color:Highlight;}
+}

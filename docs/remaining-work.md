@@ -14,7 +14,7 @@ Acceptance ledger (completion requires code and browser evidence):
 - [x] Durable manual correction history, including native browser changes, plus a visible way to reset exceptions.
 - [x] Contextual save/drop destination suggestions and inline alternative names.
 - [x] Space/all-spaces review for cross-collection moves, merges and renames.
-- [x] Page-content-based research overview/continuation with source references and review.
+- Research overview removed on 2026-09-07; existing collection notes are retained.
 - [x] Explicit utility/Web Store capture policy, retaining deliberate saving.
 - [x] One action event for switch/close/stash with associated closures and date-grouped Timeline.
 - [x] `neo` omnibox access and optional standalone Library window.
@@ -38,7 +38,7 @@ Implemented as 0.12.0, protocol 17. The earlier proposal is now implemented with
 | Manual corrections | Durable local correction records; native ungrouping and reorder survive later automation; generic-name protection and explicit reset UI verified. |
 | Contextual AI | Save destination recommendations, optional post-drop suggestions and selectable inline alternative names verified in the real extension UI. |
 | Broader organisation | Space/All spaces review applies selected editable actions, rejects stale revisions, and preserves links and both notes during cross-space merges. |
-| Research notes | Actual open-page text reaches the provider fixture; returned source references and draft are reviewed before saving; cancellation verified. |
+| Research notes (removed) | Historical validation only. Research overview, page extraction and draft application were removed on 2026-09-07. |
 | Utility tabs and Web Store | Native workflow closes utility tabs; unit tests verify automatic Web Store exclusion, explicit opt-in, and deliberate saving. |
 | Timeline | Switch/close/stash snapshots carry operation and closure data; real browser switch produces one action event; date-grouped event navigation rendered. |
 | Access | Omnibox manifest registration plus handler/disposition unit tests; actual encoded Library search and standalone popup verified. The extension origin remains browser-assigned. |

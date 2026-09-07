@@ -24,6 +24,40 @@ export function prepareNotion(collection, parent) {
     attempts: 0,
   };
 }
+export function prepareNotionLibrary(collections, parent) {
+  if (!collections.length) throw new Error('There are no collections to export.');
+  const pages = collections.map((collection) => prepareNotion(collection, parent));
+  return {
+    id: uid(), at: stamp(), kind: 'notion',
+    label: `Notion export · ${pages.length} collections`,
+    status: 'ready', parent, pages,
+    total: pages.reduce((sum, page) => sum + page.total, 0),
+    cursor: 0, pageTotal: pages.length, pageCursor: 0,
+  };
+}
+
+// Persist the whole queue at every child checkpoint, including before a write.
+// Completed pages are never sent again when continuing from Recovery.
+async function notionLibraryStep(job, key, options) {
+  const index = job.pages.findIndex((page) => page.status !== 'complete');
+  const pages = [...job.pages];
+  const savePage = async (page) => {
+    pages[index] = page;
+    const pageCursor = pages.filter((item) => item.status === 'complete').length;
+    job = {
+      ...job, pages, pageCursor,
+      cursor: pages.reduce((sum, item) => sum + item.cursor, 0),
+      status: pageCursor === pages.length ? 'complete' : page.status === 'complete' ? 'ready' : page.status,
+      retryAt: page.retryAt, error: page.error,
+    };
+    await options.save(job);
+  };
+  let page = pages[index];
+  if (job.status === 'ready' && ['partial', 'failed'].includes(page.status))
+    page = { ...page, status: 'ready', attempts: 0 };
+  await notionStep(page, key, { ...options, save: savePage });
+  return job;
+}
 export function notionBatch(job) {
   const batch = [];
   let size = 2;
@@ -50,6 +84,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
   if (!['ready', 'waiting', 'partial', 'failed'].includes(job.status))
     throw new Error('This export cannot continue.');
   if (job.retryAt > now()) return job;
+  if (job.pages) return notionLibraryStep(job, key, { save, fetcher, now });
   const children = notionBatch(job),
     creating = !job.remoteId;
   const url = creating

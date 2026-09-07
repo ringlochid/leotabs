@@ -23,7 +23,7 @@ export async function checkDialogPolish({app,rpc,results,out,delay}) {
       await openImport();await app.evaluate(`document.querySelector('dialog summary').click()`);
       await capture(`import-${theme}-${width}`);
       assert(await app.evaluate(`document.querySelector('dialog input[type=file]').hidden && !![...document.querySelectorAll('dialog button')].find(b=>b.textContent==='Choose file')`));
-      await click('Export & backup');await app.evaluate(`document.querySelector('dialog summary').click()`);
+      await click('Export & import');
       await capture(`export-${theme}-${width}`);
       await openSettings('Privacy & permissions');
       await capture(`privacy-${theme}-${width}`);

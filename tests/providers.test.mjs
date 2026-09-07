@@ -3,12 +3,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PROVIDERS,
+  minimalReasoning,
+  migrateModelDefaults,
   providerEndpoint,
   readAIKeys,
   aiConnectionId,
 } from '../extension/lib/providers.js';
 import { organize } from '../extension/lib/integrations.js';
-import { newCollection } from '../extension/lib/model.js';
+import { newCollection, initialState, migrate } from '../extension/lib/model.js';
 import { sanitizeSettings, portableSettings } from '../extension/lib/settings.js';
 for (const provider of ['openai', 'claude', 'gemini', 'deepseek']) {
   test(`${provider} uses its own request protocol and validates the result`, async () => {
@@ -43,11 +45,15 @@ for (const provider of ['openai', 'claude', 'gemini', 'deepseek']) {
     if (provider === 'claude') {
       assert.equal(call.options.headers['x-api-key'], 'fixture-key');
       assert.equal(body.max_tokens, 8192);
+      assert.deepEqual(body.thinking,{type:'disabled'});
       assert.equal(body.response_format, undefined);
     } else if (provider !== 'gemini') {
       assert.equal(call.options.headers.Authorization, 'Bearer fixture-key');
       assert.equal(body.response_format.type, 'json_object');
     }
+    if(provider==='gemini')assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,'low');
+    if(provider==='openai')assert.equal(body.reasoning_effort,'none');
+    if(provider==='deepseek')assert.deepEqual(body.thinking,{type:'disabled'});
     assert.deepEqual(plan.groups[0].linkIds, ['known']);
     assert.equal(sanitizeSettings({ provider }).provider, provider);
   });
@@ -80,4 +86,27 @@ test('backups omit obsolete Obsidian configuration and credentials', () => {
   assert.equal(s.provider, 'claude');
   assert.equal(s.obsidianVault, undefined);
   assert.equal(s.aiKeys, undefined);
+});
+
+test('current provider defaults and one-time migration preserve custom and later model choices',()=>{
+  assert.equal(PROVIDERS.openai.model,'gpt-5.6-luna');
+  assert.equal(PROVIDERS.gemini.model,'gemini-3.8-flash');
+  assert.equal(PROVIDERS.claude.model,'claude-sonnet-5');
+  assert.equal(PROVIDERS.deepseek.model,'deepseek-v4-flash');
+  assert.equal(initialState().settings.model,PROVIDERS.gemini.model);
+  for(const [provider,model] of [['gemini','gemini-2.5-flash'],['openai','gpt-5-mini']]) {
+    const s=initialState();s.settings={provider,model};
+    assert.equal(migrate(s).settings.model,PROVIDERS[provider].model);
+    const updated=migrate(s);updated.settings.model=model;
+    assert.equal(migrate(updated).settings.model,model,'later explicit selection must be preserved');
+  }
+  for(const provider of ['openai','gemini','compatible'])
+    assert.equal(migrateModelDefaults({provider,model:'custom-model'}).model,'custom-model');
+});
+test('reasoning controls are scoped to verified providers and model families',()=>{
+  assert.deepEqual(minimalReasoning({provider:'compatible',model:'gpt-5.6-luna'}),{});
+  assert.deepEqual(minimalReasoning({provider:'openai',model:'unknown-model'}),{});
+  assert.deepEqual(minimalReasoning({provider:'gemini',model:'gemini-custom'}),{});
+  assert.deepEqual(minimalReasoning({provider:'claude',model:'claude-custom'}),{});
+  assert.deepEqual(minimalReasoning({provider:'openai',model:'gpt-5-mini'}),{reasoning_effort:'minimal'});
 });

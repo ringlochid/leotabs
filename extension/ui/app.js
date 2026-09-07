@@ -2014,7 +2014,6 @@ function collectionMenu(c, trigger) {
     null,
     ['Group & sort', () => actions.groupCollection(c), 'group', !c.links.length],
     ['Organise collection with AI', () => actions.ai(c), 'sparkles', !c.links.length],
-    ['Research overview', () => actions.overview(c), 'note', !c.links.length],
     ['Export', () => actions.export(c, trigger), 'tray'],
     [
       'Duplicate collection',

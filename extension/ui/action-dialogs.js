@@ -27,7 +27,7 @@ import {
 } from '../lib/portable.js';
 import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
-import {assist,researchOverview} from './contextual-ai.js';
+import {assist} from './contextual-ai.js';
 
 export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false }) {
   const data = new Proxy({}, { get: (_, key) => getData()[key] });
@@ -375,7 +375,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           ),
           el('div', {class:'file-picker'}, input, button('Choose file', () => input.click(), {glyph:'plus',className:'dialog-action'})),
         ),
-        button('Export & backup', backupDialog, {glyph:'arrow',className:'transfer-switch'}),
+        button('Export & import', backupDialog, {glyph:'arrow',className:'transfer-switch'}),
       ),
     );
   }
@@ -440,7 +440,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
 
         el(
           'div',
-          { class: 'actions' },
+          { class: 'export-actions' },
           button('Markdown', () => download(markdownExport([c]), c.name + '.md', 'text/markdown')),
           button('Bookmark HTML', () => download(htmlExport([c]), c.name + '.html', 'text/html')),
           button('Neo JSON', () => download(jsonExport([c]), c.name + '.json', 'application/json')),
@@ -498,14 +498,16 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       placeholder: 'Destination page ID',
     });
     const { close } = modal(
-      'Send a snapshot to Notion',
+      c ? 'Send a snapshot to Notion' : 'Export collections to Notion',
       el(
         'div',
         {},
         el(
           'p',
           {},
-          `Create a new page containing ${c.links.length} links and notes. People with access to the parent page may see this content.`,
+          c
+            ? `Create a new page containing ${c.links.length} links and notes. People with access to the parent page may see this content.`
+            : `Create ${data.state.collections.length} new pages, one for each collection across all spaces, with its groups, links and notes. Pages are created under your destination page.`,
         ),
         field('Destination page ID', parent),
         el(
@@ -516,12 +518,12 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       ),
       [
         button(
-          'Create Notion page',
+          c ? 'Create Notion page' : 'Create Notion pages',
           act(async () => {
             if (!(await chrome.permissions.request({ origins: ['https://api.notion.com/*'] })))
               return;
-            const result = await rpc('notion-export', {
-              collectionId: c.id,
+            const result = await rpc(c ? 'notion-export' : 'notion-export-library', {
+              collectionId: c?.id,
               parent: parent.value.trim(),
             });
             close();
@@ -537,7 +539,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       job = initial;
     const status = el('p', { role: 'status' }),
       link = el('div'),
-      progress = el('progress', { max: Math.max(1, job.total), value: job.cursor });
+      progress = el('progress', { max: Math.max(1, job.pageTotal ?? job.total), value: job.pageCursor ?? job.cursor });
     const { dialog, close } = modal(
       'Export to Notion',
       el(
@@ -569,9 +571,16 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     async function run() {
       try {
         while (running) {
-          status.textContent = `${job.cursor} of ${job.total} blocks sent`;
-          progress.value = job.cursor;
-          if (job.remoteURL)
+          const progressText = job.pages
+            ? `${job.pageCursor} of ${job.pageTotal} pages exported`
+            : `${job.cursor} of ${job.total} blocks sent`;
+          status.textContent = progressText;
+          progress.value = job.pageCursor ?? job.cursor;
+          if (job.pages)
+            link.replaceChildren(...job.pages.filter(page => page.remoteURL).map(page =>
+              el('p', {}, el('a', { href: page.remoteURL, target: '_blank', rel: 'noreferrer' }, page.name)),
+            ));
+          else if (job.remoteURL)
             link.replaceChildren(
               el(
                 'a',
@@ -580,7 +589,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
               ),
             );
           if (job.status === 'complete') {
-            status.textContent = 'Snapshot exported to Notion.';
+            status.textContent = job.pages ? `${job.pageTotal} collections exported to Notion.` : 'Snapshot exported to Notion.';
             dialog.querySelector('footer').replaceChildren(button('Done', close));
             return;
           }
@@ -592,7 +601,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             return;
           }
           if (job.retryAt > Date.now()) {
-            status.textContent = `${job.cursor} of ${job.total} blocks sent · waiting for Notion`;
+            status.textContent = `${progressText} · waiting for Notion`;
             await new Promise((resolve) =>
               setTimeout(resolve, Math.min(1000, job.retryAt - Date.now())),
             );
@@ -644,7 +653,9 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             el(
               'p',
               {},
-              op.kind === 'notion' ? `${op.cursor} / ${op.total} blocks · ${op.status}` : op.status,
+              op.kind === 'notion'
+                ? op.pages ? `${op.pageCursor} / ${op.pageTotal} pages · ${op.status}` : `${op.cursor} / ${op.total} blocks · ${op.status}`
+                : op.status,
             ),
             op.error ? el('p', {}, op.error) : null,
             op.kind === 'notion' && ['ready', 'waiting', 'partial', 'failed'].includes(op.status)
@@ -694,15 +705,15 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     return result;
   }
   function backupDialog() {
-    focusedDialog(
-      'Export & backup',
+    const { close } = focusedDialog(
+      'Export & import',
       el(
         'div',
         { class: 'transfer-options' },
         el(
           'p',
           { class: 'hint' },
-          'Back up collections, notes, settings and recovery history. API keys are excluded.',
+          'Export all collections or import saved work. Neo backups also include settings and recovery history; API keys are excluded.',
         ),
         button(
           'Download Neo backup',
@@ -711,10 +722,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
           { glyph: 'tray', className: 'transfer-primary' },
         ),
         el(
-          'details',
-          {},
-          el('summary', {}, 'Other formats'),
-          el(
             'div',
             { class: 'transfer-formats' },
             button('Bookmark HTML', () =>
@@ -727,7 +734,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                 'text/markdown',
               ),
             ),
-          ),
+            button('Send to Notion…', () => { close(); notionDialog(); }, { glyph: 'note', disabled: !data.state.collections.length }),
         ),
         button('Import data', importDialog, {glyph:'arrow',className:'transfer-switch'}),
       ),
@@ -811,7 +818,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       row('Open Library in its own window', () => change('library-window',{}), 'external'),
       el('hr'),
       ...(!inLibrary ? [row('Import data', importDialog, 'plus')] : []),
-      row('Export & backup', backupDialog, 'tray'),
+      row('Export & import', backupDialog, 'tray'),
       row('Privacy & permissions', () => settingsDetails('Data & permissions'), 'settings'),
       el('hr'),
       row(
@@ -931,7 +938,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Calls go directly to your provider when you request AI assistance or enable automatic grouping, naming or ordering. Keys stay in extension-local storage, outside backups; they are not encrypted by an OS keychain.',
+          'AI requests go directly to your provider. Keys stay on this device and are excluded from backups.',
         ),
         button(
           'Forget AI key',
@@ -1272,7 +1279,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     export: exportDialog,
     ai: aiSaved,
     aiTabs,
-    overview: c => researchOverview({state:data.state,collection:c,change}),
     dropSuggestions,
     arrangeRules: () => change('arrange-tabs', {windowId:win}),
     groupSort,

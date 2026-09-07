@@ -110,3 +110,23 @@ Verified Import, Export and Privacy in Chrome and Edge at 1440px and 390px, in l
 Removed the remaining space menu entry, shared policy editor, configuration endpoints, inherited policies and automatic AI policy scheduler. Loading, importing and saving preferences discard legacy organisation and aiNaming fields while preserving collections, notes and manual choices. Built-in Auto-group, explicit Group & sort, collection AI, topic AI and short descriptions on new saves remain.
 
 Validation: 161 unit tests passed. Isolated Chrome checks verified all menu entry points, retired endpoints, old-state migration, native Auto-group (`output/chrome-1788788524822`), saved/active collection Group & sort and Undo (`output/chrome-1788788538221`), and injected AI grouping/Undo/permission fallback (`output/chrome-1788788539591`). Package rebuilt with 63 files; ZIP integrity and source-byte equality checked. The earlier dialog polish remains included.
+
+## Research overview removed (2026-09-07)
+
+Removed the collection menu action, page-selection/draft/review dialogs, page-text extraction, provider prompt, citation processing and draft-application handler. Old generate/apply requests now fail before provider access or note mutation. Previously saved notes remain. Organise collection with AI still produces its brief metadata-based collection description.
+
+Validation: 163 unit tests passed; isolated Chrome output/chrome-1788789547983 verified the menu, retired requests, note preservation, saved and active collection grouping and Undo. Overlay and 63-file package rebuilt; ZIP/source integrity verified.
+
+## Flat Settings focus and export column (2026-09-08)
+
+Collection export buttons use a dedicated full-width flex column. Settings and its detail dialogs retain their keyboard focus behavior with a single muted field border and thin inset button outline; stacked accent outlines and shadows are removed. Forced-colors focus uses the system Highlight color.
+
+Isolated Chrome checks: output/chrome-1788789653669 verifies all six export buttons are separate aligned rows at 1440 and 390 pixels; output/chrome-1788789922818 checks Theme, AI, Notion, Privacy and Export focus in both themes and keyboard focus containment. Screenshots inspected. Package and overlay rebuilt and source/ZIP integrity verified.
+
+## Export & import and library Notion export
+
+Settings and the transfer dialog now say Export & import. Backup, Bookmark HTML, Markdown, Send to Notion and Import are visible in one aligned column. Notion exports all collections across spaces, creating one child page per collection under the configured parent, with groups, links and notes. Collection-level export remains available.
+
+The library export stores its snapshots and each page's progress in one durable Recovery job. Confirmed pages are skipped on continuation; an uncertain request stops the queue without replaying the write. The completion dialog links to each created page. No account credentials or live Notion data were used in verification.
+
+Validation: 166 unit tests; isolated Chrome `--notion-library` checks both themes at 1440px/390px, pause/reload/Recovery continuation and one page per collection using a local Notion fixture (`output/chrome-1788790413814`). `--dialog-polish` verifies Import/Export/Privacy controls and import review (`output/chrome-1788790429852`).

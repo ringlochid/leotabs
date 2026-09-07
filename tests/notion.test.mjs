@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareNotion, notionStep, notionBatch, NOTION_VERSION } from '../extension/lib/notion.js';
+import { prepareNotion, prepareNotionLibrary, notionStep, notionBatch, NOTION_VERSION } from '../extension/lib/notion.js';
+import { journalSummary } from '../extension/lib/db.js';
 import { newCollection } from '../extension/lib/model.js';
 const parent = 'a'.repeat(32),
   page = 'b'.repeat(32);
@@ -17,6 +18,72 @@ function collection(count = 1) {
   return c;
 }
 const ok = (value) => new Response(JSON.stringify(value), { status: 200 });
+
+test('library export checkpoints each page, resumes a rejected second page and includes empty collections', async () => {
+  const collections = [collection(101), collection(1), collection(0)];
+  collections.forEach((c, i) => { c.name = 'Collection ' + i; });
+  let job = prepareNotionLibrary(collections, parent), stored, rejectSecond = true;
+  const created = [], requests = [];
+  const options = {
+    now: () => 1000000,
+    save: async value => { stored = structuredClone(value); },
+    fetcher: async (url, options) => {
+      assert.equal(stored.status, 'sending');
+      assert.equal(stored.pages.find(p => p.status !== 'complete').status, 'sending');
+      requests.push(options.method);
+      const body = JSON.parse(options.body);
+      if (options.method === 'PATCH') return ok({ results: body.children });
+      const name = body.properties.title.title[0].text.content;
+      assert.equal(body.parent.page_id, parent);
+      if (name === 'Collection 1' && rejectSecond) return new Response('', { status: 403 });
+      created.push(name);
+      return ok({ id: String(created.length).repeat(32), url: 'https://www.notion.so/' + String(created.length).repeat(32) });
+    },
+  };
+  for (let i = 0; i < 3; i++) {
+    job.retryAt = 0;
+    job = await notionStep(job, 'fixture', options);
+    if (job.pages) job.pages.forEach(p => { p.retryAt = 0; });
+  }
+  assert.equal(job.status, 'failed');
+  assert.equal(job.pageCursor, 1);
+  assert.equal(created.length, 1);
+  job = structuredClone(stored); // Resume from the durable record after a worker restart.
+  job.status = 'ready'; job.retryAt = 0; rejectSecond = false;
+  while (job.status !== 'complete') {
+    job.retryAt = 0;
+    job.pages.forEach(p => { p.retryAt = 0; });
+    job = await notionStep(job, 'fixture', options);
+  }
+  assert.deepEqual(created, ['Collection 0', 'Collection 1', 'Collection 2']);
+  assert.deepEqual(requests, ['POST', 'PATCH', 'POST', 'POST', 'POST']);
+  assert.equal(job.pageCursor, 3);
+  assert.equal(job.cursor, job.total);
+  const summary = journalSummary(job);
+  assert(summary.pages.every(p => !('blocks' in p)));
+  assert.equal(summary.pages.length, 3);
+  assert(summary.pages.every(p => p.remoteURL));
+});
+
+test('library export validates all collections before scheduling any pages', () => {
+  const invalid = collection(); invalid.links[0].url = 'file:///private';
+  assert.throws(() => prepareNotionLibrary([collection(), invalid], parent), /web URLs/);
+  assert.throws(() => prepareNotionLibrary([], parent), /no collections/);
+});
+
+test('library lost response persists uncertainty and never advances to another page', async () => {
+  let calls = 0, stored;
+  const options = {
+    save: async value => { stored = structuredClone(value); },
+    fetcher: async () => { calls++; throw Error('lost response'); },
+  };
+  const job = await notionStep(prepareNotionLibrary([collection(), collection()], parent), 'fixture', options);
+  assert.equal(stored.status, 'uncertain');
+  assert.equal(stored.pages[0].status, 'uncertain');
+  assert.equal(stored.pages[1].status, 'ready');
+  await assert.rejects(notionStep(job, 'fixture', options), /may already/);
+  assert.equal(calls, 1);
+});
 test('Notion sends 251 links in three bounded batches with durable checkpoints', async () => {
   let job = prepareNotion(collection(251), parent),
     stored,

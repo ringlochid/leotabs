@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 import { migrate, clone, stamp, uid, safeURL } from './model.js';
 let connection;
-export function journalSummary({ before, beforeCollection,afterCollection, tabs, snapshot, sourceGroups, blocks, after, ...operation }) {
-  return { ...operation, recoverable: !!snapshot, undoable: operation.undoable || !!before };
+export function journalSummary({ before, beforeCollection,afterCollection, tabs, snapshot, sourceGroups, blocks, after, pages, ...operation }) {
+  return { ...operation, ...(pages ? { pages: pages.map(journalSummary) } : {}), recoverable: !!snapshot, undoable: operation.undoable || !!before };
 }
 function closedRows(operation) {
   const closed = new Set(operation.closed || []);
