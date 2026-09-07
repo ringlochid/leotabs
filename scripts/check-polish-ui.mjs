@@ -24,9 +24,9 @@ export async function checkPolish({ app, rpc, out, results, delay }) {
   const c = (await rpc('load')).state.collections.find((c) => c.name === record.name);
   const scope = `document.querySelector('[data-collection-id="${c.id}"]')`;
   for (let i = 0; i < 30 && !(await app.evaluate(`!!${scope}`)); i++) await delay(100);
-  assert.equal(await app.evaluate(`${scope}.querySelectorAll('.saved-row').length`), 8);
+  assert.equal(await app.evaluate(`${scope}.querySelectorAll('.saved-row').length`), 7);
   await app.evaluate(`${scope}.querySelector('.more-links').click()`);
-  assert.equal(await app.evaluate(`${scope}.querySelectorAll('.saved-row').length`), 80);
+  assert.equal(await app.evaluate(`${scope}.querySelectorAll('.saved-row').length`), 87);
   await app.evaluate(`${scope}.querySelector('.more-links').click()`);
   assert.equal(await app.evaluate(`${scope}.querySelectorAll('.saved-row').length`), 105);
   assert(!(await app.evaluate(`${scope}.textContent.includes('Group options')`)));

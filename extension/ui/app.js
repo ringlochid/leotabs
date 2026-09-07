@@ -29,6 +29,7 @@ import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../li
 import { parseImport, jsonExport, markdownExport, htmlExport } from '../lib/portable.js';
 import { orderedCollections, collectionAge } from '../lib/collection-workflow.js';
 import { highlightMatches, matchesPage } from './library-search.js';
+import { collectionPreview } from './collection-preview.js';
 import { createActionDialogs } from './action-dialogs.js';
 import { createSearchController } from './search-controller.js';
 import { createTabTools, orderedTabs } from './tab-tools.js';
@@ -900,6 +901,12 @@ function renderSessionTimeline(root) {
 
 function beginName(key) {
   $('#dialog')?.close();
+  // A newly created group may sit beyond the card preview. Reveal it before
+  // starting inline editing, without expanding ordinary visible renames.
+  if (![...document.querySelectorAll('[data-focus-key]')].some(node => node.dataset.focusKey === key)) {
+    const owner = data.state.collections.find(c => c.groups.some(g => g.id + ':name' === key));
+    if (owner) linkLimits.set(`${owner.id}:${activeCollection === owner.id ? 'detail' : 'card'}:${libraryQuery()}`, Math.max(activeCollection === owner.id ? 80 : 8, owner.links.length + owner.groups.length));
+  }
   editingName = key;
   renderTabs();
   renderBoard();
@@ -1484,35 +1491,22 @@ function collectionCard(c) {
     .querySelector('.collection-fold')
     .setAttribute('aria-expanded', String(!c.collapsed || !!query));
   if (c.collapsed && !query) return card;
-  const body = el('div', { class: 'collection-body' });
+  const body = el('div', { class: 'collection-body', id: `collection-content-${c.id}` });
   if (selection) card.append(savedSelectionToolbar(c, selection));
-  const ungrouped = c.links.filter((l) => !l.groupId);
-  function appendLinks(target, links, key) {
-    const groupMatches = c.groups.some(
-      (g) => g.id === key && matchesPage({ title: g.name }, query),
-    );
-    if (query && !matchesCollection && !groupMatches)
-      links = links.filter((l) => matchesPage(l, query));
-    const limit = activeCollection ? linkLimits.get(key) || 80 : 8;
-    target.append(...links.slice(0, limit).map((l) => savedRow(c, l)));
-    if (links.length > limit) {
-      const more = button(
-        activeCollection
-          ? `Show ${Math.min(80, links.length - limit)} more`
-          : `+ ${links.length - limit} more`,
-        () => {
-          activeCollection = c.id;
-          linkLimits.set(key, activeCollection && limit >= 80 ? limit + 80 : 80);
-          renderBoard();
-        },
-        { className: 'more-links' },
-      );
-      more.dataset.focusKey = key + ':more';
-      target.append(more);
-    }
-  }
-  appendLinks(body, ungrouped, c.id + ':links');
-  for (const g of c.groups) {
+  const matchingLinks = (links, group) => query && !matchesCollection && !(group && matchesPage({ title: group.name }, query))
+    ? links.filter(l => matchesPage(l, query)) : links;
+  const ungrouped = matchingLinks(c.links.filter(l => !l.groupId));
+  const sections = c.groups.map(group => ({
+    group, links: matchingLinks(c.links.filter(l => l.groupId === group.id), group),
+    collapsed: group.collapsed && !query,
+  })).filter(section => !query || matchesCollection || matchesPage({ title: section.group.name }, query) || section.links.length);
+  const baseLimit = activeCollection === c.id ? 80 : 8;
+  const previewKey = `${c.id}:${activeCollection === c.id ? 'detail' : 'card'}:${query}`;
+  const limit = linkLimits.get(previewKey) || baseLimit;
+  const preview = collectionPreview(ungrouped, sections, limit);
+  body.append(...preview.links.map(l => savedRow(c, l)));
+  for (const section of preview.groups) {
+    const g = section.group;
     const children = c.links.filter((l) => l.groupId === g.id);
     if (
       query &&
@@ -1637,10 +1631,39 @@ function collectionCard(c) {
     });
     if (!g.collapsed || query) {
       const members = el('div', { class: 'group-members' });
-      appendLinks(members, children, g.id);
+      members.append(...section.links.map(l => savedRow(c, l)));
       wrap.append(members);
     }
     body.append(wrap);
+  }
+  if (preview.hasMore || limit > baseLimit) {
+    const controls = el('div', { class: 'collection-disclosure' });
+    const collapse = () => {
+      linkLimits.delete(previewKey);
+      renderBoard();
+      const control = [...document.querySelectorAll('.collection-disclosure button')]
+        .find(node => node.dataset.focusKey === c.id + ':disclosure');
+      control?.focus({ preventScroll: true });
+      control?.scrollIntoView({ block: 'nearest' });
+    };
+    const remaining = preview.hiddenTabs
+      ? `${preview.hiddenTabs} ${preview.hiddenTabs === 1 ? 'tab' : 'tabs'} remaining`
+      : `${preview.hiddenGroups} ${preview.hiddenGroups === 1 ? 'group' : 'groups'} remaining`;
+    const more = button(preview.hasMore ? `Show more · ${remaining}` : 'Show less',
+      preview.hasMore ? () => { linkLimits.set(previewKey, limit + 80); renderBoard(); } : collapse,
+      { className: 'more-links' });
+    more.dataset.focusKey = c.id + ':disclosure';
+    more.setAttribute('aria-expanded', String(limit > baseLimit));
+    more.setAttribute('aria-controls', body.id);
+    controls.append(more);
+    if (preview.hasMore && limit > baseLimit) {
+      const less = button('Show less', collapse, { className: 'more-links' });
+      less.dataset.focusKey = c.id + ':show-less';
+      less.setAttribute('aria-expanded', 'true');
+      less.setAttribute('aria-controls', body.id);
+      controls.append(less);
+    }
+    body.append(controls);
   }
   if (!c.links.length) body.append(el('p', { class: 'empty' }, 'Drop tabs here to save them.'));
   if (c.note || noteDrafts.has(c.id)) {

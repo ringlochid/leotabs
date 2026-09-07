@@ -130,3 +130,11 @@ Settings and the transfer dialog now say Export & import. Backup, Bookmark HTML,
 The library export stores its snapshots and each page's progress in one durable Recovery job. Confirmed pages are skipped on continuation; an uncertain request stops the queue without replaying the write. The completion dialog links to each created page. No account credentials or live Notion data were used in verification.
 
 Validation: 166 unit tests; isolated Chrome `--notion-library` checks both themes at 1440px/390px, pause/reload/Recovery continuation and one page per collection using a local Notion fixture (`output/chrome-1788790413814`). `--dialog-polish` verifies Import/Export/Privacy controls and import review (`output/chrome-1788790429852`).
+
+## Shared collection preview limit
+
+Collection cards use one eight-row preview budget for ungrouped tabs, group headings and grouped tabs. Empty and folded groups count too. The boundary never leaves an expanded nonempty group heading without a first tab. One Show more control below the entire preview reports remaining tabs (or groups when only empty groups remain), expands another 80 rows in place, and offers Show less to restore the compact preview. The dedicated collection view starts at 80 rows, also shared across groups. Existing group folds, order, notes and data remain intact. Search filters before previewing, and new group editing reveals the new group.
+
+Design basis: [NN/G progressive disclosure](https://www.nngroup.com/articles/progressive-disclosure/) supports a compact initial view with a single path to additional content; [WAI disclosure guidance](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/) supplies the button, keyboard and expanded-state semantics. Eight rows is Neo's existing preview size, now applied to the whole card rather than each group separately.
+
+Validation: 171 unit tests, including mixed/grouped/empty/folded/large collection boundaries. Isolated Chrome (`output/chrome-1788792435728`) and Edge (`output/edge-1788792451676`) exercise inline keyboard expansion, restored focus and cap, search beyond the cutoff, unchanged saved collections, and newly created group editing. Light/dark screenshots inspected. Local fixtures only.

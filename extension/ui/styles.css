@@ -1140,6 +1140,7 @@
   color: var(--muted);
   margin: 3px 6px;
 }
+.collection-disclosure {display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .collection-head > .collection-name {
   overflow: hidden;
   text-overflow: ellipsis;
