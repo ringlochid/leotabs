@@ -230,7 +230,9 @@ try {
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
-  if (process.argv.includes('--collection-drag')) {
+  if (process.argv.includes('--ungrouped-first')) {
+    await (await import('./check-ungrouped-first.mjs')).checkUngroupedFirst({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--collection-drag')) {
     await (await import('./check-collection-drag.mjs')).checkCollectionDrag({app,rpc,results,delay,origin,out});
   } else if (process.argv.includes('--saved-drag')) {
     await (await import('./check-saved-drag.mjs')).checkSavedDrag({app,rpc,results,delay,origin,out});

@@ -84,5 +84,5 @@ await fs.writeFile(
   ),
 );
 console.log(
-  `${name}: ${files.length} files, ${zip.length} bytes. Source and licenses included; see docs/direct-0.5.md for validation.`,
+  `${name}: ${files.length} files, ${zip.length} bytes. Source and licenses included.`,
 );

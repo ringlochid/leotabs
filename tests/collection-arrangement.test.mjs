@@ -11,7 +11,7 @@ test('collection group and sort uses websites, flattens singletons and preserves
   const c = groupAndSortCollection(fixture());
   assert.equal(c.groups.length,1);
   assert.equal(c.groups[0].name,'Example');
-  assert.deepEqual(c.links.map(l=>l.id),['a','z','s']);
+  assert.deepEqual(c.links.map(l=>l.id),['s','a','z'],'Standalone tabs precede alphabetically earlier groups');
   assert.equal(c.links.find(l=>l.id==='s').groupId,null);
   assert.equal(c.links.find(l=>l.id==='z').note,'Important');
   assert.equal(c.name,'My work');assert.equal(c.note,'Keep notes');

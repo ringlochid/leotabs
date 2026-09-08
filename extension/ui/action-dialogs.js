@@ -104,7 +104,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
   function groupCollection(c) {
     const include = el('input', {type:'checkbox', checked:data.state.settings.regroupExisting!==false});
     const {close} = popover('Group & sort', el('div', {},
-      el('p', {class:'hint'}, 'Group by website, then sort A–Z.'),
+      el('p', {class:'hint'}, 'Group by website. Sort A–Z, with ungrouped tabs first.'),
       el('label', {class:'check-label'}, include, 'Include already grouped tabs')),
       [button('Cancel', () => close()), button('Group & sort', act(async () => {
         close();
@@ -860,6 +860,20 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
   function privacyDialog() {
     const row = (title, description, action) => el('div', {class:'dialog-setting-row'},
       el('div', {class:'dialog-setting-copy'}, el('h3', {}, title), el('p', {class:'hint'}, description)), action);
+    const automatic = el('input', {type:'checkbox', role:'switch', checked:!!data.state.settings.previewCapture, 'aria-label':'Automatic page previews'});
+    automatic.onchange = act(async()=>{
+      const enabled=automatic.checked;
+      automatic.disabled=true;
+      try {
+        if(enabled && !(await chrome.permissions.request({origins:['<all_urls>']}))) {
+          automatic.checked=false;
+          toast('Preview access not granted');
+          return;
+        }
+        await change('settings',{settings:{previewCapture:enabled}});
+      } catch(error) {automatic.checked=!enabled;throw error;}
+      finally {automatic.disabled=false;}
+    });
     const history = button('Enable', act(async()=>{
       history.disabled=true;
       try {
@@ -879,15 +893,19 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         const access=await chrome.permissions.getAll();
         await chrome.permissions.remove({origins:access.origins||[],permissions:(access.permissions||[]).filter(p=>['history','bookmarks'].includes(p))});
         await change('settings',{settings:{previewCapture:false}});
+        automatic.checked=false;
         await updateHistory();
         toast('Optional access revoked');
       } finally {revoke.disabled=false;}
     }), {className:'dialog-action danger-action'});
     focusedDialog('Privacy & permissions', el('div', {class:'dialog-settings'},
+      row('Automatic page previews', 'Capture the visible active web page while browsing. Images can contain sensitive content; they stay on this device. Requires website access.', el('label',{class:'settings-preference'},automatic)),
+      el('p', {class:'hint'}, 'Opening the visual switcher can also capture the current page, even when automatic previews are off.'),
       row('Cached previews', 'Stored on this device · 50 MB limit',
         button('Clear previews', act(async()=>{await change('clear-previews',{});toast('Cached previews cleared');}), {className:'dialog-action'})),
       row('Browser history', 'Include browser history in search.', history),
-      row('Optional access', 'Remove website, bookmark and history permissions.', revoke)));
+      row('Optional access', 'Remove website, bookmark and history permissions.', revoke),
+      el('a', {href:'privacy.html', target:'_blank', rel:'noopener'}, 'Read the privacy policy')));
     updateHistory().catch(error=>toast(error.message,{error:true}));
   }
   function settingsDetails(sectionName = 'AI connection') {
@@ -939,8 +957,10 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'AI requests go directly to your provider. Keys stay on this device and are excluded from backups.',
+          'Saving this connection enables AI requests directly to your provider. Newly saved collections may be named automatically using their titles and full URLs. AI organisation also sends collection names and notes; filing suggestions can include names, notes and sample URLs from other collections. Screenshots and page text are not sent. Your provider may retain requests and charge for them.',
         ),
+        el('p', {class:'hint'}, 'Keys stay in browser-local storage, without LeoTabs-managed encryption, and are excluded from backups. Forget a key or revoke optional website access to stop its use.'),
+        el('a', {href:'privacy.html', target:'_blank', rel:'noopener'}, 'Privacy policy'),
         button(
           'Forget AI key',
           act(async () => {
@@ -960,6 +980,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el('h3', {}, 'Notion'),
         field('Notion integration token', notionKey),
         field('Notion parent page ID', input('notionParent')),
+        el('p', {class:'hint'}, 'Exports send collection titles, URLs, groups and notes directly to Notion. Library export includes all collections. People with access to the destination may see them. Your token stays in browser-local storage without LeoTabs-managed encryption and is excluded from backups.'),
         button(
           'Forget Notion token',
           act(() => change('credentials', { notionKey: '' })),

@@ -34,9 +34,13 @@ export function aiConnectionId(settings) {
 }
 export async function readAIKeys(storage, settings) {
   const saved = await storage.get(['aiKeys', 'aiKey']);
-  if (saved.aiKeys) return saved.aiKeys;
+  if (saved.aiKeys) {
+    if (saved.aiKey !== undefined) await storage.remove('aiKey');
+    return saved.aiKeys;
+  }
   const keys = saved.aiKey ? { [aiConnectionId(settings)]: saved.aiKey } : {};
   await storage.set({ aiKeys: keys });
+  if (saved.aiKey !== undefined) await storage.remove('aiKey');
   return keys;
 }
 

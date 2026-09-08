@@ -28,9 +28,9 @@ export async function checkTabSort({app,rpc,results,delay,origin,out}) {
  await choose('Title A–Z');
  await wait(()=>app.evaluate(`document.querySelector('#toast')?.textContent.includes('Sorted tabs')`),'Sort UI');
  const sorted=await layout(),editable=sorted.filter(t=>ids.includes(t.id)&&!t.pinned);
- assert.deepEqual(editable.map(t=>t.id),[ids[3],ids[2],ids[1],ids[0]],'Browser order did not change');
+ assert.deepEqual(editable.map(t=>t.id),[ids[3],ids[0],ids[2],ids[1]],'Ungrouped tabs must sort before groups');
  assert.deepEqual(sorted.find(t=>t.id===ids[4]),before.find(t=>t.id===ids[4]));
- assert.equal(editable.filter(t=>t.group.length).length,2);assert.equal(editable[1].group[0].color,'orange');assert.equal(editable[1].group[0].collapsed,true);
+ assert.equal(editable.filter(t=>t.group.length).length,2);assert.equal(editable[2].group[0].color,'orange');assert.equal(editable[2].group[0].collapsed,true);
  await wait(async()=>{const c=(await rpc('load')).state.collections.find(c=>c.id===saved.collectionId);return c.links.map(l=>l.url).join()===sorted.filter(t=>ids.includes(t.id)&&!t.pinned).map(t=>t.url).join();},'Saved collection order');
  await app.evaluate(`[...document.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo').click()`);
  await wait(async()=>JSON.stringify(await layout())===JSON.stringify(before),'Undo restore');

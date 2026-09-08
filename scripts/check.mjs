@@ -32,7 +32,7 @@ for (const file of files.filter((f) => f.endsWith('.html'))) {
   const html = await readFile(file, 'utf8');
   if (/<script(?![^>]*\bsrc=)[^>]*>\s*[^<]/i.test(html) || /\son\w+=/i.test(html))
     throw new Error('Inline script in ' + file);
-  for (const match of html.matchAll(/(?:src|href)="(?!https?:|#)([^"]+)"/g))
+  for (const match of html.matchAll(/(?:src|href)="(?![a-z][a-z\d+.-]*:|#)([^"]+)"/gi))
     await stat(path.resolve(path.dirname(file), match[1]));
 }
 if (manifest.host_permissions?.length) throw new Error('Core must not require host access.');

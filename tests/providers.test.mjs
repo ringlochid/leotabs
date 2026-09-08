@@ -63,11 +63,15 @@ test('legacy key is migrated once and never follows a different provider or cust
   const storage = {
     get: async () => structuredClone(saved),
     set: async (value) => Object.assign(saved, value),
+    remove: async (key) => { delete saved[key]; },
   };
   let keys = await readAIKeys(storage, { provider: 'gemini' });
   assert.equal(keys.gemini, 'legacy-fixture');
+  assert.equal(saved.aiKey, undefined);
+  saved.aiKey = 'stale-legacy-fixture';
   keys = await readAIKeys(storage, { provider: 'claude' });
   assert.equal(keys.claude, undefined);
+  assert.equal(saved.aiKey, undefined);
   keys.gemini = '';
   await storage.set({ aiKeys: keys });
   assert.equal((await readAIKeys(storage, { provider: 'gemini' })).gemini, '');

@@ -53,8 +53,13 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       const failed=grouped.find(r=>r.status==='rejected');if(failed)throw failed.reason;
       mark('grouped');
       // Keep unselected tabs in their original relative order; selected blocks move together.
-      let index=Math.min(...tabs.map(t=>t.index));
-      for(const bucket of [...buckets.values(),...singles.map(t=>({name:t.title||'',tabs:[t],groupId:-1}))].sort((a,b)=>a.name.localeCompare(b.name))) {
+      // With existing groups excluded from a whole-window sort, start before
+      // those groups so standalone tabs do not remain stranded behind them.
+      const wholeWindow=!tabIds||all.filter(t=>!t.pinned&&website(t.resourceUrl||t.url)).every(t=>tabIds.includes(t.id));
+      let index=!aiGroups&&!regroupExisting&&wholeWindow ? all.find(t=>!t.pinned).index : Math.min(...tabs.map(t=>t.index));
+      const blocks=[...buckets.values(),...singles.map(t=>({name:t.title||'',tabs:[t],groupId:-1}))];
+      blocks.sort((a,b)=>(aiGroups?0:Number(a.groupId>=0)-Number(b.groupId>=0))||a.name.localeCompare(b.name));
+      for(const bucket of blocks) {
         const members=[...bucket.tabs].sort((a,b)=>(a.title||'').localeCompare(b.title||'')||a.index-b.index);
         // Establish a group boundary first: moving member tabs into another block can ungroup them.
         if(bucket.groupId>=0)await browser.tabGroups.move(bucket.groupId,{index});
@@ -100,6 +105,8 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
     for(const tab of tabs){let block=tab.groupId>=0?blocks.find(b=>b.groupId===tab.groupId):null;if(!block){block={groupId:tab.groupId,tabs:[]};blocks.push(block);}block.tabs.push(tab);}
     for(const block of blocks)block.tabs.sort(compare);
     blocks.sort((a,b)=>{
+      const grouped=Number(a.groupId>=0)-Number(b.groupId>=0);
+      if(grouped)return grouped;
       if(order==='title'){
         const name=block=>sourceGroups.find(g=>g.id===block.groupId)?.title||block.tabs[0].title||'';
         return name(a).localeCompare(name(b))||a.tabs[0].index-b.tabs[0].index;

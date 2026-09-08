@@ -29,11 +29,11 @@ export function groupAndSortCollection(c, { regroupExisting = true } = {}) {
   }
   c.groups = c.groups.filter(g => c.links.some(l => l.groupId === g.id));
   c.groups.sort((a, b) => a.name.localeCompare(b.name));
-  const blocks = [
-    ...c.groups.map(g => ({ name: g.name, links: c.links.filter(l => l.groupId === g.id) })),
-    ...c.links.filter(l => !l.groupId).map(l => ({ name: l.title || '', links: [l] })),
-  ].sort((a, b) => a.name.localeCompare(b.name));
-  c.links = blocks.flatMap(b => b.links.sort((a, z) => (a.title || '').localeCompare(z.title || '')));
+  const byTitle = (a, b) => (a.title || '').localeCompare(b.title || '');
+  c.links = [
+    ...c.links.filter(l => !l.groupId).sort(byTitle),
+    ...c.groups.flatMap(g => c.links.filter(l => l.groupId === g.id).sort(byTitle)),
+  ];
   c.manualOrder = true;
   c.updatedAt = Date.now();
   return c;

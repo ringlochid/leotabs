@@ -26,7 +26,7 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       }finally{sort.dataset.durationMs=String(Math.round(performance.now()-started));sort.disabled=false;sort.removeAttribute('aria-busy');}
     }),{className:'primary group-apply'});
-    const {close}=popover('Group tabs',el('div',{},el('p',{class:'hint'},'Group by website, then sort A–Z.'),el('label',{class:'check-label'},include,'Include already grouped tabs')),[apply],{anchor:sort});
+    const {close}=popover('Group tabs',el('div',{},el('p',{class:'hint'},'Group by website. Sort A–Z, with ungrouped tabs first.'),el('label',{class:'check-label'},include,'Include already grouped tabs')),[apply],{anchor:sort});
   };
   const autoState=el('small',{class:'auto-group-state'});
   const auto=el('input',{type:'checkbox',role:'switch','aria-label':'Auto-group new tabs',onchange:task(async e=>{const enabled=e.target.checked;auto.disabled=true;try{await change('settings',{settings:{autoGroup:enabled}});}catch(error){auto.checked=!enabled;throw error;}finally{auto.disabled=false;autoState.textContent=auto.checked?'On':'Off';}})});
@@ -35,7 +35,7 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
     ['Group & sort',openGrouping,'group'],
     ...(showTopicAI ? [['Group by topic with AI',()=>actions.aiTabs(),'sparkles'],null] : []),
     ...[['recent','Most recent first'],['title','Title A–Z'],['domain','Website']].map(([order,label])=>[label,()=>actions.sortTabs(order)]),
-  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Sort tabs and groups')}),{glyph:'sort',quiet:true,className:'tab-more-button'});
+  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Sort ungrouped tabs, then groups')}),{glyph:'sort',quiet:true,className:'tab-more-button'});
   const save = button('Save tabs', () => actions.save(), { glyph: 'tray', quiet: compact });
   const dedup = button(
     'Close duplicate tabs',
