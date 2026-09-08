@@ -36,7 +36,7 @@ export function jsonExport(collections) {
 }
 export function recoveryLog(records = []) {
   if (!Array.isArray(records) || records.length > 100)
-    throw new Error('A backup can contain at most 100 recovery log entries.');
+    throw new Error('Backup exceeds the 100-entry recovery limit');
   return records.map((r) => ({
     id: uid(),
     at: Number(r.at) || Date.now(),
@@ -116,7 +116,7 @@ export function importBookmarkTree(tree) {
 }
 export function parseImport(source, filename = 'import.json') {
   if (typeof source !== 'string' || source.length > 20 * 1024 * 1024)
-    throw new Error('Choose a text export smaller than 20 MB.');
+    throw new Error('Import must be a text file under 20 MB');
   const trimmed = source.trim();
   let collections = [],
     skipped = 0,
@@ -124,12 +124,14 @@ export function parseImport(source, filename = 'import.json') {
     recovery,
     spaces;
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    const data = JSON.parse(trimmed);
+    let data;
+    try { data = JSON.parse(trimmed); }
+    catch { throw new Error("Can't read this JSON file. Check the format or export it again."); }
     // Accept existing backups without migrating or rewriting the user's files.
     const isBackup = ['leotabs-backup', 'neo-backup'].includes(data.format);
     const isCollection = ['leotabs-collections', 'neo-tabs'].includes(data.format);
     if ((isBackup || isCollection) && data.version !== SCHEMA)
-      throw new Error('This backup version is unsupported.');
+      throw new Error('This backup version is not supported');
     if (isBackup) {
       spaces = validateSpaces(data.spaces);
       collections = validateCollections(data.collections, { freshIds: true });
@@ -166,7 +168,7 @@ export function parseImport(source, filename = 'import.json') {
       });
     } else
       throw new Error(
-        'Unrecognised JSON export. Choose a backup JSON or supported collection export.',
+        'Unrecognised JSON format. Choose a backup or supported collection export.',
       );
   } else if (/<(?:!DOCTYPE NETSCAPE|DL|H3|A\s)/i.test(trimmed)) {
     const stack = [];
@@ -289,7 +291,7 @@ export function parseImport(source, filename = 'import.json') {
     }
   }
   collections = validateCollections(collections, { freshIds: true });
-  if (!collections.length && !settings) throw new Error('No collections found in this file.');
+  if (!collections.length && !settings) throw new Error('No collections found in this file');
   return {
     collections,
     spaces,

@@ -15,7 +15,7 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
   async function arrange({windowId,tabIds,aiGroups,expected,regroupExisting=true,metadata}) {
     const start=performance.now(),timings={};const mark=key=>timings[key]=Math.round(performance.now()-start);
     const all=await live(windowId),state=await db.getState();
-    if(expected&&signature(all)!==expected)throw Error('Tabs changed while AI was working. Nothing was rearranged.');
+    if(expected&&signature(all)!==expected)throw Error('Tabs changed. Run AI organisation again.');
     const selected=new Set((tabIds||all.map(t=>t.id)).filter(id=>regroupExisting||all.some(t=>t.id===id&&t.groupId<0)));
     const tabs=all.filter(t=>selected.has(t.id)&&!t.pinned&&website(t.resourceUrl||t.url));
     if(!tabs.length&&!metadata)return {label:'No tabs to group'};
@@ -76,7 +76,7 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       await nativeOrganiser.remember(windowId,scope);
       if(state.settings.tabSort!=='position')await db.mutate('Show browser order',s=>{s.settings.tabSort='position';});
       mark('remembered');await sessions.capture(windowId,{reason:'Grouped and sorted tabs',force:true});mark('captured');
-      if(metadata){await db.mutate('Organise collection',s=>{const c=s.collections.find(c=>c.id===metadata.collectionId);if(!c)throw Error('Collection no longer exists.');c.name=metadata.name;c.note=metadata.note;c.updatedAt=Date.now();});operation.afterCollection=structuredClone((await db.getState()).collections.find(c=>c.id===metadata.collectionId));}
+      if(metadata){await db.mutate('Organise collection',s=>{const c=s.collections.find(c=>c.id===metadata.collectionId);if(!c)throw Error('This collection is no longer available');c.name=metadata.name;c.note=metadata.note;c.updatedAt=Date.now();});operation.afterCollection=structuredClone((await db.getState()).collections.find(c=>c.id===metadata.collectionId));}
       operation.status='complete';operation.after=layoutSignature(await live(windowId),await browser.tabGroups.query({windowId}));
       operation.label=`Grouped ${[...buckets.values()].reduce((n,b)=>n+b.tabs.length,0)} tabs into ${buckets.size} groups`;
       if(singles.length)operation.label=`Organised ${tabs.length} tabs · ${buckets.size} groups`;
@@ -127,9 +127,9 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
   async function move({windowId,tabIds,groupId=-1,beforeTabId,afterTabId}) {
     const all=await live(windowId),selected=new Set(tabIds||[]);
     const tabs=all.filter(t=>selected.has(t.id)&&!t.pinned);
-    if(!tabs.length||tabs.length!==selected.size)throw Error('Choose unpinned tabs from this window.');
+    if(!tabs.length||tabs.length!==selected.size)throw Error('Select unpinned tabs from this window');
     const sourceGroups=await browser.tabGroups.query({windowId});
-    if(groupId>=0&&!sourceGroups.some(g=>g.id===groupId))throw Error('This group is no longer available.');
+    if(groupId>=0&&!sourceGroups.some(g=>g.id===groupId))throw Error('This group is no longer available');
     const validAnchor = (id, after) => {
       const target = all.find(t => t.id === id && !t.pinned);
       if (!target) return false;
@@ -140,9 +140,9 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       const members = all.filter(t => t.groupId === target.groupId);
       return (after ? members.at(-1) : members[0])?.id === id;
     };
-    if(beforeTabId!==undefined&&!validAnchor(beforeTabId,false))throw Error('The drop target changed.');
-    if(afterTabId!==undefined&&!validAnchor(afterTabId,true))throw Error('The drop target changed.');
-    if(selected.has(beforeTabId)||selected.has(afterTabId))return {label:'Tabs already here'};
+    if(beforeTabId!==undefined&&!validAnchor(beforeTabId,false))throw Error('The drop target changed. Drag again.');
+    if(afterTabId!==undefined&&!validAnchor(afterTabId,true))throw Error('The drop target changed. Drag again.');
+    if(selected.has(beforeTabId)||selected.has(afterTabId))return {unchanged:true};
     const scope=(await sessions.list()).active[windowId]?.collectionId||'unassigned';
     const op={id:crypto.randomUUID(),kind:'arrange',label:`Moved ${tabs.length} tab${tabs.length===1?'':'s'}`,at:Date.now(),status:'applying',windowId,tabs:all.map(t=>({id:t.id,url:t.url,groupId:t.groupId,index:t.index,pinned:t.pinned,active:t.active})),sourceGroups,undoable:true,scope};
     await db.write('journal',op);
@@ -165,11 +165,11 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
     }catch(error){op.status='partial';op.after=layoutSignature(await live(windowId),await browser.tabGroups.query({windowId}));await db.write('journal',op);try{await undo(op.id);}catch{}throw error;}
   }
   async function undo(id) {
-    const op=await db.read('journal',id);if(!op||op.kind!=='arrange'||op.status==='undone')throw Error('This arrangement is no longer available.');
+    const op=await db.read('journal',id);if(!op||op.kind!=='arrange'||op.status==='undone')throw Error('This arrangement is no longer available');
     const all=await live(op.windowId);
-    if(op.afterCollection&&JSON.stringify((await db.getState()).collections.find(c=>c.id===op.afterCollection.id))!==JSON.stringify(op.afterCollection))throw Error('The collection changed since organising. Undo is no longer available.');
+    if(op.afterCollection&&JSON.stringify((await db.getState()).collections.find(c=>c.id===op.afterCollection.id))!==JSON.stringify(op.afterCollection))throw Error('Can\'t undo organisation after editing the collection');
     // Structural edits after this operation must not be overwritten by an old Undo.
-    if(layoutSignature(all,await browser.tabGroups.query({windowId:op.windowId}))!==op.after)throw Error('Tabs changed since grouping. Undo is no longer available for this layout.');
+    if(layoutSignature(all,await browser.tabGroups.query({windowId:op.windowId}))!==op.after)throw Error('Can\'t undo after changing the tabs');
     const ids=op.tabs.filter(t=>!t.pinned).map(t=>t.id);
     if(ids.length)await browser.tabs.ungroup(ids);
     const restoredGroups=new Map();

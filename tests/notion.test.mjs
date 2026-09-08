@@ -68,7 +68,7 @@ test('library export checkpoints each page, resumes a rejected second page and i
 test('library export validates all collections before scheduling any pages', () => {
   const invalid = collection(); invalid.links[0].url = 'file:///private';
   assert.throws(() => prepareNotionLibrary([collection(), invalid], parent), /web URLs/);
-  assert.throws(() => prepareNotionLibrary([], parent), /no collections/);
+  assert.throws(() => prepareNotionLibrary([], parent), /No collections/);
 });
 
 test('library lost response persists uncertainty and never advances to another page', async () => {
@@ -81,7 +81,7 @@ test('library lost response persists uncertainty and never advances to another p
   assert.equal(stored.status, 'uncertain');
   assert.equal(stored.pages[0].status, 'uncertain');
   assert.equal(stored.pages[1].status, 'ready');
-  await assert.rejects(notionStep(job, 'fixture', options), /may already/);
+  await assert.rejects(notionStep(job, 'fixture', options), /Export not confirmed/);
   assert.equal(calls, 1);
 });
 test('Notion sends 251 links in three bounded batches with durable checkpoints', async () => {
@@ -124,7 +124,7 @@ test('Notion batches also stay below byte limit with long Unicode notes', () => 
   assert(new TextEncoder().encode(JSON.stringify(batch)).length <= 400000);
 });
 test('Notion validates local URLs and parent before any remote operation', () => {
-  assert.throws(() => prepareNotion(collection(), '-'.repeat(32)), /valid/);
+  assert.throws(() => prepareNotion(collection(), '-'.repeat(32)), /Notion page ID/);
   const c = collection();
   c.links[0].url = 'file:///C:/private.txt';
   assert.throws(() => prepareNotion(c, parent), /web URLs/);
@@ -151,7 +151,7 @@ test('lost POST response becomes uncertain and cannot create a duplicate page', 
     };
   const job = await notionStep(prepareNotion(collection(), parent), 'k', { save, fetcher });
   assert.equal(job.status, 'uncertain');
-  await assert.rejects(notionStep(job, 'k', { save, fetcher }), /may already/);
+  await assert.rejects(notionStep(job, 'k', { save, fetcher }), /Export not confirmed/);
   assert.equal(calls, 1);
 });
 test('worker restart with persisted sending state never replays it', async () => {
@@ -161,7 +161,7 @@ test('worker restart with persisted sending state never replays it', async () =>
   let calls = 0;
   await assert.rejects(
     notionStep(job, 'k', { save: async () => {}, fetcher: async () => calls++ }),
-    /may already/,
+    /Export not confirmed/,
   );
   assert.equal(calls, 0);
 });

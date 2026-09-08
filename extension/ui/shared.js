@@ -3,6 +3,7 @@ import { PALETTE } from '../lib/model.js';
 import { PROTOCOL } from '../lib/version.js';
 import { rasterCanvas } from './raster.js';
 import { colorHex } from '../lib/colors.js';
+import { errorText } from '../lib/messages.js';
 export const surface = () => globalThis.__neoSurface || document;
 export const $ = (selector, root = surface()) => root.querySelector(selector);
 export const $$ = (selector, root = surface()) => [...root.querySelectorAll(selector)];
@@ -25,15 +26,15 @@ export async function rpc(action, data = {}) {
     protocol: PROTOCOL,
     data,
     overlayToken: globalThis.__neoOverlayContext?.token,
-  });
+  }).catch(error => { throw new Error(errorText(error)); });
   if (
     result?.error === 'Unknown action.' ||
     (result?.ok && action === 'load' && result.value?.protocol !== PROTOCOL)
   )
     throw new Error(
-      'LeoTabs was updated. Reload LeoTabs at chrome://extensions, then refresh the library.',
+      'LeoTabs needs to reload. Reload the extension, then refresh this page.',
     );
-  if (!result?.ok) throw new Error(result?.error || 'LeoTabs did not respond. Please reopen the page.');
+  if (!result?.ok) throw new Error(errorText(result?.error || 'LeoTabs did not respond. Reopen the Library.'));
   return result.value;
 }
 export function el(tag, props = {}, ...children) {
@@ -193,12 +194,20 @@ export function favicon(item) {
   return mark;
 }
 export function toast(message, { undo, error = false, duration = undo ? 8000 : 5000 } = {}) {
+  if (error) message = errorText(message);
   let node = $('#toast');
   if (!node) {
     node = el('div', { id: 'toast', role: 'status' });
     (globalThis.__neoSurface || document.body).append(node);
   }
-  node.className = error ? 'error' : '';
+  const panel = error && (surface().activeElement?.closest('dialog[open], .action-popover:popover-open') ||
+    $('dialog[open]') || $('.action-popover:popover-open'));
+  node.className = (error ? 'error' : '') + (panel ? ' inline-toast' : '');
+  node.setAttribute('role', error ? 'alert' : 'status');
+  if (panel) {
+    const body = panel.querySelector(':scope > .dialog-body') || panel;
+    body.insertBefore(node, body.querySelector(':scope > footer'));
+  } else (globalThis.__neoSurface || document.body).append(node);
   node.replaceChildren(
     ...[
       el('span', {}, message),
@@ -207,6 +216,13 @@ export function toast(message, { undo, error = false, duration = undo ? 8000 : 5
     ].filter(Boolean),
   );
   node.hidden = false;
+  if (panel && panel.matches('.action-popover')) {
+    panel.style.maxHeight = 'calc(100dvh - 24px)';
+    panel.style.overflowY = 'auto';
+    const bounds = panel.getBoundingClientRect();
+    if (bounds.bottom > innerHeight - 12)
+      panel.style.top = Math.max(12, innerHeight - bounds.height - 12) + 'px';
+  }
   clearTimeout(node._timer);
   let remaining=duration,started=Date.now(),paused=false;
   const resume=()=>{clearTimeout(node._timer);if(error||!duration||node.matches(':hover')||node.contains(surface().activeElement))return;paused=false;started=Date.now();node._timer=setTimeout(()=>{if(node.matches(':hover')||node.contains(surface().activeElement)){pause();return;}node.hidden=true;},remaining);};
@@ -225,7 +241,7 @@ export function task(fn) {
     try {
       await fn(event);
     } catch (error) {
-      toast(error.message, { error: true });
+      toast(errorText(error), { error: true });
     }
   };
 }

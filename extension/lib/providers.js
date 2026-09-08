@@ -24,7 +24,7 @@ export const PROVIDERS = {
 };
 export function providerEndpoint(settings) {
   const provider = PROVIDERS[settings.provider];
-  if (!provider) throw Error('Choose a supported AI provider.');
+  if (!provider) throw Error('Select an AI provider in Settings');
   return settings.provider === 'compatible' ? settings.aiEndpoint : provider.endpoint;
 }
 export function aiConnectionId(settings) {

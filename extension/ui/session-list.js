@@ -22,7 +22,7 @@ export function sessionList({ data, query = '', windowId, history = false, refre
         ? await rpc('restore-recent-tab', { sessionId: row.id, url: link.url, windowId })
         : await rpc('restore-session', { sessionId: row.id });
     if (result?.failed?.length || result?.groupFailures?.length)
-      throw Error('Some pages could not be restored. The snapshot is still available.');
+      throw Error('Some tabs could not be restored. The snapshot is still available.');
     const focusId=link&&(result?.created?.[0]||result?.reused?.[0]);
     if(focusId)await rpc('activate',{tabId:focusId});
     await refresh();

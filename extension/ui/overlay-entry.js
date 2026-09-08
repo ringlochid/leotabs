@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { startQuick } from './quick.js';
+import { errorText } from '../lib/messages.js';
 import { installAltKeyGuard } from './alt-key.js';
 import stylesheet from './styles.css';
 const context = globalThis.__neoOverlayContext;
@@ -56,7 +57,7 @@ if (context) {
     })
     .catch((error) => {
       const text = document.createElement('p');
-      text.textContent = error.message;
+      text.textContent = errorText(error);
       const button = document.createElement('button');
       button.textContent = 'Close switcher';
       button.onclick = close;

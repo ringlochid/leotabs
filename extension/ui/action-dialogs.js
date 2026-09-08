@@ -1,4 +1,5 @@
 import { orderedCollections } from '../lib/collection-workflow.js';
+import { countLabel, operationStatus } from '../lib/messages.js';
 import { PROVIDERS, providerEndpoint, aiConnectionId } from '../lib/providers.js';
 // SPDX-License-Identifier: MPL-2.0
 import {
@@ -36,7 +37,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     act = (fn) => task(fn);
   function saveTo(context, { closeTabs = data.state.settings.closeAfterStash } = {}) {
     const ids = selectedIds().filter((id) => data.tabs.some((t) => t.id === id && !t.pinned));
-    if (!ids.length) return toast('Select at least one unpinned tab.', { error: true });
+    if (!ids.length) return toast('Select an unpinned tab', { error: true });
     const check = el('input', { type: 'checkbox', checked: closeTabs });
     const adopt = el('input', {type:'checkbox', checked:false, 'aria-label':'and switch to new collection'});
     const windowIds=data.tabs.filter(t=>t.windowId===win&&!t.pinned).map(t=>t.id);
@@ -68,7 +69,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     adopt.onchange = () => {if(adopt.checked)check.checked=false;label();};
     label();
     const { close } = popover(
-      `Save ${ids.length} tabs`,
+      `Save ${countLabel(ids.length, 'tab')}`,
       el(
         'div',
         {},
@@ -98,7 +99,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         close();await run(include.checked);
       }finally{apply.disabled=false;}
     }),{className:'primary topic-apply'});
-    const {close}=modal(title,el('div',{},el('label',{class:'check-label'},include,'Include already grouped tabs'),el('p',{class:'hint'},'Regroup included tabs by topic. Uncheck to keep existing groups.')),[button('Cancel',()=>close()),apply]);
+    const {close}=modal(title,el('div',{},el('label',{class:'check-label'},include,'Include already grouped tabs'),el('p',{class:'hint'},'Uncheck to keep existing groups')),[button('Cancel',()=>close()),apply]);
   }
   function groupCollection(c) {
     const include = el('input', {type:'checkbox', checked:data.state.settings.regroupExisting!==false});
@@ -119,13 +120,13 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     const cancel=button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});progress.textContent='Cancelling…';});
     toast(el('span',{class:'grouping-progress'},progress,cancel),{duration:0});
     try {await change('group-topic',{windowId:win,tabIds:groupingIds(regroupExisting),regroupExisting,requestId});}
-    catch(error){toast(cancelled?'AI grouping cancelled':error.message,{error:!cancelled});}
+    catch(error){toast(cancelled?'Grouping cancelled':error.message,{error:!cancelled});}
     finally{groupingBusy=false;}
   }
   async function groupSort(options={}){if(groupingBusy)return;groupingBusy=true;try{return await change('group-sort',{windowId:win,tabIds:groupingIds(),...options});}finally{groupingBusy=false;}}
   const opening = new Set();
   async function resumeDialog(c, { target = 'current', linkIds } = {}) {
-    if (!c?.links.length || (linkIds && !linkIds.length)) return toast('No saved pages to open.');
+    if (!c?.links.length || (linkIds && !linkIds.length)) return toast('No saved tabs to open');
     const key = c.id + ':' + target;
     if (opening.has(key)) return;
     opening.add(key);
@@ -137,7 +138,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         windowId: win,
         deferred: true,
       });
-      toast('Opening ' + job.total + ' tabs…');
+      toast(`Opening ${countLabel(job.total, 'tab')}…`);
       clearTimeout($('#toast')?._timer);
       const cancel = button('Cancel', () => rpc('cancel-operation', { id: job.id }), {
         quiet: false,
@@ -146,10 +147,10 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       const result = await rpc('resume-run', { id: job.id });
       cancel.remove();
       toast(
-        result.created.length +
-          ' tabs opened' +
-          (result.failed.length ? ' · ' + result.failed.length + ' failed' : '') +
-          (result.groupFailures.length ? ' · Some groups could not be restored' : ''),
+        `Opened ${countLabel(result.created.length, 'tab')}` +
+          (result.cancelled ? ' · Cancelled' : '') +
+          (result.failed.length ? ` · ${result.failed.length} failed` : '') +
+          (result.groupFailures.length ? ' · Groups not fully restored' : ''),
         { error: !!result.failed.length || !!result.groupFailures.length },
       );
       onOpen();
@@ -186,7 +187,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         focusPage: !!globalThis.__neoOverlayContext,
       });
       if (result?.status === 'partial' || result?.cancelled || result?.failed?.length)
-        throw new Error('Switch incomplete. Review Timeline before trying again.');
+        throw new Error('Switch incomplete. Check Timeline.');
       onOpen();
       return result;
     } finally {
@@ -266,7 +267,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                   result.groupFailures?.length ||
                   result.cancelled
                 )
-                  throw new Error('Switch incomplete. Check Recovery before trying again.');
+                  throw new Error('Switch incomplete. Check Timeline.');
                 running = false;
                 close();
                 onOpen();
@@ -348,7 +349,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     input.onchange = act(async () => {
       const f = input.files[0];
       if (!f) return;
-      if (f.size > 20 * 1024 * 1024) throw new Error('Choose a file smaller than 20 MB.');
+      if (f.size > 20 * 1024 * 1024) throw new Error('Choose a file under 20 MB');
       previewImport(parseImport(await f.text(), f.name));
     });
     focusedDialog(
@@ -573,7 +574,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         while (running) {
           const progressText = job.pages
             ? `${job.pageCursor} of ${job.pageTotal} pages exported`
-            : `${job.cursor} of ${job.total} blocks sent`;
+            : `${job.cursor} of ${job.total} items sent`;
           status.textContent = progressText;
           progress.value = job.pageCursor ?? job.cursor;
           if (job.pages)
@@ -589,14 +590,14 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
               ),
             );
           if (job.status === 'complete') {
-            status.textContent = job.pages ? `${job.pageTotal} collections exported to Notion.` : 'Snapshot exported to Notion.';
+            status.textContent = job.pages ? `Exported ${countLabel(job.pageTotal, 'collection')} to Notion` : 'Exported to Notion';
             dialog.querySelector('footer').replaceChildren(button('Done', close));
             return;
           }
           if (!resume && ['partial', 'failed', 'uncertain', 'sending'].includes(job.status)) {
             status.textContent =
               job.error ||
-              'This request may already be in Notion. Inspect the destination before taking another action.';
+              'Export not confirmed. Check Notion before retrying.';
             dialog.querySelector('footer').replaceChildren(button('Close', close));
             return;
           }
@@ -624,9 +625,9 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     if(groupingBusy)return;
     if(!data.connections.ai){settingsDetails('AI connection');return;}
     const requestId=uid();let cancelled=false;groupingBusy=true;
-    toast(el('span',{class:'grouping-progress'},'Organising name, note and topic groups…',button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});})),{duration:0});
+    toast(el('span',{class:'grouping-progress'},'Organising collection…',button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});})),{duration:0});
     try {await change('collection-ai',{collectionId:c.id,windowId:win,regroupExisting,requestId});}
-    catch(error){toast(cancelled?'AI organisation cancelled':error.message,{error:!cancelled});}
+    catch(error){toast(cancelled?'Organisation cancelled':error.message,{error:!cancelled});}
     finally{groupingBusy=false;}
   }
   function recoveryDialog() {
@@ -654,8 +655,8 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
               'p',
               {},
               op.kind === 'notion'
-                ? op.pages ? `${op.pageCursor} / ${op.pageTotal} pages · ${op.status}` : `${op.cursor} / ${op.total} blocks · ${op.status}`
-                : op.status,
+                ? op.pages ? `${op.pageCursor} / ${op.pageTotal} pages · ${operationStatus(op.status)}` : `${op.cursor} / ${op.total} items · ${operationStatus(op.status)}`
+                : operationStatus(op.status),
             ),
             op.error ? el('p', {}, op.error) : null,
             op.kind === 'notion' && ['ready', 'waiting', 'partial', 'failed'].includes(op.status)
@@ -665,7 +666,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
               ? el(
                   'p',
                   { class: 'hint' },
-                  'A batch may already be in Notion. Inspect the destination; it will not be sent again automatically.',
+                  'Export not confirmed. Check Notion before retrying.',
                 )
               : null,
             op.recoverable
@@ -713,7 +714,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Export all collections or import saved work. Backups also include settings and recovery history; API keys are excluded.',
+          'Backups include collections, settings and recovery history. API keys are excluded.',
         ),
         button(
           'Backup JSON',
@@ -787,7 +788,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             !(await chrome.permissions.request({ origins: ['<all_urls>'] }))
           ) {
             check.checked = false;
-            toast('Preview access was not enabled');
+            toast('Preview access not granted');
             return;
           }
           await change('settings', { settings: { [name]: value } });
@@ -863,7 +864,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       history.disabled=true;
       try {
         const granted=await chrome.permissions.request({permissions:['history']});
-        toast(granted?'History search enabled':'History access was not enabled');
+        toast(granted?'History search enabled':'History access not granted');
       } finally {await updateHistory();}
     }), {className:'dialog-action'});
     async function updateHistory() {
@@ -1020,7 +1021,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
                   origins.length &&
                   !(await chrome.permissions.request({ origins: [...new Set(origins)] }))
                 )
-                  throw new Error('Permission was not granted. Settings were not saved.');
+                  throw new Error('Allow access to save this connection');
                 await change('settings', { settings });
                 const credentials = {};
                 if (sectionName === 'AI connection' && aiKey.value.trim())
@@ -1086,7 +1087,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Choose collections from before this action. They are restored as separate copies, keeping your current work.',
+          'Restore earlier collections as separate copies',
         ),
         list,
       ),
@@ -1094,7 +1095,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         button(
           'Restore selected copies',
           act(async () => {
-            if (!selected.size) throw new Error('Choose a collection first.');
+            if (!selected.size) throw new Error('Select a collection');
             await change('restore-library', { id: op.id, collectionIds: [...selected] });
             close();
           }),
@@ -1144,7 +1145,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       el(
         'p',
         { class: 'hint' },
-        'Adds selected tabs. Existing saved links, custom titles and notes are kept.',
+        'Existing links, titles and notes are kept',
       ),
       el(
         'div',
@@ -1172,8 +1173,8 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
             'p',
             {},
             plan.currentCount
-              ? 'All current tabs are already saved.'
-              : 'No open pages to add from this window.',
+              ? 'No new tabs to add'
+              : 'No tabs to add',
           )
         : null,
       status,
@@ -1195,7 +1196,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       el(
         'p',
         { class: 'hint' },
-        'Previous versions of ' + c.name + '. Restoring keeps the current version in this history.',
+        'Restoring a version keeps the current version in this history.',
       ),
     );
     for (const row of rows) {
@@ -1244,7 +1245,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'empty' },
-          'No previous versions yet. Changes will appear here automatically.',
+          'No previous versions',
         ),
       );
     const { close } = modal('Version history · ' + c.name, body);
@@ -1258,7 +1259,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
       await change('ai-library-apply',{plan:{revision:data.state.revision,scope:{type:'all'},actions:[{type:'merge',collectionId:c.id,destinationId:r.id}]}});close();
     }),{title:r.reason||'Move these links, groups and notes into this collection'})));
     const {close}=popover('Name or file dropped tabs',el('div',{},options,status),[button('Ask AI',act(async()=>{
-      status.textContent='Finding a name and destinations…';
+      status.textContent='Finding suggestions…';
       const result=await assist(data.state,{kind:'destinations',collectionId:c.id});
       render(result.destinations);status.textContent='';
       if(result.name)options.prepend(button('Name this '+result.name,act(async()=>{await change('edit',{kind:'collection',collectionId:c.id,name:result.name});close();})));

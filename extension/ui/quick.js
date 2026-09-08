@@ -1,4 +1,5 @@
 import {colorHex} from '../lib/colors.js';
+import { operationFeedback } from '../lib/messages.js';
 // SPDX-License-Identifier: MPL-2.0
 import {
   $,
@@ -151,8 +152,10 @@ export async function startQuick() {
         const op = await rpc('close', { tabIds: [...selected] });
         selected.clear();
         await refresh();
-        if (!disposed)
-          toast((op.closed?.length || 0) + ' tabs closed', {
+        const feedback = operationFeedback(op, 'close');
+        if (!disposed && feedback)
+          toast(feedback.message, {
+            error: feedback.error,
             undo: task(async () => {
               await rpc('undo-action', { id: op.id, windowId: win });
               await refresh();
@@ -253,8 +256,10 @@ export async function startQuick() {
       const result = await rpc(action, payload);
       await refresh();
       const op = result?.operation || result;
-      if (op?.label)
-        toast(op.label, {
+      const feedback = operationFeedback(op, action);
+      if (feedback)
+        toast(feedback.message, {
+          error: feedback.error,
           undo:
             action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
               ? async () => {
@@ -273,8 +278,10 @@ export async function startQuick() {
       const result = await rpc(action, payload);
       await refresh();
       const op = result?.operation || result;
-      if (op?.label)
-        toast(op.label, {
+      const feedback = operationFeedback(op, action);
+      if (feedback)
+        toast(feedback.message, {
+          error: feedback.error,
           undo: op.closed?.length
             ? async () => {
                 await rpc('undo-action', { id: op.id, windowId: win });

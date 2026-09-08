@@ -5,7 +5,7 @@ import { endpointOrigin } from './integrations.js';
 // Explicit allowlist shared by Settings and portable backups. Credentials never enter state.
 export function sanitizeSettings(input = {}, base = initialState().settings) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
-    throw new Error('Invalid saved preferences.');
+    throw new Error('Can\'t read these saved settings');
   const next = { ...base };
   delete next.organisation;
   delete next.aiNaming;

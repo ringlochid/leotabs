@@ -11,7 +11,7 @@ test('space plans reject cross-scope references; All spaces is explicit',()=>{
   const s=fixture(),raw={actions:[{type:'merge',collectionId:'a',destinationId:'c'}]};
   assert.throws(()=>validateLibraryPlan(raw,s,{type:'space',id:'one'}),/destination/);
   assert.equal(validateLibraryPlan(raw,s,{type:'all'}).actions.length,1);
-  assert.throws(()=>validateLibraryPlan({actions:[{type:'move',collectionId:'a',destinationId:'b',linkIds:['unknown']}]},s,{type:'all'}),/moved links/);
+  assert.throws(()=>validateLibraryPlan({actions:[{type:'move',collectionId:'a',destinationId:'b',linkIds:['unknown']}]},s,{type:'all'}),/missing or repeated links/);
 });
 test('reviewed merges preserve links, groups and both notes; stale plans cannot apply',()=>{
   const s=fixture(),plan=validateLibraryPlan({actions:[{type:'rename',collectionId:'b',name:'Combined'},{type:'merge',collectionId:'a',destinationId:'b'}]},s,{type:'space',id:'one'});

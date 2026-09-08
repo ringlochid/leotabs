@@ -3584,6 +3584,7 @@ dialog .primary:hover { background: var(--selected); }
 .grouping-controls {min-width:0;max-width:100%;}
 #toast {width:max-content;}
 #toast>button {flex-shrink:0;}
+#toast.inline-toast {position:static;transform:none;width:auto;max-width:100%;margin-top:12px;box-shadow:none;border-radius:4px;}
 
 .auto-group-control.settings-preference {padding:6px 0;gap:8px;justify-content:flex-start;}
 .auto-group-control > span {flex:1;}

@@ -71,13 +71,13 @@ test('new LeoTabs exports and existing Neo backups preserve content and settings
     assert.equal(result.settings.theme,'dark');
     assert.equal(result.collections[0].links[0].note,state.collections[0].links[0].note);
     assert.deepEqual(result.spaces,state.spaces);
-    assert.throws(()=>parseImport(JSON.stringify({...backup,format,version:99})),/unsupported/);
+    assert.throws(()=>parseImport(JSON.stringify({...backup,format,version:99})),/not supported/);
   }
   for(const format of ['leotabs-collections','neo-tabs']) {
     const result=parseImport(JSON.stringify({...collections,format}));
     assert.equal(result.collections[0].name,state.collections[0].name);
     assert.equal(result.collections[0].groups[0].name,state.collections[0].groups[0].name);
-    assert.throws(()=>parseImport(JSON.stringify({...collections,format,version:99})),/unsupported/);
+    assert.throws(()=>parseImport(JSON.stringify({...collections,format,version:99})),/not supported/);
   }
 });
 test('unknown JSON shape does not silently become empty Toby collections', () =>
@@ -136,7 +136,7 @@ test('AI subset excludes other links and cannot accept IDs outside reviewed scop
   assert.deepEqual(plan.scopeLinkIds, ['l']);
   assert.throws(
     () => validatePlan({ ...plan, groups: [{ name: 'Bad', linkIds: ['private'] }] }, c),
-    /unknown/,
+    /missing or repeated/,
   );
 });
 test('AI fingerprint rejects changes to notes or group context, retaining unchecked groups', () => {

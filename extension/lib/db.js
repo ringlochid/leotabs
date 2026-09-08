@@ -103,7 +103,7 @@ export async function write(store, value) {
     tx.objectStore(store).put(value);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('Write cancelled.'));
+    tx.onabort = () => reject(tx.error || new Error('Save interrupted. Try again.'));
   });
 }
 export async function remove(store, id) {
@@ -135,7 +135,7 @@ export async function writeIf(store, value, allowed) {
     };
     tx.oncomplete = () => resolve(written);
     tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || Error('Write cancelled.'));
+    tx.onabort = () => reject(tx.error || Error('Save interrupted. Try again.'));
   });
 }
 export async function getState() {
@@ -150,7 +150,7 @@ export async function mutate(label, transform) {
     });
     let result;
     tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('The library write was cancelled.'));
+    tx.onabort = () => reject(tx.error || new Error('Save interrupted. Try again.'));
     tx.oncomplete = () => resolve(result);
     const request = tx.objectStore('state').get('library');
     request.onsuccess = () => {
@@ -164,7 +164,7 @@ export async function mutate(label, transform) {
           next.collections.reduce((sum, c) => sum + c.links.length, 0) > 50000
         )
           throw new Error(
-            'The library is limited to 2,000 collections and 50,000 saved links. Export or remove older collections before adding more.',
+            'Library limit reached: 2,000 collections or 50,000 links. Remove collections to add more.',
           );
         if (detail?.unchanged) {
           result = { state: before, operation: null };
@@ -222,11 +222,11 @@ export async function mutate(label, transform) {
 }
 export async function undoLibrary(id) {
   const op = await read('journal', id);
-  if (!op?.before) throw new Error('This operation has no library undo.');
+  if (!op?.before) throw new Error('Can\'t undo this library change');
   return mutate(`Undo ${op.label}`, (state) => {
     if (state.revision !== op.revision)
       throw new Error(
-        'The library changed after this action. Use its recovery snapshot instead of overwriting newer edits.',
+        'Can\'t undo after newer edits. Restore a copy from Recovery.',
       );
     for (const key of Object.keys(state)) delete state[key];
     Object.assign(state, clone(op.before));

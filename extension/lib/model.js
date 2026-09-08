@@ -50,7 +50,7 @@ export function migrate(state) {
   if (!state) return initialState();
   if (state.schema !== SCHEMA)
     throw new Error(
-      'This library version is not supported. Your stored data has not been changed.',
+      'Library version not supported. Stored data is unchanged.',
     );
   const spaces = validateSpaces(state.spaces);
   const {organisation, aiNaming, ...settings} = state.settings || {};
@@ -68,19 +68,19 @@ export function migrate(state) {
 export function validateSpaces(spaces) {
   if (!spaces) return [{ id: 'main', name: 'My space' }];
   if (!Array.isArray(spaces) || !spaces.length || spaces.length > 100)
-    throw new Error('A library can contain 1 to 100 spaces.');
+    throw new Error('The library needs 1–100 spaces');
   const ids = new Set();
   return spaces.map((s) => {
-    if (!s || typeof s.id !== 'string' || !s.id || ids.has(s.id)) throw new Error('Invalid space.');
+    if (!s || typeof s.id !== 'string' || !s.id || ids.has(s.id)) throw new Error('A space has a missing or duplicate ID');
     ids.add(s.id);
     return { id: text(s.id, 100), name: text(s.name).trim() || 'New space' };
   });
 }
 export function moveSpace(spaces, spaceId, beforeId) {
   const from = spaces.findIndex((space) => space.id === spaceId);
-  if (from < 0) throw new Error('Space not found.');
+  if (from < 0) throw new Error('Space not found');
   if (beforeId != null && !spaces.some((space) => space.id === beforeId))
-    throw new Error('Destination space not found.');
+    throw new Error('Destination space not found');
   if (spaceId === beforeId) return;
   const [space] = spaces.splice(from, 1);
   const to = spaces.findIndex((item) => item.id === beforeId);
@@ -140,11 +140,11 @@ export function snapshotTabs(tabs, groups = []) {
 }
 export function validateCollections(input, { freshIds = false } = {}) {
   if (!Array.isArray(input) || input.length > 2000)
-    throw new Error('Import must contain at most 2,000 collections.');
+    throw new Error('Import exceeds the 2,000-collection limit');
   let count = 0;
   return input.map((raw) => {
     if (!raw || !Array.isArray(raw.links) || !Array.isArray(raw.groups || []))
-      throw new Error('Invalid collection structure.');
+      throw new Error('A collection is missing its tab or group list');
     const c = newCollection(raw.name, raw.color);
     c.spaceId = text(raw.spaceId || 'main', 100);
     const map = new Map();
@@ -160,7 +160,7 @@ export function validateCollections(input, { freshIds = false } = {}) {
     if (Number.isFinite(raw.updatedAt) && raw.updatedAt > 0) c.updatedAt = raw.updatedAt;
     c.groups = (raw.groups || []).map((g) => {
       if (!g || typeof g.id !== 'string' || map.has(g.id))
-        throw new Error('Invalid or duplicate group ID.');
+        throw new Error('A group has a missing or duplicate ID');
       const id = freshIds ? uid() : text(g.id, 100);
       map.set(g.id, id);
       return {
@@ -173,11 +173,11 @@ export function validateCollections(input, { freshIds = false } = {}) {
     });
     const ids = new Set();
     c.links = raw.links.map((l) => {
-      if (++count > 50000) throw new Error('Import is limited to 50,000 links.');
+      if (++count > 50000) throw new Error('Import exceeds the 50,000-link limit');
       const url = safeURL(l?.url);
-      if (!url) throw new Error('An imported link has an unsupported URL.');
+      if (!url) throw new Error('An imported URL is not supported');
       const id = freshIds ? uid() : text(l.id || uid(), 100);
-      if (ids.has(id)) throw new Error('Duplicate link ID.');
+      if (ids.has(id)) throw new Error('The import contains duplicate link IDs');
       ids.add(id);
       return {
         id,
@@ -229,22 +229,22 @@ export function score(query, ...values) {
 }
 export function validatePlan(raw, collection) {
   if (!raw || !Array.isArray(raw.groups) || raw.groups.length > 30)
-    throw new Error('AI returned an invalid grouping plan.');
+    throw new Error('AI returned an unusable grouping plan');
   const allIDs = new Set(collection.links.map((l) => l.id));
   const scope = raw.scopeLinkIds || [...allIDs];
   if (!Array.isArray(scope) || scope.length > 300 || scope.some((id) => !allIDs.has(id)))
-    throw new Error('Invalid AI selection. Choose up to 300 current links.');
+    throw new Error('Select up to 300 current links for AI');
   const known = new Set(scope),
     assigned = new Set();
   const orderedLinkIds=raw.orderedLinkIds||[];
   if(!Array.isArray(orderedLinkIds)||new Set(orderedLinkIds).size!==orderedLinkIds.length||orderedLinkIds.some(id=>!known.has(id)))
-    throw Error('AI returned an invalid reading order.');
+    throw Error('AI returned an unusable reading order');
   const groups = raw.groups.map((g) => {
     if (!Array.isArray(g.linkIds) || !g.name)
-      throw new Error('AI group is missing a name or links.');
+      throw new Error('AI returned a group without a name or links');
     for (const id of g.linkIds) {
       if (!known.has(id) || assigned.has(id))
-        throw new Error('AI returned unknown or duplicate link IDs.');
+        throw new Error('AI referenced missing or repeated links');
       assigned.add(id);
     }
     return {

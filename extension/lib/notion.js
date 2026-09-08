@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 import { uid, stamp, text } from './model.js';
 import { notionBlocks } from './integrations.js';
+import { serviceError } from './messages.js';
 
 export const NOTION_VERSION = '2026-03-11';
 const pageID = /^(?:[a-f\d]{32}|[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12})$/i;
 const bytes = (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
 export function prepareNotion(collection, parent) {
-  if (!pageID.test(parent)) throw new Error('Enter a valid destination Notion page ID.');
+  if (!pageID.test(parent)) throw new Error('Enter the destination Notion page ID (32 hex characters)');
   const blocks = notionBlocks(collection);
   return {
     id: uid(),
@@ -25,7 +26,7 @@ export function prepareNotion(collection, parent) {
   };
 }
 export function prepareNotionLibrary(collections, parent) {
-  if (!collections.length) throw new Error('There are no collections to export.');
+  if (!collections.length) throw new Error('No collections to export');
   const pages = collections.map((collection) => prepareNotion(collection, parent));
   return {
     id: uid(), at: stamp(), kind: 'notion',
@@ -69,20 +70,20 @@ export function notionBatch(job) {
     size += length;
   }
   if (!batch.length && job.cursor < job.total)
-    throw new Error('A Notion block exceeds the request size limit.');
+    throw new Error('A note or bookmark is too large for Notion');
   return batch;
 }
 
 // Exactly one durable batch per invocation. A fresh worker never replays a pending write.
 export async function notionStep(job, key, { save, fetcher = fetch, now = Date.now } = {}) {
-  if (!key) throw new Error('Add your Notion integration token in Settings.');
+  if (!key) throw new Error('Add a Notion token in Settings');
   if (job.status === 'complete') return job;
   if (['sending', 'uncertain'].includes(job.status))
     throw new Error(
-      'This batch may already be in Notion. Inspect the destination; LeoTabs will not send it again.',
+      'Export not confirmed. Check Notion before retrying.',
     );
   if (!['ready', 'waiting', 'partial', 'failed'].includes(job.status))
-    throw new Error('This export cannot continue.');
+    throw new Error('Can\'t resume this export');
   if (job.retryAt > now()) return job;
   if (job.pages) return notionLibraryStep(job, key, { save, fetcher, now });
   const children = notionBatch(job),
@@ -119,7 +120,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
     });
   } catch {
     job.status = 'uncertain';
-    job.error = 'The response was lost. Check Notion before taking another action.';
+    job.error = 'Export not confirmed. Check Notion before retrying.';
     await save(job);
     return job;
   }
@@ -136,7 +137,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
       attempts,
       retryAt: now() + seconds * 1000 + 250,
       pending: null,
-      error: attempts >= 3 ? 'Notion is busy. Continue this export later.' : undefined,
+      error: attempts >= 3 ? 'Notion is busy. Resume the export later.' : undefined,
     };
     await save(job);
     return job;
@@ -147,7 +148,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
       ...job,
       status: uncertain ? 'uncertain' : job.remoteId ? 'partial' : 'failed',
       pending: uncertain ? job.pending : null,
-      error: `Notion returned HTTP ${response.status}. ${uncertain ? 'The batch may have been received. Check the destination.' : 'This batch was rejected. Check the connection and destination access.'}`,
+      error: uncertain ? 'Export not confirmed. Check Notion before retrying.' : serviceError('Notion', response.status),
     };
     await save(job);
     return job;
@@ -173,7 +174,7 @@ export async function notionStep(job, key, { save, fetcher = fetch, now = Date.n
   } catch {
     job.status = 'uncertain';
     job.error =
-      'Notion returned an incomplete response. Inspect the destination before continuing.';
+      'Export not confirmed. Check Notion before retrying.';
   }
   await save(job);
   return job;

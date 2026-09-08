@@ -124,7 +124,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
     drop,
   }) {
     const tabs = (await live(tabIds)).filter((t) => !excludePinned || !t.pinned);
-    if (!tabs.length) throw new Error('There are no eligible tabs to save.');
+    if (!tabs.length) throw new Error('No tabs to save');
     const groups = (await browser.tabGroups.query({})).filter((group) =>
       tabs.some((tab) => tab.groupId === group.id),
     );
@@ -136,7 +136,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
         await beforeStashClose(tabs);
         const result=await closeCaptured(operation,tabs);await afterStashClose(result);return result;
       }
-      throw new Error('These utility tabs do not need saving. Use Close tabs.');
+      throw new Error('Can\'t save utility tabs');
     }
     if (automaticName) captured.name = 'Saved on '+new Date(captured.createdAt).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
     if (name?.trim()) captured.name = name.trim().slice(0, 500);
@@ -149,16 +149,16 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       // browser groups. Only dragging the group header preserves that unit.
       if (drop && !drop.group) {
         if (drop.groupId && !target?.groups.some(g => g.id === drop.groupId))
-          throw new Error('The destination group changed. Try dragging again.');
+          throw new Error('The destination group changed. Drag again.');
         captured.groups = [];
         captured.links.forEach(link => { link.groupId = drop.groupId || null; link.manualGroup = true; });
       }
       if (destinationId) {
         const dest = state.collections.find((c) => c.id === destinationId);
-        if (!dest) throw new Error('This collection no longer exists.');
+        if (!dest) throw new Error('This collection is no longer available');
         const items = drop?.group ? dest.groups : dest.links;
         const index = items.findIndex(item => item.id === drop?.beforeId);
-        if (drop?.beforeId && index < 0) throw new Error('The insertion target changed. Try dragging again.');
+        if (drop?.beforeId && index < 0) throw new Error('The drop target changed. Drag again.');
         if (drop?.group) {
           dest.groups.splice(index < 0 ? dest.groups.length : index, 0, ...captured.groups);
           dest.links.push(...captured.links);
@@ -203,7 +203,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
   }
   async function close(tabIds) {
     const tabs = (await live(tabIds)).filter((t) => !t.pinned);
-    if (!tabs.length) throw new Error('There are no unpinned tabs to close.');
+    if (!tabs.length) throw new Error('No unpinned tabs to close');
     const sourceGroups = (await browser.tabGroups.query({})).filter((group) =>
       tabs.some((tab) => tab.groupId === group.id),
     );
@@ -252,7 +252,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       }
       try {
         const url = safeURL(link.url);
-        if (!url) throw new Error('Unsupported URL.');
+        if (!url) throw new Error('This URL isn\'t supported');
         const matches = reuse
           ? existing.filter(
               (t) =>
@@ -337,9 +337,9 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
     const state = await db.getState();
     const destination = state.collections.find((c) => c.id === destinationId);
     if (!destination) throw new Error('Destination not found.');
-    if (!destination.links.length) throw new Error('Choose a collection with saved pages.');
+    if (!destination.links.length) throw new Error('This collection has no saved tabs');
     if (saveCurrent && saveToId === destinationId)
-      throw new Error('Save current work to a different collection.');
+      throw new Error('Choose a different collection for the current tabs');
     const tabs = (await live(tabIds)).filter((t) => !t.pinned);
     if (!tabs.length)
       return {
@@ -383,18 +383,18 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
   }
   async function recover(id, windowId) {
     const op = await db.read('journal', id);
-    if (!op?.snapshot) throw new Error('No saved tab snapshot for this operation.');
+    if (!op?.snapshot) throw new Error('No saved snapshot for this action');
     return openLinks({ collection: op.snapshot, windowId, deferred: true });
   }
   async function undo(id, windowId) {
     const op = await db.read('journal', id);
-    if (!op) throw new Error('This action is no longer available.');
-    if (op.status === 'undone') throw new Error('This action was already undone.');
+    if (!op) throw new Error('This action is no longer available');
+    if (op.status === 'undone') throw new Error('This action has already been undone');
     if (!['complete', 'committed'].includes(op.status))
-      throw new Error('This action is incomplete. Review its recovery snapshot instead.');
+      throw new Error('Can\'t undo an incomplete action. Open Recovery.');
     if (op.before && (await db.getState()).revision !== op.revision)
       throw new Error(
-        'Newer library edits exist. Restore an earlier collection as a copy in Recovery.',
+        'Can\'t undo after newer edits. Restore a copy from Recovery.',
       );
     let restored;
     if (op.closed?.length) {
@@ -406,7 +406,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       restored = await openLinks({ collection: snapshot, windowId, deferred: true });
       if (restored.failed.length || restored.groupFailures.length)
         throw new Error(
-          'Some pages could not be restored. The saved collection was kept; review Recovery.',
+          'Some tabs could not be restored. Open Recovery.',
         );
     }
     const result = op.before ? await db.undoLibrary(id) : null;

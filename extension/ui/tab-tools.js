@@ -35,7 +35,7 @@ export function createTabTools({ getTabs, getSettings, change, actions, compact 
     ['Group & sort',openGrouping,'group'],
     ...(showTopicAI ? [['Group by topic with AI',()=>actions.aiTabs(),'sparkles'],null] : []),
     ...[['recent','Most recent first'],['title','Title A–Z'],['domain','Website']].map(([order,label])=>[label,()=>actions.sortTabs(order)]),
-  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Sort browser tabs. Keep existing groups.')}),{glyph:'sort',quiet:true,className:'tab-more-button'});
+  ],{anchor:e.currentTarget,prefix:el('p',{class:'hint'},'Sort tabs and groups')}),{glyph:'sort',quiet:true,className:'tab-more-button'});
   const save = button('Save tabs', () => actions.save(), { glyph: 'tray', quiet: compact });
   const dedup = button(
     'Close duplicate tabs',

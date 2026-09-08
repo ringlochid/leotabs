@@ -7,7 +7,7 @@ export function editSavedSelection(collections, collectionId, data) {
   if (!c) throw new Error('Collection not found.');
   const ids = new Set(data.linkIds || []);
   const links = c.links.filter((l) => ids.has(l.id));
-  if (!links.length) throw new Error('Select saved links first.');
+  if (!links.length) throw new Error('Select a saved link');
   const populated = new Set(c.links.map((l) => l.groupId).filter(Boolean));
   if (data.kind === 'group-links') {
     const groupId = data.groupId || uid();

@@ -236,7 +236,7 @@ test('incomplete close remains retryable and pauses autosave to protect full sav
   const f = fixture();
   await f.manager.switchTo({ destinationId: 'b', windowId: 1 });
   f.ops.close = async (ids) => ({ skipped: ids });
-  await assert.rejects(f.manager.closeCurrent({ collectionId: 'b', windowId: 1 }), /stayed open/);
+  await assert.rejects(f.manager.closeCurrent({ collectionId: 'b', windowId: 1 }), /couldn.t close/);
   assert.equal((await f.manager.list(1)).active[1].collectionId, 'b');
   assert.equal(f.collections[0].autoUpdate, false);
   assert.equal(f.collections[0].links.length, 1);
@@ -266,7 +266,7 @@ test('save unchecked closes source but retains a recoverable dated group snapsho
 test('destination failure keeps all source tabs', async () => {
   const f = fixture();
   f.ops.openLinks = async () => ({ failed: ['bad'], groupFailures: [] });
-  await assert.rejects(f.manager.switchTo({ destinationId: 'b', windowId: 1 }), /could not open/);
+  await assert.rejects(f.manager.switchTo({ destinationId: 'b', windowId: 1 }), /couldn.t open/);
   assert(f.tabs.filter((t) => t.id <= 3).every((t) => t.windowId === 1));
 });
 test('unchanged checkpoints deduplicate and retention is bounded', async () => {

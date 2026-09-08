@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { operationFeedback } from '../lib/messages.js';
 import {
   $,
   $$,
@@ -220,12 +221,12 @@ async function change(action, payload) {
   await refresh();
   animateBoard();animateTabs();animateSpaces();
   const op = result?.operation || result;
-  if (op?.label && action !== 'settings')
-    toast(
-      op.skipped?.length
-        ? `${op.label}: ${op.skipped.length} changed tabs stayed open.`
-        : op.label || 'Saved',
-      {
+    const feedback = operationFeedback(op, action);
+    if (feedback)
+      toast(
+        feedback.message,
+        {
+          error: feedback.error,
         undo:
           action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
             ? () => change('undo-action', { id: op.id, windowId: win })
@@ -914,7 +915,7 @@ function renderSessionTimeline(root) {
           windowId: win,
         });
     if (result?.failed?.length || result?.groupFailures?.length)
-      throw Error('Some tabs could not be restored. This snapshot is still available.');
+      throw Error('Some tabs could not be restored. The snapshot is still available.');
     if(link&&result?.created?.[0])await rpc('activate',{tabId:result.created[0]});
     await refresh();
   };
@@ -1077,8 +1078,8 @@ function confirmRemoveWorkspace(space) {
         'p',
         { class: 'hint' },
         data.state.spaces.length === 1
-          ? 'A new empty workspace will be created. Open browser tabs stay open.'
-          : 'Open browser tabs stay open.',
+          ? 'A new empty space will replace it. Open tabs stay open.'
+          : 'Open tabs stay open',
       ),
       status,
     ),
@@ -1284,7 +1285,7 @@ function renderBoardContent() {
       }),
     );
   if (!collections.length && query) {
-    board.replaceChildren(el('p', { class: 'hint' }, 'No collections match this search.'));
+    board.replaceChildren(el('p', { class: 'hint' }, 'No matching collections'));
     board.ondrop = null;
     board.ondragover = null;
     return;
@@ -2044,7 +2045,7 @@ function collectionMenu(c, trigger) {
     ),
   );
   const custom = el('input', {type:'color', value:colorHex(c.color), 'aria-label':'Custom collection colour', onchange:act(e => applyColour(e.target.value))});
-  const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Use a six-digit hex colour, such as #3498db.'); return applyColour(e.target.value); })});
+  const hex = el('input', {value:colorHex(c.color), maxLength:7, pattern:'#[0-9a-fA-F]{6}', 'aria-label':'Hex colour', onchange:act(e => { if(!/^#[0-9a-f]{6}$/i.test(e.target.value)) throw Error('Enter a hex colour, such as #3498db'); return applyColour(e.target.value); })});
   colors.append(el('label', {class:'custom-colour'}, 'Custom', custom, hex));
   const choices = [
     ['Open in new window',()=>actions.resume(c,{target:'new'}),'external',!c.links.length],

@@ -224,7 +224,7 @@ test('a stale insertion target rejects the save without changing the collection 
   const f = fixture([baseTab(1)]);
   f.state.collections.push(newCollection('Destination'));
   const before=structuredClone(f.state);
-  await assert.rejects(f.ops.save({tabIds:[1],destinationId:before.collections[0].id,drop:{group:false,beforeId:'removed'}}),/insertion target changed/);
+  await assert.rejects(f.ops.save({tabIds:[1],destinationId:before.collections[0].id,drop:{group:false,beforeId:'removed'}}),/drop target changed/);
   assert.deepEqual(f.state,before);
   assert.equal(f.removed.length,0);
 });
@@ -499,20 +499,28 @@ test('OneTab text imports titled URLs', () => {
   assert.equal(r.links, 2);
   assert.equal(r.collections[0].links[0].title, 'Example');
 });
+test('saving utility tabs gives a direct error without changing the library or closing tabs', async () => {
+  const f = fixture([baseTab(1, {url:'chrome://newtab/'})]);
+  const before = structuredClone(f.state);
+  await assert.rejects(f.ops.save({tabIds:[1]}), {message:"Can't save utility tabs"});
+  assert.deepEqual(f.state, before);
+  assert.deepEqual(f.removed, []);
+});
+
 test('backup future schema rejects instead of resetting', () =>
   assert.throws(
     () => parseImport('{"format":"neo-tabs","version":99,"collections":[]}'),
-    /unsupported/,
+    /not supported/,
   ));
 test('AI rejects unknown and duplicate link IDs', () => {
   const c = snapshotTabs([baseTab(1)]);
   assert.throws(
     () => validatePlan({ groups: [{ name: 'X', linkIds: ['unknown'] }] }, c),
-    /unknown/,
+    /missing or repeated/,
   );
   assert.throws(
     () => validatePlan({ groups: [{ name: 'X', linkIds: [c.links[0].id, c.links[0].id] }] }, c),
-    /duplicate/,
+    /missing or repeated/,
   );
 });
 test('Gemini adapter sends only bounded selected link metadata and validates result', async () => {

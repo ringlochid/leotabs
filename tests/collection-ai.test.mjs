@@ -29,14 +29,14 @@ test('an invalid AI reference gets one correction attempt without touching exclu
 test('repeated invalid IDs stop after one correction and never mutate the collection',async()=>{
  for(const id of [0,99,true,null,'1.5','1e0','0x1','link-1']){
    const c=fixture(),before=structuredClone(c);let calls=0;
-   await assert.rejects(organiseCollection(c,settings,'',async()=>{calls++;return aiResponse([{name:'Bad',ids:[id,2]}]);}),/unknown or excluded/);
+   await assert.rejects(organiseCollection(c,settings,'',async()=>{calls++;return aiResponse([{name:'Bad',ids:[id,2]}]);}),/outside the selection/);
    assert.equal(calls,2);assert.deepEqual(c,before);
  }
 });
 
 test('authentication failures and cancellation do not trigger AI correction requests',async()=>{
  let calls=0;
- await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return new Response('',{status:401});}),/HTTP 401/);
+ await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return new Response('',{status:401});}),/rejected the API key/);
  assert.equal(calls,1);
  const controller=new AbortController();calls=0;
  await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;controller.abort();return aiResponse([{name:'Bad',ids:[99]}]);},{signal:controller.signal}),/cancelled|abort/i);
@@ -66,7 +66,7 @@ test('malformed JSON can be corrected and duplicate assignments remain invalid',
  });
  assert.equal(calls,2);assert.equal(plan.groups.length,1);
  calls=0;
- await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return aiResponse([{name:'Duplicate',ids:[1,'1']}]);}),/duplicate link IDs/);
+ await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return aiResponse([{name:'Duplicate',ids:[1,'1']}]);}),/missing or repeated links/);
  assert.equal(calls,2);
 });
 
@@ -91,7 +91,7 @@ test('collection AI combines name, overview and cross-site topic grouping in one
 test('collection AI rejects unknown IDs and preserves excluded existing groups',async()=>{
  const c=fixture();c.groups=[{id:'existing',name:'My project',color:'blue'}];c.links[0].groupId='existing';c.links[1].groupId='existing';
  const response=()=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({name:'Updated',note:'Overview',groups:[{name:'Bad',ids:[1,3]}]})}}]}));
- await assert.rejects(organiseCollection(c,settings,'',response,{regroupExisting:false}),/unknown or excluded/);
+ await assert.rejects(organiseCollection(c,settings,'',response,{regroupExisting:false}),/outside the selection/);
 });
 test('including existing groups omits their labels and memberships from the collection AI input',async()=>{
  const c=fixture();c.groups=[{id:'old',name:'Old website grouping',color:'blue'}];c.links[0].groupId='old';
