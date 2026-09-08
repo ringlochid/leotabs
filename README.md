@@ -29,7 +29,7 @@ LeoTabs 0.5.0 made everyday actions direct and compact. Collection, group and li
 1. Open `chrome://extensions` in Chrome (or `edge://extensions` in Edge).
 2. Enable Developer mode, choose **Load unpacked**, and select `C:\Users\ring_\Desktop\Neo tab manger\extension`, or the folder extracted from [leotabs-0.13.0.zip](output/leotabs-0.13.0.zip). The project root is not an extension folder.
 3. If LeoTabs is already installed from this folder, click **Reload** on its existing extension card, then refresh open LeoTabs library pages. Keep the existing installation to retain saved data and shortcuts. The toolbar button opens the library. Alt+Q opens the switcher.
-4. Open the shortcut configuration to check or remap Alt+Q (switcher), Alt+Shift+K (search only), and Alt+Shift+L (library). Browser/OS conflicts can leave shortcuts unassigned.
+4. Open the shortcut configuration to check or remap Alt+Q (switcher), Alt+Shift+K (search only), and Alt+Shift+Q (library). Browser/OS conflicts can leave shortcuts unassigned.
 
 Chrome/Chromium 123 or newer is required. No server, package installation, build step or account is needed for the local core. Node 22 or newer runs the development checks.
 

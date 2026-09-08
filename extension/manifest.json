@@ -57,7 +57,7 @@
     },
     "open-library": {
       "suggested_key": {
-        "default": "Alt+Shift+L"
+        "default": "Alt+Shift+Q"
       },
       "description": "Open your library"
     },

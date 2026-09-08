@@ -23,7 +23,7 @@ export async function checkOverlay({
   const commands = await app.evaluate('chrome.commands.getAll()');
   assert.equal(commands.find((c) => c.name === 'open-switcher').shortcut, 'Alt+Q');
   assert.equal(commands.find((c) => c.name === 'open-search').shortcut, 'Alt+Shift+K');
-  assert.equal(commands.find((c) => c.name === 'open-library').shortcut, 'Alt+Shift+L');
+  assert.equal(commands.find((c) => c.name === 'open-library').shortcut, 'Alt+Shift+Q');
   assert.equal(await app.evaluate('chrome.runtime.getManifest().action.default_popup'), undefined);
   let mounted;
   for (let i = 0; i < 100; i++) {
