@@ -230,7 +230,9 @@ try {
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
-  if (process.argv.includes('--messages')) {
+  if (process.argv.includes('--saved-drag')) {
+    await (await import('./check-saved-drag.mjs')).checkSavedDrag({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--messages')) {
     await (await import('./check-messages.mjs')).checkMessages({app,rpc,results,delay,origin,out});
   } else if (process.argv.includes('--mixed-drag')) {
     await (await import('./check-mixed-drag.mjs')).checkMixedDrag({app,rpc,results,delay,origin,out});

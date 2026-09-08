@@ -1321,6 +1321,7 @@ function renderBoardContent() {
   restoreFocus();
 }
 const copyDrag = (e) => e.ctrlKey || e.metaKey;
+let draggingCopy = false;
 function clearDropFeedback() {
   document.querySelectorAll('.drag-over').forEach((node) => node.classList.remove('drag-over'));
   insertionIndicator.clear();
@@ -1329,8 +1330,8 @@ function markSavedDrop(point) {
   const card=document.elementFromPoint(point.x,point.y)?.closest('.collection');
   if (!draggingPayload || !card) { insertionIndicator.clear(); return; }
   const collection=findCollection(card.dataset.collectionId);
-  const plan=collectionDropPlan(card,collection,point,draggingPayload);
-  insertionIndicator.show(plan.rect,$('#main'),plan.group?'group':'link');
+  const plan=collectionDropPlan(card,collection,point,draggingPayload,{copy:draggingCopy});
+  insertionIndicator.show(plan?.rect,$('#main'),plan?.group?'group':'link');
   return plan;
 }
 
@@ -1338,9 +1339,10 @@ async function dropIntoCollection(event, card, collection) {
   const payload=dragPayload(event);
   if (!['tabs','link','links','group'].includes(payload?.type)) return false;
   event.preventDefault();event.stopPropagation();
-  const plan=collectionDropPlan(card,collection,{x:event.clientX,y:event.clientY},payload);
   const copy=copyDrag(event);
+  const plan=collectionDropPlan(card,collection,{x:event.clientX,y:event.clientY},payload,{copy});
   finishDrag();
+  if (!plan) return true;
   if(payload.type==='tabs') {
     await change('save',{tabIds:payload.ids,destinationId:collection.id,excludePinned:false,drop:{group:plan.group,beforeId:plan.beforeId,groupId:plan.groupId}});
   } else {
@@ -1351,6 +1353,7 @@ async function dropIntoCollection(event, card, collection) {
   return true;
 }
 document.addEventListener('dragover',event=>{
+  draggingCopy=copyDrag(event);
   updateInsertion({x:event.clientX,y:event.clientY});
   if (draggingSpace && !event.target.closest('#spaces')) {
     event.dataTransfer.dropEffect = 'none';
@@ -1366,6 +1369,12 @@ document.addEventListener('drop', event => {
 document.addEventListener('dragend', clearDropFeedback);
 function dragFeedback(e) {
   e.preventDefault();
+  const card=e.target.closest('.collection');
+  if (card && draggingPayload && !collectionDropPlan(card,findCollection(card.dataset.collectionId),
+    {x:e.clientX,y:e.clientY},draggingPayload,{copy:copyDrag(e)})) {
+    e.dataTransfer.dropEffect='none';
+    return;
+  }
   e.dataTransfer.dropEffect =
     draggingPayload?.type === 'tabs' || copyDrag(e) || e.dataTransfer.effectAllowed === 'copy' ? 'copy' : 'move';
 }
