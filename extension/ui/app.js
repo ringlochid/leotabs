@@ -83,6 +83,7 @@ document.addEventListener('dragstart', (event) => {
 function finishDrag() {
   if (!dragActive) return;
   dragActive = false;
+  clearSpaceDrag();
   savedDragKind = null;
   nativeDragIds = [];
   insertionIndicator.clear();
@@ -96,7 +97,9 @@ function finishDrag() {
   }
 }
 document.addEventListener('dragend', finishDrag, true);
-document.addEventListener('drop', () => queueMicrotask(finishDrag), true);
+// Native events can run microtasks between capture and target listeners.
+// Keep the drag payload alive until every drop handler has read it.
+document.addEventListener('drop', () => setTimeout(finishDrag, 0), true);
 installDragScroll({containers:()=>[$('#sidebar'),$('#main'),document.scrollingElement],onScroll:updateInsertion});
 function retainScroll() {
   const positions = [...new Set([document.scrollingElement, $('#main'), $('#sidebar')])]
@@ -106,6 +109,35 @@ function retainScroll() {
 let refreshGeneration = 0;
 let rendering = 0;
 let draggingCollection = null;
+let draggingSpace = null;
+function clearSpaceDrag() {
+  draggingSpace = null;
+  insertionIndicator.clear();
+  document.querySelectorAll('.space-tab.dragging').forEach(node => node.classList.remove('dragging'));
+}
+function markSpaceAtPoint(point) {
+  const nav = $('#spaces'), bounds = nav.getBoundingClientRect();
+  if (point.x < bounds.left || point.x > bounds.right || point.y < bounds.top || point.y > bounds.bottom) {
+    insertionIndicator.clear();
+    return null;
+  }
+  const items = [...nav.querySelectorAll('.space-tab')]
+    .filter(node => node.dataset.spaceId !== draggingSpace)
+    .map(node => ({ id: node.dataset.spaceId, rect: node.getBoundingClientRect() }));
+  const nearest = items.reduce((best, item) => {
+    const r = item.rect, dx = Math.max(r.left-point.x, 0, point.x-r.right), dy = Math.max(r.top-point.y, 0, point.y-r.bottom);
+    const distance = dx*dx + dy*dy;
+    return !best || distance < best.distance ? { item, distance } : best;
+  }, null)?.item;
+  const slot = collectionSlot(items, nearest?.id, point, { gapX: 6, gapY: 6 });
+  insertionIndicator.show(slot, $('#main'), 'space');
+  return slot;
+}
+async function reorderSpace(id, beforeId) {
+  const spaces = data.state.spaces, index = spaces.findIndex(space => space.id === id);
+  if (index < 0 || beforeId === id || beforeId === spaces[index + 1]?.id) return;
+  await change('edit', { kind: 'move-space', spaceId: id, beforeId, label: 'Move space' });
+}
 let reorderBefore;
 function clearCollectionDrag() {
   draggingCollection = null;
@@ -128,6 +160,7 @@ function markCollectionAtPoint(point) {
   return slot;
 }
 function updateInsertion(point) {
+  if(draggingSpace)return markSpaceAtPoint(point);
   if(draggingCollection)return markCollectionAtPoint(point);
   if(nativeDragIds.length){
     const node=document.elementFromPoint(point.x,point.y)?.closest('.tab-row,.open-tab-group,.native-ungroup-drop');
@@ -169,9 +202,10 @@ async function change(action, payload) {
   const moving=action==='move-open-tabs'||action==='edit'&&['move-collection','move-link','move-links','move-group'].includes(payload.kind);
   const animateBoard=moving?captureMoveAnimation($('#board'),'.collection','collectionId'):()=>{};
   const animateTabs=moving?captureMoveAnimation($('#tabs'),'.tab-row','tabId'):()=>{};
+  const animateSpaces=action==='edit'&&payload.kind==='move-space'?captureMoveAnimation($('#spaces'),'.space-tab','spaceId'):()=>{};
   const result = await rpc(action, payload);
   await refresh();
-  animateBoard();animateTabs();
+  animateBoard();animateTabs();animateSpaces();
   const op = result?.operation || result;
   if (op?.label && action !== 'settings')
     toast(
@@ -1032,7 +1066,7 @@ function renderSpaces() {
     ...spaces.map((s) =>
       el(
         'div',
-        { class: 'space-tab' + (s.id === activeSpace ? ' active' : '') },
+        { class: 'space-tab' + (s.id === activeSpace ? ' active' : ''), dataset: { spaceId: s.id } },
         s.id === activeSpace
           ? editableName(s.name, 'space:' + s.id, (name) =>
               change('edit', { kind: 'space', spaceId: s.id, name }),
@@ -1072,6 +1106,8 @@ function renderSpaces() {
                   'plus',
                 ],
                 null,
+                ...(spaces.indexOf(s) > 0 ? [['Move left', () => reorderSpace(s.id, spaces[spaces.indexOf(s)-1].id)]] : []),
+                ...(spaces.indexOf(s) < spaces.length-1 ? [['Move right', () => reorderSpace(s.id, spaces[spaces.indexOf(s)+2]?.id)]] : []),
                 ['Remove workspace', () => confirmRemoveWorkspace(s), 'close'],
               ],
               { anchor: event.currentTarget },
@@ -1092,6 +1128,40 @@ function renderSpaces() {
       { glyph: 'plus', quiet: true },
     ),
   );
+  const nav = $('#spaces');
+  nav.ondragover = event => {
+    if (!draggingSpace) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'move';
+    markSpaceAtPoint({ x: event.clientX, y: event.clientY });
+  };
+  nav.ondrop = act(async event => {
+    if (!draggingSpace) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const id = draggingSpace, slot = markSpaceAtPoint({ x: event.clientX, y: event.clientY });
+    clearSpaceDrag();
+    if (slot) await reorderSpace(id, slot.beforeId);
+  });
+  for (const tab of nav.querySelectorAll('.space-tab')) {
+    const name = tab.firstElementChild;
+    if (name.tagName !== 'BUTTON') continue;
+    name.draggable = spaces.length > 1;
+    name.ondragstart = event => {
+      draggingSpace = tab.dataset.spaceId;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'space', id: draggingSpace }));
+      const ghost = el('div', { class: 'collection-drag-ghost space-drag-ghost' }, name.textContent);
+      document.body.append(ghost);
+      event.dataTransfer.setDragImage(ghost, 28, 18);
+      requestAnimationFrame(() => {
+        ghost.remove();
+        if (draggingSpace === tab.dataset.spaceId) tab.classList.add('dragging');
+      });
+    };
+    name.ondragend = clearSpaceDrag;
+  }
   restore();
 }
 function collectionStyle(c) {
@@ -1239,7 +1309,19 @@ function markSavedDrop(point) {
   else if(group){const r=group.getBoundingClientRect();insertionIndicator.show({left:r.left,top:r.bottom-1,width:r.width,height:2},$('#main'),'link');}
   else insertionIndicator.clear();
 }
-document.addEventListener('dragover',event=>updateInsertion({x:event.clientX,y:event.clientY}),true);
+document.addEventListener('dragover',event=>{
+  updateInsertion({x:event.clientX,y:event.clientY});
+  if (draggingSpace && !event.target.closest('#spaces')) {
+    event.dataTransfer.dropEffect = 'none';
+    event.stopPropagation();
+  }
+},true);
+document.addEventListener('drop', event => {
+  if (draggingSpace && !event.target.closest('#spaces')) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}, true);
 document.addEventListener('dragend', clearDropFeedback);
 function dragFeedback(e) {
   e.preventDefault();

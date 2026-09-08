@@ -5,6 +5,83 @@ import {askJSON} from '../extension/lib/integrations.js';
 import {topicGroups} from '../extension/lib/topic-groups.js';
 const fixture=()=>({id:'c',name:'New collection',note:'Compare tools',groups:[],links:[{id:'long-id-chatgpt',title:'ChatGPT',url:'https://chatgpt.com/'},{id:'long-id-gemini',title:'Gemini',url:'https://gemini.google.com/'},{id:'long-id-google',title:'Google',url:'https://google.com/'}]});
 const settings={provider:'compatible',model:'fixture',aiEndpoint:'http://127.0.0.1:1234/chat/completions'};
+const aiResponse=groups=>new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({name:'AI research',note:'Compare research tools.',groups})}}]}));
+
+test('collection AI accepts exact numeric-string IDs without another request',async()=>{
+ const c=fixture();let calls=0;
+ const plan=await organiseCollection(c,settings,'',async()=>{calls++;return aiResponse([{name:'Research',ids:['1','2']}]);});
+ assert.equal(calls,1);
+ assert.deepEqual(plan.groups[0].linkIds,c.links.slice(0,2).map(l=>l.id));
+});
+
+test('an invalid AI reference gets one correction attempt without touching excluded links',async()=>{
+ const c=fixture();c.groups=[{id:'keep',name:'Manual group',color:'blue'}];c.links[2].groupId='keep';
+ const before=structuredClone(c);let calls=0;
+ const plan=await organiseCollection(c,settings,'',async(_url,options)=>{
+   calls++;
+   if(calls===2){const prompt=JSON.parse(options.body).messages[0].content;assert(prompt.includes('correction'));assert(prompt.includes('[1,2]'));assert.deepEqual(c,before);}
+   return aiResponse([{name:'Research',ids:calls===1?[1,3]:[1,2]}]);
+ },{regroupExisting:false});
+ assert.equal(calls,2);applyCollectionOrganisation(c,plan,()=> 'mint');
+ assert.equal(c.links[2].groupId,'keep');assert.deepEqual(c.groups.find(g=>g.id==='keep'),before.groups[0]);
+});
+
+test('repeated invalid IDs stop after one correction and never mutate the collection',async()=>{
+ for(const id of [0,99,true,null,'1.5','1e0','0x1','link-1']){
+   const c=fixture(),before=structuredClone(c);let calls=0;
+   await assert.rejects(organiseCollection(c,settings,'',async()=>{calls++;return aiResponse([{name:'Bad',ids:[id,2]}]);}),/unknown or excluded/);
+   assert.equal(calls,2);assert.deepEqual(c,before);
+ }
+});
+
+test('authentication failures and cancellation do not trigger AI correction requests',async()=>{
+ let calls=0;
+ await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return new Response('',{status:401});}),/HTTP 401/);
+ assert.equal(calls,1);
+ const controller=new AbortController();calls=0;
+ await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;controller.abort();return aiResponse([{name:'Bad',ids:[99]}]);},{signal:controller.signal}),/cancelled|abort/i);
+ assert.equal(calls,1);
+});
+
+test('correction keeps original sparse IDs and never groups excluded context',async()=>{
+ const c=fixture();c.links.push({id:'extra',title:'Another resource',url:'https://resource.example/'});
+ c.groups=[{id:'manual',name:'Keep this group'}];c.links[0].groupId='manual';c.links[2].groupId='manual';
+ let calls=0;
+ const plan=await organiseCollection(c,settings,'',async(_url,options)=>{
+   const prompt=JSON.parse(options.body).messages[0].content;
+   assert.deepEqual(JSON.parse(prompt.split('\nData: ')[1]).groupable,[2,4]);
+   calls++;return aiResponse([{name:'Research',ids:calls===1?[1,2]:['2','4']}]);
+ },{regroupExisting:false});
+ assert.equal(calls,2);assert.deepEqual(plan.groups[0].linkIds,[c.links[1].id,c.links[3].id]);
+ c.note='User edited this during the request';
+ assert.throws(()=>applyCollectionOrganisation(c,plan,()=> 'mint'),/collection changed/);
+});
+
+test('malformed JSON can be corrected and duplicate assignments remain invalid',async()=>{
+ let calls=0;
+ const plan=await organiseCollection(fixture(),settings,'',async()=>{
+   calls++;
+   if(calls===1)return new Response(JSON.stringify({choices:[{message:{content:'{broken'}}]}));
+   return aiResponse([{name:'Research',ids:[1,2]}]);
+ });
+ assert.equal(calls,2);assert.equal(plan.groups.length,1);
+ calls=0;
+ await assert.rejects(organiseCollection(fixture(),settings,'',async()=>{calls++;return aiResponse([{name:'Duplicate',ids:[1,'1']}]);}),/duplicate link IDs/);
+ assert.equal(calls,2);
+});
+
+test('all grouped links can remain excluded while AI updates the collection metadata',async()=>{
+ const c=fixture();c.groups=[{id:'keep',name:'Existing group'}];c.links.forEach(l=>l.groupId='keep');
+ const links=structuredClone(c.links);let calls=0;
+ const plan=await organiseCollection(c,settings,'',async(_url,options)=>{
+   calls++;
+   if(calls===2)assert(JSON.parse(options.body).messages[0].content.includes('return groups: []'));
+   return aiResponse(calls===1?[{name:'Example IDs',ids:[1,2]}]:[]);
+ },{regroupExisting:false});
+ applyCollectionOrganisation(c,plan,()=> 'mint');
+ assert.equal(calls,2);assert.deepEqual(c.links,links);assert.equal(c.groups[0].name,'Existing group');
+ assert.equal(c.name,'AI research');
+});
 test('collection AI combines name, overview and cross-site topic grouping in one compact request',async()=>{
  let calls=0;const c=fixture();
  const plan=await organiseCollection(c,settings,'',async(_url,options)=>{calls++;const payload=JSON.parse(JSON.parse(options.body).messages[0].content.split('\nData: ')[1]);assert.deepEqual(payload.links.map(l=>l.id),[1,2,3]);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({name:'AI tools and search',note:'Compare AI chatbots and keep Google as a search reference.',groups:[{name:'ChatGPT',ids:[1]},{name:'Gemini',ids:[2]},{name:'Search',ids:[3]}]})}}]}));});

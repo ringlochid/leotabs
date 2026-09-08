@@ -4,8 +4,8 @@
   "lib/organisation.js": "ca3d98f5fa77d76a09287c36f8c9ece851ab8bdbd15120647083259925722793",
   "lib/arrange.js": "bd674a286dbf40caeb2d4af96d82ca4f174caef9bbcd872812ac2361093d8dca",
   "lib/providers.js": "7296b988aa7566e30be6f55b5dae8c2bb5dfddbbc340c46c8e8ef523455ea79c",
-  "lib/model.js": "f7e4173222542097a5fbeca225f942a0b72cf75b18f5e5dcf6690a7323f19010",
-  "lib/version.js": "beedd06ca2365528bf1bba62985adcbf5295532bbf96da09b7439f328593e848",
+  "lib/model.js": "523b4a36d2aeaac0379d9d3994a8b0444ca004661800ffb71a98cb92c4b4ef48",
+  "lib/version.js": "23d1eb675c9fe868a973c4d26305bdc7be73bb043c7362bd0fad85f338aa126b",
   "ui/raster.js": "4615461f6e59db342c69afa9b93566a67e9c2e64f59fbb7ab5568745f7c52b76",
   "ui/shared.js": "497c6179a45ab6c9f06b418518c75d290884231fa58a0c2f8ebd6a39f1e67e0e",
   "lib/collection-workflow.js": "00f9ef5f4d7a51581002502aa36ed20894b78120c2c280ed5ecb7edfd5b1368b",
@@ -19,8 +19,9 @@
   "ui/action-dialogs.js": "afd32a7adccdd08a5dd0912e5498a84fbe20c491e8ef05389c661a56d411b236",
   "ui/session-list.js": "fc43323a8a4cc28370d68ba3e5676f9462fdab6525b057df054688546434f2db",
   "ui/tab-tools.js": "54b3796c389752016d469413dfe790eba417c772524202a05b3ceec2073a9300",
-  "ui/quick.js": "d52bd97467fa32536ad421f70ec0eb089c943148dded22ac7800ccae77361fb7",
-  "ui/styles.css": "7178917d9007a813a16746ffb241371fd5427c98743ee4a2ef2781f06016c7bf",
-  "ui/overlay-entry.js": "0b36a3d8d384f1549d78d10e0cb0208f81a3ea60fc0158177aea6a8dfa28ac40",
-  "overlay.js": "13656ad0d1a026010741af23acb2d23c308242552bb4b560a2dfe6475139ebbc"
+  "ui/alt-key.js": "6cc9284dcb560df1a8c36e2b05aed1426d498e04aa8741060db657fa94cac373",
+  "ui/quick.js": "f3825a158ae6e89c33b86ae35952051cdb194e0241013fa77612f32167d475f5",
+  "ui/styles.css": "0c52586cdd686099d4574b175aa9b31858a695c09e2e61ead411f73e29cd7de0",
+  "ui/overlay-entry.js": "7f5ef3e0c46e981ab46a721c4816c5aea4db385f6c5e7d5dc8cb9829688ff4d5",
+  "overlay.js": "33825fadfde333816bac34f537dcf1afbb388ce7a60302bfb044f26787fda178"
 }

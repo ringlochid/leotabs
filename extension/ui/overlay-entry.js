@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { startQuick } from './quick.js';
+import { installAltKeyGuard } from './alt-key.js';
 import stylesheet from './styles.css';
 const context = globalThis.__neoOverlayContext;
 if (context) {
@@ -7,6 +8,8 @@ if (context) {
   const host = document.createElement('div');
   host.setAttribute('popover', 'manual');
   host.setAttribute('aria-label', 'LeoTabs tab switcher');
+  host.tabIndex = -1;
+  const removeAltGuard = installAltKeyGuard(host);
   for (const [key, value] of Object.entries({
     all: 'initial',
     position: 'fixed',
@@ -34,6 +37,7 @@ if (context) {
   const close = () => {
     if (closed) return;
     closed = true;
+    removeAltGuard();
     dispose?.();
     host.remove();
     globalThis.__neoSurface = null;
@@ -44,6 +48,7 @@ if (context) {
   globalThis.__neoCloseOverlay = close;
   document.documentElement.append(host);
   host.showPopover();
+  host.focus({ preventScroll: true });
   startQuick()
     .then((cleanup) => {
       dispose = cleanup;

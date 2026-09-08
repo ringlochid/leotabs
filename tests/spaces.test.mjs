@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState, newCollection, migrate, validateSpaces } from '../extension/lib/model.js';
+import { initialState, newCollection, migrate, validateSpaces, moveSpace } from '../extension/lib/model.js';
 import { backupExport, parseImport } from '../extension/lib/portable.js';
 
 test('legacy library gains a default space without changing collection or link IDs', () => {
@@ -27,6 +27,32 @@ test('spaces and collection membership survive backup and validation', () => {
 test('invalid spaces fail rather than merging or losing memberships', () => {
   assert.throws(() => validateSpaces([{ id: 'a' }, { id: 'a' }]));
   assert.throws(() => validateSpaces([]));
+});
+
+test('spaces move in both directions and to the end without changing collection membership', () => {
+  const state = initialState();
+  state.spaces.push({ id: 'game', name: 'Game' }, { id: 'coding', name: 'Coding' });
+  state.collections.push({ ...newCollection('Work'), spaceId: 'coding' });
+  const collections = structuredClone(state.collections);
+  moveSpace(state.spaces, 'coding', 'main');
+  assert.deepEqual(state.spaces.map(s => s.id), ['coding', 'main', 'game']);
+  moveSpace(state.spaces, 'coding', 'game');
+  assert.deepEqual(state.spaces.map(s => s.id), ['main', 'coding', 'game']);
+  moveSpace(state.spaces, 'main');
+  assert.deepEqual(state.spaces.map(s => s.id), ['coding', 'game', 'main']);
+  assert.deepEqual(migrate(state).spaces, state.spaces);
+  assert.deepEqual(parseImport(backupExport(state)).spaces, state.spaces);
+  assert.deepEqual(state.collections, collections);
+});
+
+test('self drops, single spaces and stale reorder targets preserve the saved list', () => {
+  const spaces = [{ id: 'main', name: 'My space' }];
+  moveSpace(spaces, 'main', 'main');
+  moveSpace(spaces, 'main');
+  const before = structuredClone(spaces);
+  assert.throws(() => moveSpace(spaces, 'missing'), /Space not found/);
+  assert.throws(() => moveSpace(spaces, 'main', 'deleted'), /Destination space not found/);
+  assert.deepEqual(spaces, before);
 });
 
 test('collection folding survives backup import without changing saved content', () => {

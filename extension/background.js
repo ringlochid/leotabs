@@ -27,6 +27,7 @@ import {
   safeURL,
   validateCollections,
   validateSpaces,
+  moveSpace,
   validatePlan,
 } from './lib/model.js';
 import { organize, endpointOrigin, askJSON } from './lib/integrations.js';
@@ -664,6 +665,9 @@ async function dispatch(action, data = {}) {
               space.name = text(data.name).trim() || 'New space';
               break;
             }
+            case 'move-space':
+              moveSpace(s.spaces, data.spaceId, data.beforeId);
+              break;
             case 'delete-space':
               if (data.confirmed !== true) throw new Error('Confirm workspace removal first.');
               if (data.expectedRevision !== s.revision)

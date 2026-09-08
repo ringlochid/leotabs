@@ -1956,7 +1956,8 @@ progress {
 .collection.folded .collection-head {
   margin-bottom: 0;
 }
-.collection.dragging {
+.collection.dragging,
+.space-tab.dragging {
   opacity: 0.28;
 }
 .drop-insertion {
@@ -1980,6 +1981,11 @@ progress {
     600 14px 'Segoe UI',
     sans-serif;
   pointer-events: none;
+}
+.space-drag-ghost {
+  background: var(--side);
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
 }
 #selection,
 .saved-selection {

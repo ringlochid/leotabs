@@ -76,6 +76,16 @@ export function validateSpaces(spaces) {
     return { id: text(s.id, 100), name: text(s.name).trim() || 'New space' };
   });
 }
+export function moveSpace(spaces, spaceId, beforeId) {
+  const from = spaces.findIndex((space) => space.id === spaceId);
+  if (from < 0) throw new Error('Space not found.');
+  if (beforeId != null && !spaces.some((space) => space.id === beforeId))
+    throw new Error('Destination space not found.');
+  if (spaceId === beforeId) return;
+  const [space] = spaces.splice(from, 1);
+  const to = spaces.findIndex((item) => item.id === beforeId);
+  spaces.splice(to < 0 ? spaces.length : to, 0, space);
+}
 export function newCollection(name = 'Untitled', color = 'blue') {
   const now = stamp();
   return {

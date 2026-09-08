@@ -23,6 +23,7 @@ import { createActionDialogs } from './action-dialogs.js';
 import { sessionList } from './session-list.js';
 import { createTabTools, orderedTabs } from './tab-tools.js';
 import { rasterCanvas } from './raster.js';
+import { installAltKeyGuard } from './alt-key.js';
 
 export async function startQuick() {
   const searchOnly =
@@ -989,6 +990,7 @@ export async function startQuick() {
     }
   };
   const containKeys = (e) => e.stopPropagation();
+  const removeAltGuard = globalThis.__neoSurface ? () => {} : installAltKeyGuard(root);
   root.addEventListener('keydown', onKey);
   root.addEventListener('keydown', containKeys);
   root.addEventListener('keyup', containKeys);
@@ -1022,6 +1024,7 @@ export async function startQuick() {
   const timer = setInterval(() => refresh().catch(() => {}), 2500);
   return () => {
     disposed = true;
+    removeAltGuard();
     clearInterval(timer);
     controller.destroy();
     root.removeEventListener('keydown', onKey);
