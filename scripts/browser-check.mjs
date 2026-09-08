@@ -230,7 +230,11 @@ try {
   );
   assert(!(await app.evaluate(`document.querySelector('#toast')?.textContent?.includes('Error')`)));
   results.push('Real extension page and worker load');
-  if (process.argv.includes('--collection-preview')) {
+  if (process.argv.includes('--mixed-drag')) {
+    await (await import('./check-mixed-drag.mjs')).checkMixedDrag({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--drag-placement')) {
+    await (await import('./check-drag-placement.mjs')).checkDragPlacement({app,rpc,results,delay,origin,out});
+  } else if (process.argv.includes('--collection-preview')) {
     await (await import('./check-collection-preview.mjs')).checkCollectionPreview({app,rpc,results,delay,out});
   } else if (process.argv.includes('--notion-library')) {
     await (await import('./check-notion-library.mjs')).checkNotionLibrary({app,rpc,results,delay,out,notionCalls});

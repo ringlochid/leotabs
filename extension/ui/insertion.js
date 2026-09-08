@@ -52,6 +52,17 @@ export function rowSlot(nodes, node, y) {
   return { after, next, left: rect.left, top: edge - BAR / 2, width: rect.width, height: BAR };
 }
 
+// Resolve the same boundary across rows AND their intervening padding/gaps.
+// DOM hit targets switch to the parent in those gaps; treating that parent as
+// an append target makes the indicator jump to the end of the group.
+export function nearestRow(nodes, y) {
+  return nodes.reduce((best, node) => {
+    const rect = node.getBoundingClientRect();
+    const distance = Math.max(rect.top - y, 0, y - rect.bottom);
+    return !best || distance < best.distance ? { node, distance } : best;
+  }, null)?.node;
+}
+
 export function createInsertionIndicator() {
   let marker;
   return {

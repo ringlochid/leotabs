@@ -3688,6 +3688,8 @@ dialog .primary:hover {background:var(--accent-fill);filter:brightness(.96);}
 .rule-suggestions {margin-top:10px;}
 .native-ungroup-drop {font-size:var(--type-control);padding:14px;box-shadow:0 2px 12px #0002;}
 .drop-insertion {pointer-events:none;z-index:65;background:var(--accent);border-radius:1px;}
+.item-drag-image {position:fixed;left:0;top:0;z-index:-1;width:300px;padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);pointer-events:none;}
+.item-drag-image strong {display:block;font-size:var(--type-small);margin-bottom:4px;}
 .collection-drag-ghost {padding:10px 14px;border-radius:5px;font-size:var(--type-body);font-weight:600;box-shadow:0 6px 18px #0003;}
 [draggable='true'] {cursor:grab;}
 [draggable='true']:active {cursor:grabbing;}

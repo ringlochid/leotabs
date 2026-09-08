@@ -130,8 +130,18 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
     if(!tabs.length||tabs.length!==selected.size)throw Error('Choose unpinned tabs from this window.');
     const sourceGroups=await browser.tabGroups.query({windowId});
     if(groupId>=0&&!sourceGroups.some(g=>g.id===groupId))throw Error('This group is no longer available.');
-    if(beforeTabId!==undefined&&!all.some(t=>t.id===beforeTabId&&!t.pinned&&t.groupId===groupId))throw Error('The drop target changed.');
-    if(afterTabId!==undefined&&!all.some(t=>t.id===afterTabId&&!t.pinned&&t.groupId===groupId))throw Error('The drop target changed.');
+    const validAnchor = (id, after) => {
+      const target = all.find(t => t.id === id && !t.pinned);
+      if (!target) return false;
+      if (target.groupId === groupId) return true;
+      // Ungrouped drops can sit outside a complete group, but cannot split
+      // its members. Resolve and validate the boundary against current tabs.
+      if (groupId >= 0) return false;
+      const members = all.filter(t => t.groupId === target.groupId);
+      return (after ? members.at(-1) : members[0])?.id === id;
+    };
+    if(beforeTabId!==undefined&&!validAnchor(beforeTabId,false))throw Error('The drop target changed.');
+    if(afterTabId!==undefined&&!validAnchor(afterTabId,true))throw Error('The drop target changed.');
     if(selected.has(beforeTabId)||selected.has(afterTabId))return {label:'Tabs already here'};
     const scope=(await sessions.list()).active[windowId]?.collectionId||'unassigned';
     const op={id:crypto.randomUUID(),kind:'arrange',label:`Moved ${tabs.length} tab${tabs.length===1?'':'s'}`,at:Date.now(),status:'applying',windowId,tabs:all.map(t=>({id:t.id,url:t.url,groupId:t.groupId,index:t.index,pinned:t.pinned,active:t.active})),sourceGroups,undoable:true,scope};

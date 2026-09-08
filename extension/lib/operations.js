@@ -121,6 +121,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
     excludePinned = true,
     automaticName = false,
     preserveLayout = false,
+    drop,
   }) {
     const tabs = (await live(tabIds)).filter((t) => !excludePinned || !t.pinned);
     if (!tabs.length) throw new Error('There are no eligible tabs to save.');
@@ -143,12 +144,38 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       const target=destinationId?state.collections.find(c=>c.id===destinationId):null;
       const policy=policyFor(state,target,spaceId||target?.spaceId||state.spaces?.[0]?.id);
       if(name?.trim())captured.manualName=true;
-      if(policy.automatic&&!preserveLayout)applySavedPolicy(captured,policy,state.settings.rules,{space:state.spaces?.find(s=>s.id===(spaceId||target?.spaceId))?.name||''});
+      if(policy.automatic&&!preserveLayout&&!drop)applySavedPolicy(captured,policy,state.settings.rules,{space:state.spaces?.find(s=>s.id===(spaceId||target?.spaceId))?.name||''});
+      // Drag intent is explicit: individual/selected tabs never import their
+      // browser groups. Only dragging the group header preserves that unit.
+      if (drop && !drop.group) {
+        if (drop.groupId && !target?.groups.some(g => g.id === drop.groupId))
+          throw new Error('The destination group changed. Try dragging again.');
+        captured.groups = [];
+        captured.links.forEach(link => { link.groupId = drop.groupId || null; link.manualGroup = true; });
+      }
       if (destinationId) {
         const dest = state.collections.find((c) => c.id === destinationId);
         if (!dest) throw new Error('This collection no longer exists.');
-        dest.groups.push(...captured.groups);
-        dest.links.push(...captured.links);
+        const items = drop?.group ? dest.groups : dest.links;
+        const index = items.findIndex(item => item.id === drop?.beforeId);
+        if (drop?.beforeId && index < 0) throw new Error('The insertion target changed. Try dragging again.');
+        if (drop?.group) {
+          dest.groups.splice(index < 0 ? dest.groups.length : index, 0, ...captured.groups);
+          dest.links.push(...captured.links);
+        } else {
+          dest.groups.push(...captured.groups);
+          dest.links.splice(index < 0 ? dest.links.length : index, 0, ...captured.links);
+        }
+        if (drop) {
+          dest.manualOrder = true;
+          dest.collapsed = false;
+          const group = dest.groups.find(g => g.id === drop.groupId);
+          if (group) group.collapsed = false;
+          if (drop.pauseAutoUpdate && dest.autoUpdate !== false) {
+            dest.autoUpdate = false;
+            dest.autoUpdatePausedReason = 'Saved list edited';
+          }
+        }
         dest.updatedAt = stamp();
         } else {
           captured.color = randomCollectionColor(state.collections.at(-1)?.color);

@@ -169,6 +169,65 @@ test('snapshot preserves browser group names and order', () => {
   );
   assert.equal(c.links[0].groupId, c.groups[0].id);
 });
+
+test('dropping one browser tab inserts a loose link at the chosen boundary without carrying its group', async () => {
+  const f = fixture([baseTab(1, { groupId: 5 }), baseTab(2, { groupId: 5 })]);
+  const destination = snapshotTabs([baseTab(10), baseTab(11)]);
+  f.state.collections.push(destination);
+  await f.ops.save({ tabIds: [1], destinationId: destination.id, drop: { group: false, beforeId: destination.links[1].id, groupId: null } });
+  const saved = f.state.collections[0];
+  assert.deepEqual(saved.links.map(l => l.title), ['Page 10', 'Page 1', 'Page 11']);
+  assert.equal(saved.links[1].groupId, null);
+  assert.equal(saved.groups.length, 0);
+  assert.deepEqual(f.tabs.map(t => t.groupId), [5, 5]);
+});
+
+test('dropping selected browser tabs into an existing saved group uses that group and preserves their order', async () => {
+  const f = fixture([baseTab(1, { groupId: 5 }), baseTab(2, { groupId: 5 })]);
+  const destination = snapshotTabs([baseTab(10, { groupId: 5 }), baseTab(11, { groupId: 5 })], [{ id: 5, title: 'Destination' }]);
+  f.state.collections.push(destination);
+  await f.ops.save({ tabIds: [2, 1], destinationId: destination.id, drop: { group: false, beforeId: destination.links[1].id, groupId: destination.groups[0].id } });
+  const saved = f.state.collections[0];
+  assert.deepEqual(saved.links.map(l => l.title), ['Page 10', 'Page 1', 'Page 2', 'Page 11']);
+  assert.equal(saved.groups.length, 1);
+  assert(saved.links.every(l => l.groupId === saved.groups[0].id));
+});
+
+test('only an explicit whole-group drop carries the browser group and inserts before the chosen saved group', async () => {
+  const f = fixture([baseTab(1, { groupId: 5 }), baseTab(2, { groupId: 5 })]);
+  const destination = snapshotTabs([baseTab(10, { groupId: 5 })], [{ id: 5, title: 'Destination' }]);
+  f.state.collections.push(destination);
+  await f.ops.save({ tabIds: [1, 2], destinationId: destination.id, drop: { group: true, beforeId: destination.groups[0].id } });
+  const saved = f.state.collections[0];
+  assert.deepEqual(saved.groups.map(g => g.name), ['Research', 'Destination']);
+  assert.deepEqual(saved.links.filter(l => l.groupId === saved.groups[0].id).map(l => l.title), ['Page 1', 'Page 2']);
+});
+
+test('a loose-tab drop into a new collection suppresses automatic grouping', async () => {
+  const f = fixture([baseTab(1, { groupId: 5 })]);
+  await f.ops.save({ tabIds: [1], drop: { group: false } });
+  assert.equal(f.state.collections[0].groups.length, 0);
+  assert.equal(f.state.collections[0].links[0].groupId, null);
+});
+
+test('dropping into a tracked collection pauses mirroring and reveals the destination', async () => {
+  const f = fixture([baseTab(1)]);
+  const destination = { ...newCollection('Tracked'), autoUpdate:true, collapsed:true };
+  f.state.collections.push(destination);
+  await f.ops.save({tabIds:[1],destinationId:destination.id,drop:{group:false,pauseAutoUpdate:true}});
+  assert.equal(f.state.collections[0].autoUpdate,false);
+  assert.equal(f.state.collections[0].autoUpdatePausedReason,'Saved list edited');
+  assert.equal(f.state.collections[0].collapsed,false);
+});
+
+test('a stale insertion target rejects the save without changing the collection or closing tabs', async () => {
+  const f = fixture([baseTab(1)]);
+  f.state.collections.push(newCollection('Destination'));
+  const before=structuredClone(f.state);
+  await assert.rejects(f.ops.save({tabIds:[1],destinationId:before.collections[0].id,drop:{group:false,beforeId:'removed'}}),/insertion target changed/);
+  assert.deepEqual(f.state,before);
+  assert.equal(f.removed.length,0);
+});
 test('failed durable save closes nothing', async () => {
   const f = fixture();
   f.set('write', true);

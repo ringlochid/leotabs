@@ -22,7 +22,8 @@ import {
   collectionChoice,
 } from './shared.js';
 import {installDragScroll,captureMoveAnimation} from './drag-scroll.js';
-import {collectionSlot,rowSlot,createInsertionIndicator} from './insertion.js';
+import {collectionSlot,rowSlot,nearestRow,createInsertionIndicator} from './insertion.js';
+import {collectionDropPlan} from './collection-drop.js';
 import { colorHex, colorInk } from '../lib/colors.js';
 import { updatePageIdentity } from '../lib/identity.js';
 import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
@@ -44,10 +45,7 @@ try {
 } catch {
   /* Ignore stale view preferences. */
 }
-let nativeGroupDragImage;
 function clearNativeGroupDrag() {
-  nativeGroupDragImage?.remove();
-  nativeGroupDragImage = null;
   document
     .querySelectorAll('.open-tab-group.dragging')
     .forEach((n) => n.classList.remove('dragging'));
@@ -68,8 +66,20 @@ let actions,
   searchController;
 const linkLimits = new Map();
 let dragActive = false;
-let savedDragKind = null;
 let nativeDragIds = [];
+let draggingPayload = null;
+let itemDragImage;
+function showItemDragImage(event, items, label) {
+  itemDragImage?.remove();
+  itemDragImage = el('div', {class:'item-drag-image', 'aria-hidden':'true'},
+    label ? el('strong', {}, label) : null,
+    ...items.slice(0,3).map(item => el('div', {class:'native-drag-row'}, favicon(item), el('span', {}, item.title || domain(item.url)))),
+    items.length > 3 ? el('small', {}, '+' + (items.length - 3) + ' more') : null);
+  document.body.append(itemDragImage);
+  event.dataTransfer.setDragImage(itemDragImage, 18, 18);
+  const ghost = itemDragImage;
+  requestAnimationFrame(() => ghost.remove());
+}
 const insertionIndicator = createInsertionIndicator();
 const nativeTargets = new WeakMap();
 let refreshAfterDrag = false;
@@ -84,8 +94,11 @@ function finishDrag() {
   if (!dragActive) return;
   dragActive = false;
   clearSpaceDrag();
-  savedDragKind = null;
   nativeDragIds = [];
+  draggingPayload = null;
+  itemDragImage?.remove();
+  itemDragImage = null;
+  clearNativeGroupDrag();
   insertionIndicator.clear();
   document.body.classList.remove('dragging-open-tabs');
   rpc('interaction-drag',{active:false}).catch(()=>{});
@@ -163,7 +176,7 @@ function updateInsertion(point) {
   if(draggingSpace)return markSpaceAtPoint(point);
   if(draggingCollection)return markCollectionAtPoint(point);
   if(nativeDragIds.length){
-    const node=document.elementFromPoint(point.x,point.y)?.closest('.tab-row,.open-tab-group,.native-ungroup-drop');
+    const node=document.elementFromPoint(point.x,point.y)?.closest('.tab-row,.open-tab-group,.native-ungroup-drop,#tabs');
     if(node&&nativeTargets.has(node))return nativeDropPlan(node,point);
   }
   markSavedDrop(point);
@@ -277,10 +290,41 @@ function renderTabs() {
   }
 }
 function nativeDropPlan(node,point,show=true) {
+  if (node.id === 'tabs') {
+    const blocks = [...node.children].filter(n => n.matches('.tab-row,.open-tab-group'));
+    const nearest = nearestRow(blocks, point.y);
+    if (!nearest) { if (show) insertionIndicator.clear(); return null; }
+    if (nearest.classList.contains('open-tab-group')) {
+      const rect = nearest.getBoundingClientRect();
+      if (point.y < rect.top || point.y > rect.bottom) {
+        // Outside a group is an ungrouped boundary. The same gap has the same
+        // geometry from either side, regardless of which block is nearer.
+        const slot = rowSlot(blocks, nearest, point.y);
+        const { windowId, groupId } = nativeTargets.get(nearest);
+        const members = data.tabs.filter(t => t.windowId === windowId && t.groupId === groupId)
+          .sort((a,b) => a.index-b.index);
+        const anchor = slot.after ? members.at(-1) : members[0];
+        if (!anchor) { if (show) insertionIndicator.clear(); return null; }
+        if (show) insertionIndicator.show(slot, $('#sidebar'), 'tab');
+        return { windowId, groupId:-1, [slot.after ? 'afterTabId' : 'beforeTabId']:anchor.id };
+      }
+    }
+    return nativeDropPlan(nearest, point, show);
+  }
+  // Group padding is still part of its row list, not an append-only target.
+  if (node.classList.contains('open-tab-group')) {
+    const rows = [...node.querySelectorAll('.tab-row')].filter(row => row.getClientRects().length);
+    const nearest = nearestRow(rows, point.y);
+    if (nearest) return nativeDropPlan(nearest, point, show);
+  }
   const target={...nativeTargets.get(node)};
   if(node.classList.contains('tab-row')){
-    const nodes=[...node.parentElement.children].filter(n=>n.classList.contains('tab-row'));
+    // Geometry follows every visible sibling, including group cards and the
+    // source row (which stays in the layout during a native drag). Skipping
+    // either places a midpoint through that block instead of in the real gap.
+    const nodes=[...node.parentElement.children].filter(n=>n.matches('.tab-row,.open-tab-group'));
     const slot=rowSlot(nodes,node,point.y);
+    target.beforeTabId=Number(node.dataset.tabId);
     if(slot.after){target.afterTabId=target.beforeTabId;delete target.beforeTabId;}
     if(show)insertionIndicator.show(slot,$('#sidebar'),'tab');
   }else{
@@ -291,7 +335,7 @@ function nativeDropPlan(node,point,show=true) {
 }
 function nativeDropTarget(node, target) {
   nativeTargets.set(node,target);
-  node.ondragover=e=>{if(!nativeDragIds.length)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';nativeDropPlan(node,{x:e.clientX,y:e.clientY});};
+  node.ondragover=e=>{if(!nativeDragIds.length)return;e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='move';};
   node.ondrop=act(async e=>{
     e.preventDefault();e.stopPropagation();
     let payload;try{payload=JSON.parse(e.dataTransfer.getData('application/x-neo'));}catch{return;}
@@ -299,6 +343,7 @@ function nativeDropTarget(node, target) {
     const ids=payload.ids.filter(id=>data.tabs.some(t=>t.id===id&&!t.pinned));
     if(!ids.length)return;
     const plan=nativeDropPlan(node,{x:e.clientX,y:e.clientY},false);
+    if (!plan) return;
     const windowId=plan.windowId||data.tabs.find(t=>t.id===ids[0]).windowId;
     finishDrag();
     await change('move-open-tabs',{tabIds:ids,windowId,groupId:-1,...plan});
@@ -447,33 +492,14 @@ function renderTabsContent() {
           }
           clearNativeGroupDrag();
           nativeDragIds = members.map(tab=>tab.id);
+          draggingPayload = { type: 'tabs', ids: nativeDragIds, wholeGroup: true };
           e.dataTransfer.setData(
             'application/x-neo',
-            JSON.stringify({ type: 'tabs', ids: members.map((tab) => tab.id) }),
+            JSON.stringify(draggingPayload),
           );
           e.dataTransfer.effectAllowed = 'copyMove';
           document.body.classList.add('dragging-open-tabs');
-          nativeGroupDragImage = el(
-            'div',
-            {
-              class: 'open-tab-group native-group-drag-image',
-              style: '--native-color:var(--' + color + ')',
-            },
-            el('strong', {}, name + ' · ' + members.length + ' tabs'),
-            ...members
-              .slice(0, 4)
-              .map((tab) =>
-                el(
-                  'div',
-                  { class: 'native-drag-row' },
-                  favicon(tab),
-                  el('span', {}, tab.title || domain(tab.url)),
-                ),
-              ),
-            members.length > 4 ? el('small', {}, '+' + (members.length - 4) + ' more') : null,
-          );
-          document.body.append(nativeGroupDragImage);
-          e.dataTransfer.setDragImage(nativeGroupDragImage, 18, 18);
+          showItemDragImage(e, members, name + ' · ' + members.length + ' tabs');
           container.classList.add('dragging');
         };
         header.ondragend = clearNativeGroupDrag;
@@ -501,14 +527,16 @@ function renderTabsContent() {
         dataset: { tabId: t.id },
         ondragstart: (e) => {
           nativeDragIds = selected.has(t.id)?[...selected]:[t.id];
+          draggingPayload = { type: 'tabs', ids: nativeDragIds, wholeGroup: false };
           e.dataTransfer.setData(
             'application/x-neo',
-            JSON.stringify({ type: 'tabs', ids: selected.has(t.id) ? [...selected] : [t.id] }),
+            JSON.stringify(draggingPayload),
           );
           e.dataTransfer.effectAllowed = 'copyMove';
           const bounds=$('#sidebar').getBoundingClientRect(),drop=$('.native-ungroup-drop');
           Object.assign(drop.style,{left:(bounds.left+12)+'px',width:(bounds.width-24)+'px'});
           document.body.classList.add('dragging-open-tabs');
+          showItemDragImage(e, data.tabs.filter(tab=>nativeDragIds.includes(tab.id)), nativeDragIds.length > 1 ? nativeDragIds.length + ' tabs' : null);
         },
       },
       check,
@@ -549,6 +577,7 @@ function renderTabsContent() {
       }),
     );
   $('#tabs').replaceChildren(...nodes);
+  nativeDropTarget($('#tabs'), {});
   for (const row of $('#tabs').querySelectorAll('[data-tab-id]'))
     for (const node of row.querySelectorAll('button,input'))
       node.dataset.focusKey =
@@ -1269,7 +1298,7 @@ function renderBoardContent() {
     board.ondrop = act(async (e) => {
       e.preventDefault();
       const p = dragPayload(e);
-      if (p?.type === 'tabs') await change('save', { tabIds: p.ids });
+      if (p?.type === 'tabs') await change('save', { tabIds: p.ids, drop:{group:p.wholeGroup===true} });
     });
     return;
   }
@@ -1295,19 +1324,30 @@ function clearDropFeedback() {
   document.querySelectorAll('.drag-over').forEach((node) => node.classList.remove('drag-over'));
   insertionIndicator.clear();
 }
-function savedRowSlot(node,y) {
-  return rowSlot([...node.parentElement.children].filter(n=>n.classList.contains('saved-row')),node,y);
-}
-function savedGroupSlot(node,y) {
-  return rowSlot([...node.parentElement.children].filter(n=>n.classList.contains('saved-group')),node,y);
-}
 function markSavedDrop(point) {
-  if(!savedDragKind){insertionIndicator.clear();return;}
-  const hit=document.elementFromPoint(point.x,point.y),group=hit?.closest('.saved-group'),row=hit?.closest('.saved-row');
-  if(savedDragKind==='group'&&group)insertionIndicator.show(savedGroupSlot(group,point.y),$('#main'),'group');
-  else if(row&&savedDragKind!=='group')insertionIndicator.show(savedRowSlot(row,point.y),$('#main'),'link');
-  else if(group){const r=group.getBoundingClientRect();insertionIndicator.show({left:r.left,top:r.bottom-1,width:r.width,height:2},$('#main'),'link');}
-  else insertionIndicator.clear();
+  const card=document.elementFromPoint(point.x,point.y)?.closest('.collection');
+  if (!draggingPayload || !card) { insertionIndicator.clear(); return; }
+  const collection=findCollection(card.dataset.collectionId);
+  const plan=collectionDropPlan(card,collection,point,draggingPayload);
+  insertionIndicator.show(plan.rect,$('#main'),plan.group?'group':'link');
+  return plan;
+}
+
+async function dropIntoCollection(event, card, collection) {
+  const payload=dragPayload(event);
+  if (!['tabs','link','links','group'].includes(payload?.type)) return false;
+  event.preventDefault();event.stopPropagation();
+  const plan=collectionDropPlan(card,collection,{x:event.clientX,y:event.clientY},payload);
+  const copy=copyDrag(event);
+  finishDrag();
+  if(payload.type==='tabs') {
+    await change('save',{tabIds:payload.ids,destinationId:collection.id,excludePinned:false,drop:{group:plan.group,beforeId:plan.beforeId,groupId:plan.groupId}});
+  } else {
+    await change('edit',{kind:payload.type==='group'?'move-group':payload.type==='links'?'move-links':'move-link',copy,
+      collectionId:payload.collectionId,linkId:payload.linkId,linkIds:payload.linkIds,
+      destinationId:collection.id,groupId:payload.type==='group'?payload.groupId:plan.groupId,beforeId:plan.beforeId,reveal:true});
+  }
+  return true;
 }
 document.addEventListener('dragover',event=>{
   updateInsertion({x:event.clientX,y:event.clientY});
@@ -1326,7 +1366,7 @@ document.addEventListener('dragend', clearDropFeedback);
 function dragFeedback(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect =
-    copyDrag(e) || e.dataTransfer.effectAllowed === 'copy' ? 'copy' : 'move';
+    draggingPayload?.type === 'tabs' || copyDrag(e) || e.dataTransfer.effectAllowed === 'copy' ? 'copy' : 'move';
 }
 function dragPayload(e) {
   try {
@@ -1339,11 +1379,12 @@ function dragPayload(e) {
 let lastDropCollection;
 function newCollectionDropTarget() {
   const target=button('New collection', act(createCollection), {glyph:'plus',className:'add-collection'});
-  target.ondragover=e=>{e.preventDefault();target.classList.add('drag-over');};
+  target.ondragover=e=>{if(!draggingPayload)return;dragFeedback(e);target.classList.add('drag-over');};
   target.ondragleave=e=>{if(!target.contains(e.relatedTarget))target.classList.remove('drag-over');};
   target.ondrop=act(async e=>{
+    const payload=dragPayload(e); if(!['tabs','link','links','group'].includes(payload?.type))return;
     e.preventDefault(); e.stopPropagation();
-    const payload=dragPayload(e); if(!payload)return;
+    finishDrag();
     const result=await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
     lastDropCollection=(result.operation||result).collectionId;
     const scroll=$('#main').scrollTop;renderBoard();$('#main').scrollTop=scroll;
@@ -1397,13 +1438,13 @@ function collectionCard(c) {
       return;
     }
     dragFeedback(e);
-    if(!document.querySelector('.drop-insertion'))card.classList.add('drag-over');
-    else card.classList.remove('drag-over');
+    card.classList.remove('drag-over');
   };
   card.ondragleave = (e) => {
     if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over');
   };
   card.ondrop = act(async (e) => {
+    if(await dropIntoCollection(e,card,c))return;
     e.preventDefault();
     e.stopPropagation();
     card.classList.remove('drag-over');
@@ -1424,36 +1465,6 @@ function collectionCard(c) {
       });
       return;
     }
-    if (p?.type === 'tabs') {
-      clearNativeGroupDrag();
-      await change('save', { tabIds: p.ids, destinationId: c.id, excludePinned: false });
-    }
-    if (p?.type === 'link')
-      await change('edit', {
-        kind: 'move-link',
-        copy: copyDrag(e),
-        collectionId: p.collectionId,
-        linkId: p.linkId,
-        destinationId: c.id,
-      });
-    if (p?.type === 'links')
-      await change('edit', {
-        kind: 'move-links',
-        copy: copyDrag(e),
-        collectionId: p.collectionId,
-        linkIds: p.linkIds,
-        destinationId: c.id,
-        label: copyDrag(e) ? 'Copy saved links' : 'Move saved links',
-      });
-    if (p?.type === 'group')
-      await change('edit', {
-        kind: 'move-group',
-        copy: copyDrag(e),
-        collectionId: p.collectionId,
-        groupId: p.groupId,
-        destinationId: c.id,
-        label: copyDrag(e) ? 'Copy group' : 'Move group',
-      });
   });
   const name = editableName(
     c.name,
@@ -1629,7 +1640,8 @@ function collectionCard(c) {
               return;
             }
             e.stopPropagation();
-            savedDragKind = 'group';
+            draggingPayload = {type:'group',collectionId:c.id,groupId:g.id};
+            showItemDragImage(e,children,g.name+' · '+children.length+' tabs');
             e.dataTransfer.setData(
               'application/x-neo',
               JSON.stringify({
@@ -1671,37 +1683,7 @@ function collectionCard(c) {
       groupMenu(c, g);
     };
     wrap.ondragover = dragFeedback;
-    wrap.ondrop = act(async (e) => {
-      const p = dragPayload(e);
-      clearDropFeedback();
-      if (p?.type === 'group') {
-        e.preventDefault();
-        e.stopPropagation();
-        card.classList.remove('drag-over');
-        await change('edit', {
-          kind: 'move-group',
-          copy: copyDrag(e),
-          collectionId: p.collectionId,
-          groupId: p.groupId,
-          destinationId: c.id,
-          beforeId: savedGroupSlot(wrap,e.clientY).next?.dataset.groupId,
-          label: copyDrag(e) ? 'Copy group' : 'Move group',
-        });
-      }
-      if (p?.type === 'link' || p?.type === 'links') {
-        e.preventDefault();
-        e.stopPropagation();
-        await change('edit', {
-          kind: p.type === 'links' ? 'move-links' : 'move-link',
-          copy: copyDrag(e),
-          collectionId: p.collectionId,
-          linkId: p.linkId,
-          linkIds: p.linkIds,
-          destinationId: c.id,
-          groupId: g.id,
-        });
-      }
-    });
+    wrap.ondrop = act(e => dropIntoCollection(e,card,c));
     if (!g.collapsed || query) {
       const members = el('div', { class: 'group-members' });
       members.append(...section.links.map(l => savedRow(c, l)));
@@ -1976,7 +1958,11 @@ function savedRow(c, l) {
       title: (l.note || l.url) + '\nDrag to move. Hold Ctrl to copy.',
       ondragstart: (e) => {
         e.stopPropagation();
-        savedDragKind = 'links';
+        draggingPayload = selection?.ids.has(l.id)
+          ? {type:'links',collectionId:c.id,linkIds:[...selection.ids]}
+          : {type:'link',collectionId:c.id,linkId:l.id};
+        const members=c.links.filter(link=>draggingPayload.linkIds?.includes(link.id)||draggingPayload.linkId===link.id);
+        showItemDragImage(e,members,members.length>1?members.length+' tabs':null);
         e.dataTransfer.effectAllowed = 'copyMove';
         e.dataTransfer.setData(
           'application/x-neo',
@@ -2030,24 +2016,7 @@ function savedRow(c, l) {
     );
   }
   row.ondragover = dragFeedback;
-  row.ondrop = act(async (e) => {
-    const p = dragPayload(e);
-    clearDropFeedback();
-    if (p?.type === 'link' || p?.type === 'links') {
-      e.preventDefault();
-      e.stopPropagation();
-      await change('edit', {
-        kind: p.type === 'links' ? 'move-links' : 'move-link',
-        copy: copyDrag(e),
-        collectionId: p.collectionId,
-        linkId: p.linkId,
-        linkIds: p.linkIds,
-        destinationId: c.id,
-        beforeId: savedRowSlot(row,e.clientY).next?.dataset.linkId,
-        groupId: l.groupId,
-      });
-    }
-  });
+  row.ondrop = act(e => dropIntoCollection(e,row.closest('.collection'),c));
   return row;
 }
 function collectionMenu(c, trigger) {

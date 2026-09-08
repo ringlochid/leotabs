@@ -449,7 +449,8 @@ async function dispatch(action, data = {}) {
       const op=await serial(async()=>{
         if(data.adopt){if(data.close)throw Error('Choose close tabs or switch to the new collection.');return sessions.saveAsActive({...data,windowId:await windowId(data)});}
         if(data.minimal)for(const wid of new Set((await ops.live(data.tabIds)).map(t=>t.windowId)))await sessions.capture(wid,{reason:'Before saving tabs',force:true});
-        return ops.save({...data,...(data.minimal?{destinationId:undefined,name:undefined,automaticName:true,preserveLayout:true}:{})});
+        const drop=data.drop?{...data.drop,pauseAutoUpdate:Object.values((await sessions.list()).active).some(session=>session.collectionId===data.destinationId&&session.tracking!==false)}:undefined;
+        return ops.save({...data,...(drop?{drop}:{}),...(data.minimal?{destinationId:undefined,name:undefined,automaticName:true,preserveLayout:true}:{})});
       });
       if(op.collectionId&&(data.minimal||data.adopt))describeSavedCollection(op.collectionId).catch(()=>{});
       return op;
@@ -464,13 +465,13 @@ async function dispatch(action, data = {}) {
       return serial(() => applyNativeRules(data.windowId, true));
     case 'drop-new': {
       const p=data.payload;
-      if(p?.type==='tabs') return dispatch('save',{tabIds:p.ids,spaceId:data.spaceId});
+      if(p?.type==='tabs') return dispatch('save',{tabIds:p.ids,spaceId:data.spaceId,drop:{group:p.wholeGroup===true}});
       const result=await serial(()=>db.mutate('Create collection from dropped tabs',s=>{
         const source=collection(s,p?.collectionId);
         const ids=p.type==='group'?source.links.filter(l=>l.groupId===p.groupId).map(l=>l.id):p.type==='link'?[p.linkId]:p.linkIds;
         if(!ids?.length || !ids.every(id=>source.links.some(l=>l.id===id))) throw Error('Dragged items changed. Try again.');
         const selected=source.links.filter(l=>ids.includes(l.id));
-        const [created]=validateCollections([{...source,id:uid(),name:'New collection',links:selected,groups:source.groups.filter(g=>selected.some(l=>l.groupId===g.id)),note:'',autoUpdate:!!s.settings.autoUpdateDefault}],{freshIds:true});
+        const [created]=validateCollections([{...source,id:uid(),name:'New collection',links:p.type==='group'?selected:selected.map(l=>({...l,groupId:null})),groups:p.type==='group'?source.groups.filter(g=>selected.some(l=>l.groupId===g.id)):[],note:'',autoUpdate:!!s.settings.autoUpdateDefault}],{freshIds:true});
         created.spaceId=s.spaces.find(x=>x.id===data.spaceId)?.id || s.spaces[0].id;
         created.color = randomCollectionColor(s.collections.at(-1)?.color);
         s.collections.push(created);
@@ -783,6 +784,7 @@ async function dispatch(action, data = {}) {
                 }
               }
               const index = dest.groups.findIndex((x) => x.id === data.beforeId);
+              if(data.reveal)g.collapsed=false;
               dest.groups.splice(index < 0 ? dest.groups.length : index, 0, g);
               dest.links.push(...links);
               dest.updatedAt = stamp();
@@ -798,6 +800,11 @@ async function dispatch(action, data = {}) {
               throw new Error('Unknown edit.');
           }
           for (const target of s.collections) {
+            if (data.reveal && target.id === data.destinationId) {
+              target.collapsed = false;
+              const group = target.groups.find(g => g.id === data.groupId);
+              if (group) group.collapsed = false;
+            }
             if (
               activeIds.has(target.id) &&
               target.autoUpdate !== false &&
