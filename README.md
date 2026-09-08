@@ -100,8 +100,8 @@ LeoTabs uses JavaScript modules, HTML and CSS with Manifest V3. The library runs
 | [extension/ui/](extension/ui/) | Library, switcher, dialogs and styles |
 | [extension/lib/](extension/lib/) | Storage, tab operations, grouping, search and integrations |
 | [extension/background.js](extension/background.js) | Browser events and background request handling |
-| [tests/](tests/) | Automated behaviour tests |
-| [scripts/](scripts/) | Build, validation, packaging and browser checks |
+| [tests/](tests/) | Unit tests and browser regression scenarios |
+| [scripts/](scripts/) | Build, validation, packaging and test runners |
 
 After editing switcher sources, run `npm run build`. Reload LeoTabs on the browser's extensions page, then refresh its library tab and any web page used to test the switcher.
 
@@ -112,6 +112,8 @@ npm test
 npm run build
 npm run check
 ```
+
+Run the relevant [browser regression scenarios](tests/browser/README.md) with `npm run test:browser -- <scenario>`. Use `npm run test:browser -- --list` to see the available checks. Each scenario uses a disposable profile.
 
 Test the affected workflow in the browser as well. In your pull request, explain the problem, the resulting behaviour and how you checked it. Include screenshots for visual changes, using sample data. Add regression tests for behaviour changes, especially ordering, saving and recovery.
 

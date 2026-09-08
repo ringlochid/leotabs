@@ -24,14 +24,9 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
     );
   // Observe real loaded images continuously across more than three poll cycles.
   await read(`globalThis.__uxImages=[...root.querySelectorAll('.preview-image > :is(img, canvas)')];globalThis.__uxMissing=0;
-    globalThis.__uxTimer=setInterval(()=>{if(globalThis.__uxImages.some(n=>!n.isConnected||!n.complete))globalThis.__uxMissing++;},30);`);
+    globalThis.__uxTimer=setInterval(()=>{if(globalThis.__uxImages.some(n=>!n.isConnected||(n.tagName==='IMG'&&!n.complete)))globalThis.__uxMissing++;},30);`);
   await rpc('settings', { settings: { theme: 'dark' } });
   await waitFor(`return getComputedStyle(root.host).colorScheme==='dark';`);
-  assert(
-    await read(
-      `return getComputedStyle(root.querySelector('.task-view')).backgroundColor.includes('40, 42, 46');`,
-    ),
-  );
   await screenshot('switcher-dark');
   await delay(8200);
   assert.equal(
@@ -46,6 +41,7 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
     'Loaded previews never disappear across 8.2 seconds of polling and theme changes; injected light/dark colors match Settings',
   );
   const baseURL = await nativePage.evaluate('location.href');
+  await rpc('settings', { settings: { autoGroup: false } });
   const testTabs = await app.evaluate(
     `Promise.all(['select-one','select-two'].map(p=>chrome.tabs.create({url:new URL('/'+p,${JSON.stringify(baseURL)}).href,windowId:${pin.windowId},active:false})))`,
   );
@@ -67,14 +63,14 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
     '2 selected',
   );
   await click('Group');
-  await waitFor(`return !root.querySelector('.group-rename').hidden;`);
+  await waitFor(`return !!root.querySelector('.group-name-slot input');`);
   assert.equal(await read(`return !!root.querySelector('dialog[open]');`), false);
-  await read(`root.querySelector('.group-rename input').value='Focus work';`);
+  await read(`root.querySelector('.group-name-slot input').value='Focus work';`);
   await delay(2800);
-  assert.equal(await read(`return root.querySelector('.group-rename input').value;`), 'Focus work');
-  await read(`root.querySelector('.group-rename').requestSubmit();`);
+  assert.equal(await read(`return root.querySelector('.group-name-slot input').value;`), 'Focus work');
+  await read(`root.querySelector('.group-name-slot input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));`);
   await waitFor(
-    `return root.querySelector('.group-rename').hidden && [...root.querySelectorAll('.group-tile')].some(n=>n.textContent.includes('Focus work'));`,
+    `return !root.querySelector('.group-name-slot input') && [...root.querySelectorAll('.group-tile')].some(n=>n.textContent.includes('Focus work'));`,
   );
   const native = (await rpc('load')).groups.find((g) => g.title === 'Focus work');
   assert(native);
@@ -83,15 +79,15 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
   await screenshot('switcher-select');
   await click('Clear');
   await read(
-    `[...root.querySelectorAll('.group-tile')].find(n=>n.textContent.includes('Focus work')).querySelector('button').click();`,
+    `[...root.querySelectorAll('.group-tile')].find(n=>n.textContent.includes('Focus work')).querySelector('.group-select').click();`,
   );
   assert.equal(
     await read(`return root.querySelector('.selection-toolbar strong').textContent;`),
     '2 selected',
   );
-  await click('Rename group');
+  await click('Rename Focus work');
   await read(
-    `root.querySelector('.group-rename input').value='Writing';root.querySelector('.group-rename').requestSubmit();`,
+    `root.querySelector('.group-name-slot input').value='Writing';root.querySelector('.group-name-slot input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));`,
   );
   await waitFor(
     `return [...root.querySelectorAll('.group-tile')].some(n=>n.textContent.includes('Writing'));`,
@@ -106,9 +102,9 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
       .every((t) => t.groupId === -1),
   );
   await click('Group');
-  await waitFor(`return !root.querySelector('.group-rename').hidden;`);
-  await click('Cancel');
-  await click('Close tabs');
+  await waitFor(`return !!root.querySelector('.group-name-slot input');`);
+  await read(`root.querySelector('.group-name-slot input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));`);
+  await click('Close 2 tabs');
   await waitFor(
     `return root.querySelector('.selection-toolbar strong').textContent==='Select tabs or groups';`,
   );

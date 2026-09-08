@@ -7,9 +7,6 @@ export async function checkOverlay({
   rpc,
   targets,
   connect,
-  extensionClient,
-  loadedId,
-  target,
   pin,
   triggerSwitcher,
   out,
@@ -90,7 +87,7 @@ export async function checkOverlay({
   });
   await delay(200);
   await (
-    await import('./check-switcher-ux.mjs')
+    await import('./switcher-ux.mjs')
   ).checkSwitcherUX({ read, rpc, app, pin, nativePage, out, results, delay });
   await fs.writeFile(
     path.join(out, 'switcher.png'),
@@ -139,11 +136,6 @@ export async function checkOverlay({
   if (groupTab) {
     await delay(1100);
     await rpc('activate', { tabId: groupTab.id });
-    const groupTarget = (
-      await extensionClient.send('Target.getTargets', {
-        filter: [{ type: 'tab' }, { exclude: true }],
-      })
-    ).targetInfos.find((t) => t.url === groupTab.url);
     await triggerSwitcher(groupTab);
     const inspect = (code) =>
       app.evaluate(
@@ -202,11 +194,9 @@ export async function checkOverlay({
   // Protected chrome-extension pages use the full-window fallback.
   const ownTab = await app.evaluate('chrome.tabs.getCurrent()');
   await rpc('activate', { tabId: ownTab.id });
-  const ownTarget = (
-    await extensionClient.send('Target.getTargets', {
-      filter: [{ type: 'tab' }, { exclude: true }],
-    })
-  ).targetInfos.find((t) => t.url.endsWith('/app.html'));
+  // Device emulation changes the viewport, not the headless display's native
+  // work area. Keep the source window inside that display before testing popups.
+  await app.evaluate(`chrome.windows.update(${ownTab.windowId},{state:'normal',left:0,top:0,width:800,height:600})`);
   await triggerSwitcher(ownTab);
   let fallback;
   for (let i = 0; i < 30; i++) {
@@ -221,7 +211,7 @@ export async function checkOverlay({
   assert(await full.evaluate('document.querySelector(".task-view").offsetHeight<innerHeight'));
   const info = await full.evaluate('chrome.windows.getCurrent()');
   assert.equal(info.state, 'normal');
-  assert(info.width <= 1180 && info.height <= 760);
+  assert(info.width <= 1180 && info.height <= 760, JSON.stringify(info));
   await app.evaluate(`chrome.windows.remove(${info.id})`);
   results.push('Protected pages use a bounded switcher window tied to the original browser window');
 }

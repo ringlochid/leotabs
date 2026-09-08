@@ -50,7 +50,7 @@ export async function checkRecovery({
     `chrome.runtime.sendMessage({action:'undo-action',data:{id:${JSON.stringify(removed.operation.id)},windowId:${windowId}}})`,
   );
   assert.equal(denied.ok, false);
-  assert(denied.error.includes('Newer'));
+  assert.match(denied.error, /can't undo after newer edits/i);
   await rpc('restore-library', { id: removed.operation.id, collectionIds: [c.id] });
   const after = (await rpc('load')).state.collections;
   assert(after.some((c) => c.name === 'Newer work'));

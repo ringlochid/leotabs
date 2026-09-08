@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 export async function checkFaviconStability({ app, results, origin, delay }) {
   const url = origin + '/pinned';
+  const tab = await app.evaluate(`chrome.tabs.create({url:${JSON.stringify(url)},active:false})`);
+  for (let i = 0; i < 100; i++) {
+    if (await app.evaluate(`chrome.tabs.get(${tab.id}).then(t=>t.status==='complete'&&!!t.favIconUrl)`)) break;
+    await delay(100);
+  }
   const generic = await app.evaluate(
     `(async()=>{const u=new URL(chrome.runtime.getURL('_favicon/'));u.searchParams.set('pageUrl','https://never-visited.invalid/');u.searchParams.set('size','32');const b=new Uint8Array(await (await fetch(u)).arrayBuffer());return btoa(String.fromCharCode(...b));})()`,
   );

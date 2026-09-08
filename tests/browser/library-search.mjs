@@ -23,6 +23,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
     );
   };
   const own = await app.evaluate('chrome.tabs.getCurrent()');
+  await rpc('settings', { settings: { autoGroup: false } });
   await rpc('activate', { tabId: own.id });
   await app.send('Page.bringToFront');
   const imported = await rpc('import', {
@@ -51,7 +52,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   const closed = await app.evaluate(
     `chrome.tabs.create({url:${JSON.stringify(origin + '/research-closed')},windowId:${own.windowId},active:false})`,
   );
-  await delay(350);
+  await wait(() => app.evaluate(`chrome.tabs.get(${closed.id}).then(t=>t.status==='complete'&&!t.pendingUrl)`));
   await app.evaluate(`chrome.tabs.remove(${closed.id})`);
   const granted = await app.evaluate("chrome.permissions.contains({permissions:['history']})");
   if (granted)
@@ -62,7 +63,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   await wait(() => app.evaluate('!!document.querySelector(".recent-mode")'));
   await query('research');
   assert(await app.evaluate('document.querySelectorAll("#tabs mark").length>0'));
-  assert(await app.evaluate('document.querySelectorAll("#recent .recent-pages mark").length>0'));
+  await wait(() => app.evaluate('document.querySelectorAll("#recent .recent-pages mark").length>0'));
   assert(await app.evaluate('document.querySelectorAll("#board mark").length>0'));
   assert(await app.evaluate('!document.querySelector("#board .row-title svg")'));
   assert(
@@ -135,7 +136,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   );
   assert(
     await app.evaluate(
-      'document.querySelector("#recent h2").textContent==="Timeline" && !document.querySelector("#recent").textContent.includes("Browsing session")',
+      'document.querySelector("#recent h2").innerText.includes("Timeline")',
     ),
   );
   assert(

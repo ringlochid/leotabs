@@ -28,19 +28,19 @@ export async function checkScale({ app, rpc, out, results, delay }) {
   assert.equal(measurements.renderedCollections, 60);
   await app.evaluate('document.querySelector("#global-search").click()');
   measurements.searchMs = await app.evaluate(`(async()=>{
-    const input=document.querySelector('.search-dialog input'),start=performance.now();input.value='Continuation keyword 299';input.dispatchEvent(new Event('input',{bubbles:true}));
-    await new Promise(requestAnimationFrame);return performance.now()-start;
+    const input=document.querySelector('#tab-search'),start=performance.now();input.value='Continuation keyword 299';input.dispatchEvent(new Event('input',{bubbles:true}));
+    await new Promise(r=>setTimeout(r,400));return performance.now()-start;
   })()`);
   assert(
     await app.evaluate(
-      `document.querySelector('.search-dialog .search-results').textContent.includes('Scale link')`,
+      `document.querySelector('#board').textContent.includes('Scale link')`,
     ),
   );
   measurements.searchNodes = await app.evaluate(
-    'document.querySelectorAll(".search-dialog [role=option]").length',
+    'document.querySelectorAll("#board .collection").length',
   );
-  assert(measurements.searchNodes <= 41);
-  await app.evaluate('document.querySelector(".search-dialog").close()');
+  assert.equal(measurements.searchNodes, 1);
+  await app.evaluate(`const input=document.querySelector('#tab-search');input.value='';input.dispatchEvent(new Event('input'));`);
   await fs.writeFile(path.join(out, 'scale.json'), JSON.stringify(measurements, null, 2));
   results.push(
     '300 additional collections / 15,000 links traverse real import, storage, runtime messaging and search with bounded DOM',

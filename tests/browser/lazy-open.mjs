@@ -87,7 +87,7 @@ export async function checkLazyOpen({ app, rpc, results, delay, origin, out, hit
     'Current-window Open did not park all pages',
   );
   await wait(
-    () => app.evaluate(`document.querySelector('#toast').textContent.includes('3 tabs opened')`),
+    () => app.evaluate(`document.querySelector('#toast').textContent.includes('Opened 3 tabs')`),
     'Open completion',
   );
   await delay(400);

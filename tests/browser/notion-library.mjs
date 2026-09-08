@@ -50,7 +50,7 @@ export async function checkNotionLibrary({ app, rpc, results, delay, out, notion
   await app.evaluate(`document.querySelector('#recovery').click()`);
   await click('Continue export');
   await wait(async () => (await rpc('load')).journal.some(j => j.id === partial.id && j.status === 'complete'));
-  await wait(() => app.evaluate(`document.querySelector('dialog[open]').textContent.includes('collections exported to Notion.')`));
+  await wait(() => app.evaluate(`document.querySelector('dialog[open]').textContent.includes('Exported 2 collections to Notion')`));
   const posts = notionCalls.filter(c => c.path === '/v1/pages');
   assert.equal(posts.length, collections.length);
   assert.deepEqual(posts.map(c => c.body.properties.title.title[0].text.content), collections.map(c => c.name));

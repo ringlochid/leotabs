@@ -27,7 +27,7 @@ export async function checkDialogPolish({app,rpc,results,out,delay}) {
       await capture(`export-${theme}-${width}`);
       await openSettings('Privacy & permissions');
       await capture(`privacy-${theme}-${width}`);
-      assert(await app.evaluate(`document.querySelectorAll('.dialog-setting-row').length===3 && !document.querySelector('dialog').textContent.includes('No account') && !document.querySelector('dialog').textContent.includes('Export & backup')`));
+      assert(await app.evaluate(`document.querySelectorAll('.dialog-setting-row').length===4 && !document.querySelector('dialog').textContent.includes('No account') && !document.querySelector('dialog').textContent.includes('Export & backup')`));
       if(width===1440)assert(await app.evaluate(`(()=>{const xs=[...document.querySelectorAll('.dialog-setting-row>button')].map(b=>b.getBoundingClientRect().left);return Math.max(...xs)-Math.min(...xs)<1})()`));
     }
   }
@@ -35,7 +35,7 @@ export async function checkDialogPolish({app,rpc,results,out,delay}) {
   await click('Clear previews');
   await wait(()=>app.evaluate(`import(chrome.runtime.getURL('lib/db.js')).then(db=>db.all('previews')).then(rows=>rows.length===0)`));
   await click('Revoke access');
-  await wait(()=>app.evaluate(`document.querySelector('.dialog-setting-row:nth-child(2) button').textContent==='Enable'`));
+  await wait(()=>app.evaluate(`document.querySelector('[aria-label="Enable browser history search"]').textContent==='Enable'`));
   assert.equal((await rpc('load')).state.settings.previewCapture,false);
   await openImport();await app.evaluate(`document.querySelector('dialog summary').click()`);
   const file=path.join(out,'import-fixture.md');await fs.writeFile(file,'# Imported reading\n- [Example](https://example.org/)\n');

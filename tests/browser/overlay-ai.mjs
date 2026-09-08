@@ -25,12 +25,6 @@ export async function checkOverlayAI({app,rpc,read,click,wait,results,triggerSwi
     const layout=()=>app.evaluate(`(async()=>{const gs=await chrome.tabGroups.query({});return (await chrome.tabs.query({})).map(t=>[t.id,gs.find(g=>g.id===t.groupId)?.title||null]).sort((a,b)=>a[0]-b[0]);})()`);
     const before=await layout();
     await read(`root.querySelector('.topic-apply').click()`);
-    if(process.argv.includes('--expect-permission-bug')) {
-      await wait(()=>read(`return root.querySelector('#toast')?.textContent.includes("reading 'request'")`));
-      assert.equal(requests,0);
-      results.push('Reproduced topic Apply crash: content-script permissions API is undefined, no provider request');
-      return;
-    }
     await wait(()=>requests===1);
     await wait(()=>read(`return !root.querySelector('#dialog[open]') && root.querySelector('#toast')?.textContent.includes('Grouped')`));
     const groups=await app.evaluate('chrome.tabGroups.query({})');

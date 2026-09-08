@@ -6,7 +6,7 @@ export async function checkOrganisation({app,rpc,results,delay,origin,out}) {
   const wait=async fn=>{for(let i=0;i<100;i++){if(await fn())return;await delay(80);}throw Error('Grouping check did not settle');};
   await rpc('settings',{settings:{autoGroup:false,organisation:{group:'ai'},aiNaming:true}});
   for(const action of ['organisation-policy','organisation-run','organisation-retry','organisation-reset','organisation-status'])
-    await assert.rejects(rpc(action,{scope:{type:'global'},organisation:{group:'ai'}}),/no longer available/);
+    await assert.rejects(rpc(action,{scope:{type:'global'},organisation:{group:'ai'}}),/Open Settings to change organisation preferences/);
   const own=await app.evaluate('chrome.tabs.getCurrent()');
   const tabs=await app.evaluate(`Promise.all(['/z','/a'].map(p=>chrome.tabs.create({windowId:${own.windowId},url:${JSON.stringify(origin)}+p,active:false})))`);
   const saved=await rpc('save',{tabIds:tabs.map(t=>t.id),close:false,name:'Keep my collection'});

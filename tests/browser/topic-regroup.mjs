@@ -15,7 +15,7 @@ export async function checkTopicRegroup({app,rpc,results,delay,origin}) {
     await app.evaluate(`document.querySelector('.tab-more-button').click();[...document.querySelectorAll('[role="menuitem"]')].find(b=>b.textContent==='Group by topic with AI').click()`);
     assert.equal(await app.evaluate(`document.querySelector('#dialog').textContent.includes('Organise this space')`),false);
     await app.evaluate(`document.querySelector('#dialog').close()`);await delay(50);
-    for(const scope of [{type:'space',id:'main'},{type:'all'}])await assert.rejects(rpc('ai-assist',{kind:'library',scope}),/no longer available/);
+    for(const scope of [{type:'space',id:'main'},{type:'all'}])await assert.rejects(rpc('ai-assist',{kind:'library',scope}),/Select open tabs or one collection to organise/);
     assert.equal(requests,0,'Removed workspace action reached the provider');
     results.push('AI tools has no space organisation; space/all-space requests are rejected without a provider call');
     const own=await app.evaluate('chrome.tabs.getCurrent()');
@@ -38,13 +38,17 @@ export async function checkTopicRegroup({app,rpc,results,delay,origin}) {
       await app.evaluate(`document.querySelector('.tab-more-button').click();[...document.querySelectorAll('[role="menuitem"]')].find(b=>b.textContent==='Group by topic with AI').click()`);
       await wait(()=>app.evaluate(`!!document.querySelector('dialog[open] .topic-apply')`),'Topic options did not open');
     };
+    // Undo may recreate browser groups with new native IDs; compare membership
+    // and names, not those implementation-generated IDs.
+    const membership=async()=>(await snapshot()).map(([id,,name])=>[id,name]);
+    const beforeApply=await membership();
     let before=requests;await open();assert.equal(requests,before,'Opening options sent an AI request');
     await app.evaluate(`document.querySelector('dialog input[aria-label="Include already grouped tabs"]').checked=false;document.querySelector('.topic-apply').click()`);
     await wait(()=>app.evaluate(`document.querySelector('#toast')?.textContent.includes('Grouped 2 tabs')`),'Exclude-grouped action failed');
     assert.equal(requests,before+1);assert.deepEqual(payload.map(t=>t.id).sort(),tabs.slice(2).map(t=>t.id).sort());
     assert.deepEqual((await snapshot()).filter(t=>tabs.slice(0,2).some(x=>x.id===t[0])),preserved,'Excluded groups changed');
     await app.evaluate(`[...document.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo').click()`);
-    await wait(()=>app.evaluate(`document.querySelector('#toast')?.textContent.includes('Grouping undone')`),'UI Undo failed');
+    await wait(async()=>JSON.stringify(await membership())===JSON.stringify(beforeApply),'UI Undo did not restore the native layout');
     await open();assert.equal(await app.evaluate(`document.querySelector('dialog input').checked`),false,'Choice was not remembered');
     before=requests;
     await app.evaluate(`document.querySelector('dialog input').checked=true;document.querySelector('.topic-apply').click()`);

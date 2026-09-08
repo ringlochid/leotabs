@@ -10,7 +10,7 @@ export async function checkMediaStability({
   origin,
   triggerSwitcher,
 }) {
-  await rpc('settings', { settings: { previewCapture: false } });
+  await rpc('settings', { settings: { previewCapture: false, autoGroup: false } });
   const lateInvalidation = await app.evaluate(`(async()=>{
     const db=await import('./lib/db.js');const previews=await import('./lib/previews.js?late-race');
     const url='https://preview-race.test/';const c=document.createElement('canvas');c.width=c.height=32;c.getContext('2d').fillRect(0,0,32,32);
@@ -79,7 +79,7 @@ export async function checkMediaStability({
     }
     await fs.writeFile(
       path.join(out, route.slice(1) + '.json'),
-      JSON.stringify({ visual, stored: !!(await rpc('preview', { url })) }, null, 2),
+      JSON.stringify({ visual, stored: !!(await rpc('preview', { url })), transport: await read(`return chrome.runtime.sendMessage({action:'preview',data:{url:${JSON.stringify(url)}},overlayToken:globalThis.__neoOverlayContext?.token}).then(r=>({ok:r.ok,error:r.error,data:r.value?.data?.slice(0,80),frame:root.querySelector('.preview-image')?.getBoundingClientRect().toJSON(),view:root.querySelector('.task-view')?.getBoundingClientRect().toJSON()}))`) }, null, 2),
     );
     assert(visual.loaded || visual.canvas, 'Cached thumbnail disappeared on ' + route);
     if (visual.canvas) assert.deepEqual(visual.pixel, [25, 175, 121, 255]);
