@@ -23,7 +23,7 @@ import {
   collectionChoice,
 } from './shared.js';
 import {installDragScroll,captureMoveAnimation} from './drag-scroll.js';
-import {collectionSlot,rowSlot,nearestRow,createInsertionIndicator} from './insertion.js';
+import {collectionSlot,collectionReorderPlan,rowSlot,nearestRow,createInsertionIndicator} from './insertion.js';
 import {collectionDropPlan} from './collection-drop.js';
 import { colorHex, colorInk } from '../lib/colors.js';
 import { updatePageIdentity } from '../lib/identity.js';
@@ -152,7 +152,6 @@ async function reorderSpace(id, beforeId) {
   if (index < 0 || beforeId === id || beforeId === spaces[index + 1]?.id) return;
   await change('edit', { kind: 'move-space', spaceId: id, beforeId, label: 'Move space' });
 }
-let reorderBefore;
 function clearCollectionDrag() {
   draggingCollection = null;
   insertionIndicator.clear();
@@ -161,15 +160,11 @@ function clearCollectionDrag() {
 function markCollectionAtPoint(point) {
   const board=$('#board'),bounds=board.getBoundingClientRect();
   if(point.x<bounds.left||point.x>bounds.right||point.y<bounds.top||point.y>bounds.bottom){insertionIndicator.clear();return null;}
-  const items=[...board.querySelectorAll(':scope>.collection')].filter(n=>n.dataset.collectionId!==draggingCollection).map(n=>({id:n.dataset.collectionId,rect:n.getBoundingClientRect()}));
-  const nearest=items.reduce((best,item)=>{
-    const r=item.rect,dx=Math.max(r.left-point.x,0,point.x-r.right),dy=Math.max(r.top-point.y,0,point.y-r.bottom),distance=dx*dx+dy*dy;
-    return !best||distance<best.distance?{item,distance}:best;
-  },null)?.item;
+  const items=[...board.querySelectorAll(':scope>.collection')].map(n=>({id:n.dataset.collectionId,rect:n.getBoundingClientRect()}));
   const style=getComputedStyle(board);
   const singleColumn=style.gridTemplateColumns.split(' ').length===1;
-  const slot=collectionSlot(items,nearest?.id,point,{list:singleColumn,gapX:parseFloat(style.columnGap)||28,gapY:parseFloat(style.rowGap)||30});
-  reorderBefore=slot?.beforeId;
+  const order=orderedCollections(data.state.collections.filter(c=>c.spaceId===activeSpace)).map(c=>c.id);
+  const slot=collectionReorderPlan(items,point,{sourceId:draggingCollection,order,list:singleColumn,gapX:parseFloat(style.columnGap)||28,gapY:parseFloat(style.rowGap)||30});
   insertionIndicator.show(slot,$('#main'),'collection');
   return slot;
 }
@@ -1304,7 +1299,7 @@ function renderBoardContent() {
     return;
   }
   board.style.display = '';
-  board.ondragover = e=>{if(draggingCollection){e.preventDefault();markCollectionAtPoint({x:e.clientX,y:e.clientY});}};
+  board.ondragover = e=>{if(draggingCollection){e.preventDefault();e.dataTransfer.dropEffect=markCollectionAtPoint({x:e.clientX,y:e.clientY})?'move':'none';}};
   board.ondrop = act(async e=>{if(!draggingCollection)return;e.preventDefault();const id=draggingCollection,slot=markCollectionAtPoint({x:e.clientX,y:e.clientY});clearCollectionDrag();if(slot)await change('edit',{kind:'move-collection',collectionId:id,beforeId:slot.beforeId,label:'Move collection'});});
   board.replaceChildren(...collections.map(collectionCard));
   if (!activeCollection && !query)
@@ -1443,8 +1438,7 @@ function collectionCard(c) {
   card.ondragover = (e) => {
     e.preventDefault();
     if (draggingCollection) {
-      e.dataTransfer.dropEffect = 'move';
-      markCollectionAtPoint({x:e.clientX,y:e.clientY});
+      e.dataTransfer.dropEffect = markCollectionAtPoint({x:e.clientX,y:e.clientY})?'move':'none';
       return;
     }
     dragFeedback(e);
@@ -1464,13 +1458,13 @@ function collectionCard(c) {
         clearCollectionDrag();
         return;
       }
-      markCollectionAtPoint({x:e.clientX,y:e.clientY});
-      const beforeId = reorderBefore;
+      const slot = markCollectionAtPoint({x:e.clientX,y:e.clientY});
       clearCollectionDrag();
+      if (!slot) return;
       await change('edit', {
         kind: 'move-collection',
         collectionId: p.id,
-        beforeId,
+        beforeId:slot.beforeId,
         label: 'Move collection',
       });
       return;
@@ -1555,7 +1549,6 @@ function collectionCard(c) {
       return;
     }
     draggingCollection = c.id;
-    reorderBefore = undefined;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
     const ghost = el('div', { class: 'collection-drag-ghost', style: collectionStyle(c) }, c.name);

@@ -33,11 +33,34 @@ export function collectionSlot(
   }
   const adjacent =
     a && b && Math.abs(a.top - b.top) < 2 && b.left >= a.right && b.left - a.right <= gapX * 1.5;
-  const rect = b || a;
-  const x = adjacent ? (a.right + b.left) / 2 : b ? b.left - gapX / 2 : a.right + gapX / 2;
+  // Across a row wrap, both edges represent the same logical insertion.
+  // Paint the edge being hovered, not the next row (which may be offscreen).
+  const rect = hovered;
+  const x = adjacent ? (a.right + b.left) / 2 : after ? rect.right + gapX / 2 : rect.left - gapX / 2;
   const top = adjacent ? Math.min(a.top, b.top) : rect.top;
   const bottom = adjacent ? Math.max(a.bottom, b.bottom) : rect.bottom;
   return { beforeId: next?.id, left: x - BAR / 2, top, width: BAR, height: bottom - top };
+}
+
+export function collectionReorderPlan(items, point, {sourceId, order = items.map(item=>item.id), list=false, gapX=28, gapY=30} = {}) {
+  // Keep the source in the visual layout. Removing it from geometry creates
+  // artificial gaps through the card that is still on screen.
+  const nearest = items.reduce((best,item)=>{
+    const r=item.rect, dx=Math.max(r.left-point.x,0,point.x-r.right), dy=Math.max(r.top-point.y,0,point.y-r.bottom);
+    if (dx > gapX/2+4 || dy > gapY/2+4) return best;
+    const distance=dx*dx+dy*dy;
+    return !best || distance<best.distance ? {item,distance} : best;
+  },null)?.item;
+  if (!nearest) return null;
+  const r=nearest.rect;
+  if (Math.abs(list ? point.y-(r.top+r.bottom)/2 : point.x-(r.left+r.right)/2)<4) return null;
+  const slot=collectionSlot(items,nearest.id,point,{list,gapX,gapY});
+  if (list && Math.abs(point.y-(slot.top+BAR/2))>Math.max(28,gapY)) return null;
+  let beforeId=slot.beforeId;
+  const sourceIndex=order.indexOf(sourceId);
+  if (beforeId===sourceId) beforeId=order[sourceIndex+1];
+  if (sourceIndex>=0 && beforeId===order[sourceIndex+1]) return null;
+  return {...slot,beforeId};
 }
 
 export function rowSlot(nodes, node, y) {
