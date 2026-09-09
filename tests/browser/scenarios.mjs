@@ -7,6 +7,7 @@ export const scenarios = {
   "onboarding": {
     "file": "onboarding", "run": "checkOnboarding",
     "description": "First-run guide, video playback, placement, transitions, replay and uninstall",
+    "localServices": true,
     "site": true
   },
   "switcher-close": {

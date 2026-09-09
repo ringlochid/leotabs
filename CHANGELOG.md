@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 — 9 September 2026
 
-- Open the library with a skippable guide and six bundled video demonstrations, including stashing tabs, switching collections and the visual switcher. It uses the shared flat dialogs, animated step transitions and optional import. Reopen it from Settings or Help; updates and restarts stay quiet.
-- Offer optional email feedback and explain local-data removal on a post-uninstall page, without tracking parameters or a survey service.
+- Get started with a skippable guide, six offline video demonstrations, theme choices and optional import. Reopen the guide from Settings or Help; updates and restarts stay quiet.
+- Drag tabs, selections and whole groups into empty collections with clear insertion feedback, copy support and Undo.
+- Place groups before, between or after independent tabs. Preserve that order when reopening collections and restoring backups; explicit grouping and sorting still put independent tabs first.
+- Keep dialog buttons and themes consistent throughout the library and switcher.
+- Offer optional email feedback after uninstalling and explain which local data is removed.
 
 ## 0.14.0 — 9 September 2026
 

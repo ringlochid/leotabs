@@ -229,7 +229,7 @@ try {
     return app.evaluate(`import(chrome.runtime.getURL('lib/overlay.js')).then(m=>m.openSwitcher(${JSON.stringify(tab)},${JSON.stringify({ mode })}))`);
   };
   const context = { app, rpc, results, delay, origin, out, hits, notionCalls, connect, targets,
-    extensionOrigin, windowId: own.windowId, extensionClient: browserClient, loadedId, triggerSwitcher };
+    extensionOrigin, windowId: own.windowId, extensionClient: browserClient, loadedId, triggerSwitcher, edge };
   results.push('Extension page and service worker load in a fresh profile');
   await (await import(`./${scenario.file}.mjs`))[scenario.run](context);
   assert.equal(app.events.length, 0, JSON.stringify(app.events));

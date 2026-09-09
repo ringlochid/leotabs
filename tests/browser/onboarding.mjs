@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,targets,extensionOrigin,extensionClient,loadedId,triggerSwitcher}) {
+export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,targets,extensionOrigin,extensionClient,loadedId,triggerSwitcher,edge}) {
   const wait=async(fn,message)=>{
     for(let i=0;i<100;i++){const value=await fn();if(value)return value;await delay(100);}
     throw Error(message);
@@ -29,7 +29,9 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
   const state=()=>tour.evaluate('chrome.storage.local.get("leotabs-onboarding-v1").then(v=>v["leotabs-onboarding-v1"]?.status)');
   const noMockUI=()=>tour.evaluate('!document.querySelector("#onboarding-dialog input,#onboarding-dialog img,#onboarding-dialog canvas,.tour-example")');
   assert.equal((await rpc('load')).state.collections.length,0,'Onboarding must not seed or save user tabs');
-  assert.deepEqual(await app.evaluate('chrome.permissions.getAll().then(p=>p.origins||[])'),[],'Onboarding requests no website access');
+  // The disposable fixture grants loopback access for the switcher comparison.
+  // The package checker separately rejects mandatory host access in the release.
+  assert.deepEqual(await app.evaluate('chrome.permissions.getAll().then(p=>p.origins||[])'),['http://127.0.0.1/*'],'Onboarding requested access beyond the local test fixture');
   assert.equal(await state(),'shown');
   assert(await noMockUI(),'Guide includes mock media');
   assert.equal(await tour.evaluate('!!document.querySelector(".tour-import")'),false,'Import appears before the final step');
@@ -269,16 +271,18 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
 
   // CDP allows the first unpacked load without Developer mode, but Chrome
   // disables that installation on reload unless the browser setting is on.
-  // Toggle it through the real Extensions UI in this disposable profile only.
-  const settingsPage=await extensionClient.send('Target.createTarget',{url:'chrome://extensions/'});
-  const settingsTarget=await wait(async()=>(await targets()).find(t=>t.id===settingsPage.targetId),'Extensions settings target missing');
-  const settings=await connect(settingsTarget.webSocketDebuggerUrl);
-  const developerToggle=`(() => {
-    function find(root) {for(const el of root.querySelectorAll('*')) {if(el.id==='devMode'&&el.tagName==='CR-TOGGLE')return el;if(el.shadowRoot){const found=find(el.shadowRoot);if(found)return found;}}}
-    const toggle=find(document); if(!toggle)return false;if(!toggle.checked)toggle.click();return toggle.checked;
-  })()`;
-  await wait(()=>settings.evaluate(developerToggle),'Developer mode toggle unavailable');
-  await extensionClient.send('Target.closeTarget',{targetId:settingsPage.targetId});
+  // Edge loads through --load-extension instead and does not need this CDP step.
+  if(!edge) {
+    const settingsPage=await extensionClient.send('Target.createTarget',{url:'chrome://extensions/'});
+    const settingsTarget=await wait(async()=>(await targets()).find(t=>t.id===settingsPage.targetId),'Extensions settings target missing');
+    const settings=await connect(settingsTarget.webSocketDebuggerUrl);
+    const developerToggle=`(() => {
+      function find(root) {for(const el of root.querySelectorAll('*')) {if(el.id==='devMode'&&el.tagName==='CR-TOGGLE')return el;if(el.shadowRoot){const found=find(el.shadowRoot);if(found)return found;}}}
+      const toggle=find(document); if(!toggle)return false;if(!toggle.checked)toggle.click();return toggle.checked;
+    })()`;
+    await wait(()=>settings.evaluate(developerToggle),'Developer mode toggle unavailable');
+    await extensionClient.send('Target.closeTarget',{targetId:settingsPage.targetId});
+  }
   await app.send('Runtime.evaluate',{expression:'setTimeout(()=>chrome.runtime.reload(),0)'});
   await delay(1200);
   // Reload invalidates extension pages and their execution contexts. Reopen a
