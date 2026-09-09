@@ -35,7 +35,11 @@ import { collectionPreview } from './collection-preview.js';
 import { createActionDialogs } from './action-dialogs.js';
 import { createSearchController } from './search-controller.js';
 import { createTabTools, orderedTabs } from './tab-tools.js';
+import { createOnboarding } from './onboarding.js';
 let libraryScope = 'window';
+const onboarding = createOnboarding({
+  onImport: () => actions.import(),
+});
 let tabTools,
   selectingTabs = false;
 const savedSelections = new Map();
@@ -2293,6 +2297,7 @@ async function start() {
     windowId: win,
     getTabIds: selectedIds,
     change,
+    onQuickStart: () => onboarding.open().catch(e=>toast(e.message,{error:true})),
   });
   await refresh();
   $('#settings').replaceChildren(icon('settings'));
@@ -2413,6 +2418,10 @@ async function start() {
   window.addEventListener('hashchange', handleNavigation);
 }
 function handleNavigation() {
+  if(location.hash==='#onboarding' || location.hash==='#tour') {
+    onboarding.open({automatic:location.hash==='#onboarding'}).catch(e=>toast(e.message,{error:true}));
+    return;
+  }
   const params = new URLSearchParams(location.hash.slice(1));
   if(params.has('q')) {$('#tab-search').value=params.get('q');$('#tab-search').dispatchEvent(new Event('input'));$('#tab-search').focus();}
   if (params.get('collection')) {

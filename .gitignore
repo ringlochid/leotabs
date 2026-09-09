@@ -11,6 +11,7 @@ node_modules/
 *.har
 *.log
 *.mp4
+!extension/media/onboarding/*.mp4
 *.webm
 *.jsonl
 .DS_Store

@@ -9,6 +9,7 @@ import { groupAndSortCollection } from './lib/collection-arrangement.js';
 import { placeCollectionItems, syncCollectionOrder } from './lib/collection-order.js';
 import {nativeOrganisation} from './lib/native-organisation.js';
 import {libraryAccess} from './lib/library-access.js';
+import {handleInstalled} from './lib/lifecycle.js';
 import { updateIdentity, invalidateIdentity } from './lib/identity.js';
 import { providerEndpoint, aiConnectionId, readAIKeys, PROVIDERS } from './lib/providers.js';
 import * as db from './lib/db.js';
@@ -1245,9 +1246,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   );
   return true;
 });
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
   db.getState().catch(() => {});
+  handleInstalled(chrome, details).catch(() => {});
 });
 chrome.action.onClicked.addListener((tab) =>
   dispatch('open-library', { windowId: tab?.incognito ? undefined : tab?.windowId }).catch(

@@ -8,6 +8,8 @@ LeoTabs has two main views: the **library** for saved work, and the **switcher**
 2. Choose **Add to Chrome**, then **Add extension**. In Edge, allow extensions from other stores if prompted.
 3. Pin LeoTabs from the browser's extensions menu so the lion is easy to reach.
 
+On first install, the library opens with a guide to saving, organizing and switching tabs. Six short recordings demonstrate the actions; use the video controls to pause or view them full screen. You can also import saved tabs from the first step. Use **Skip** or Escape at any point. Reopen it through **Settings → Quick start** or **Help → Quick start**. The guide appears automatically only once; updates and browser restarts do not reopen it.
+
 LeoTabs requires Chrome 123 or newer, or a compatible Chromium browser. Browser policies can restrict installation and shortcuts. It is not a Firefox or Safari extension.
 
 ## Save your first collection

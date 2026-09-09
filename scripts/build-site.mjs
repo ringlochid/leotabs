@@ -24,7 +24,7 @@ await fs.copyFile('website/verification/google345c4ce523429af8.html',out+'/googl
 for(const name of ['library.png','switcher.png'])
   await fs.copyFile('website/assets/'+name,out+'/assets/'+name);
 const guides=await guidePages(fs);
-const pages=[['','Home'],['privacy','Privacy'],['permissions','Permissions'],['support','Support'],['changelog','Changelog'],...guides.map(g=>[g.slug,g.title])];
+const pages=[['','Home'],['privacy','Privacy'],['permissions','Permissions'],['support','Support'],['changelog','Changelog'],['uninstalled','Help me improve LeoTabs'],...guides.map(g=>[g.slug,g.title])];
 const policy=await fs.readFile('extension/privacy.html','utf8');
 const article=policy.match(/<article id="privacy-policy">([\s\S]*?)<\/article>/)?.[1];
 if(!article)throw Error('Missing canonical privacy article.');
@@ -59,7 +59,7 @@ for(const [slug,title] of pages){
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer"><meta name="description" content="LeoTabs keeps your browsing work in local collections. Save, organise and switch tabs, with optional AI and portable exports.">
-${!config.origin?'<meta name="robots" content="noindex,nofollow">':''}${canonical?'<link rel="canonical" href="'+escape(canonical)+'">':''}
+${!config.origin||slug==='uninstalled'?'<meta name="robots" content="noindex,nofollow">':''}${canonical?'<link rel="canonical" href="'+escape(canonical)+'">':''}
 <title>${title==='Home'?'LeoTabs — Your tabs, right where you left them':escape(title)+' · LeoTabs'}</title>
 <link rel="icon" href="${prefix}assets/lion.svg" type="image/svg+xml"><script src="${prefix}assets/theme.js"></script><link rel="stylesheet" href="${prefix}assets/styles.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><div class="wrap"><header class="site-head"><a class="brand" href="${prefix||'./'}"><img src="${prefix}assets/lion.svg" alt="" width="28" height="28">LeoTabs</a><nav aria-label="Main">${[['docs','Guide'],['privacy','Privacy'],['support','Support']].map(([id,label])=>`<a href="${prefix}${id}/"${slug===id||slug.startsWith(id+'/')?' aria-current="page"':''}>${label}</a>`).join('')}</nav><div class="header-actions"><label class="theme-control" hidden><select id="theme" aria-label="Colour theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>${githubLink}</div></header>

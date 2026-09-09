@@ -1752,7 +1752,7 @@
 
   // extension/ui/action-dialogs.js
   function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {
-  }, inLibrary = false }) {
+  }, inLibrary = false, onQuickStart }) {
     const data = new Proxy({}, { get: (_, key) => getData()[key] });
     const win = windowId, selectedIds = getTabIds, act = (fn) => task(fn);
     function saveTo(context2, { closeTabs = data.state.settings.closeAfterStash } = {}) {
@@ -2567,6 +2567,11 @@
           "Keyboard shortcuts",
           () => chrome.tabs.create({ url: "chrome://extensions/shortcuts" }),
           "external"
+        ),
+        row(
+          "Quick start",
+          () => onQuickStart ? onQuickStart() : chrome.tabs.create({ url: chrome.runtime.getURL("app.html") + "#tour" }),
+          "library"
         ),
         row(
           "Help & privacy",

@@ -10,6 +10,8 @@ npm run test:browser -- --list
 npm run test:browser -- collection-drag saved-drag drag-placement
 npm run test:browser -- save-flow recovery
 npm run test:browser -- library-search organisation topic-regroup switcher-close
+npm run site:build
+npm run test:browser -- onboarding
 npm run test:browser -- --all
 ```
 
@@ -18,6 +20,8 @@ The runner defaults to Chrome at its standard Windows installation path. `--edge
 Each scenario starts a separate headless browser with a fresh profile and a local fixture server. Your regular browser profile is not used. Bulk checks open up to 500 disposable tabs and take longer than the focused UI checks.
 
 AI and Notion scenarios use local HTTP fixtures and dummy credentials. Permission-dependent scenarios modify a copy of the extension inside their output directory. The Notion fixture redirects its API requests to the local server.
+
+The onboarding scenario requires a site build. It verifies first installation, shared dialog styling, centered and anchored placement, animated transitions, reduced motion, `/` search, keyboard dismissal, completion/replay, import, a quiet extension reload and a real uninstall of its disposable extension. All nine steps are checked at 1440px, 390px and 320px in both themes. All six bundled recordings must decode and play, with mute, looping, pause controls, visibility handling and cleanup on navigation and close. Reduced motion disables autoplay. The uninstall destination is redirected to the generated site on the local fixture server; it does not submit feedback or remove an everyday installation.
 
 Results, failure details and screenshots are written to `output/browser/<scenario>-<id>/`. The runner exits unsuccessfully if any selected scenario fails and continues to report the remaining cases. It closes each test browser when the scenario finishes; profiles remain in ignored output for diagnosis.
 

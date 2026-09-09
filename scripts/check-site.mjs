@@ -5,7 +5,7 @@ import {guidePages,renderGuide} from './guide-markdown.mjs';
 const root=path.resolve('output/site');
 const config=JSON.parse(await fs.readFile('website/config.json','utf8'));
 const guides=await guidePages(fs);
-const pages=['index.html',...['privacy','permissions','support','changelog',...guides.map(g=>g.slug)].map(s=>s+'/index.html')];
+const pages=['index.html',...['privacy','permissions','support','changelog','uninstalled',...guides.map(g=>g.slug)].map(s=>s+'/index.html')];
 for(const file of pages){
   const full=path.join(root,file),html=await fs.readFile(full,'utf8');
   const prefix='../'.repeat(file.split('/').length-1);
@@ -18,7 +18,9 @@ for(const file of pages){
   if(config.origin){
     const route=file==='index.html'?'':file.slice(0,-'index.html'.length);
     if(!html.includes('<link rel="canonical" href="'+new URL(route,config.origin).href+'">'))throw Error('Incorrect canonical URL in '+file);
-    if(html.includes('noindex'))throw Error('Published page must not be noindex: '+file);
+    if(file==='uninstalled/index.html') {
+      if(!html.includes('content="noindex,nofollow"'))throw Error('The uninstall page should not be indexed.');
+    } else if(html.includes('noindex'))throw Error('Published page must not be noindex: '+file);
   }
   for(const [,url] of html.matchAll(/(?:href|src)="([^"]+)"/g)){
     if(/^(?:https:|mailto:|#)/.test(url))continue;

@@ -30,7 +30,7 @@ import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
 import {assist} from './contextual-ai.js';
 
-export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false }) {
+export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false, onQuickStart }) {
   const data = new Proxy({}, { get: (_, key) => getData()[key] });
   const win = windowId,
     selectedIds = getTabIds,
@@ -826,6 +826,11 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         'Keyboard shortcuts',
         () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }),
         'external',
+      ),
+      row(
+        'Quick start',
+        () => onQuickStart ? onQuickStart() : chrome.tabs.create({url:chrome.runtime.getURL('app.html')+'#tour'}),
+        'library',
       ),
       row(
         'Help & privacy',

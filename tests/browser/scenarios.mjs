@@ -4,6 +4,11 @@ export const scenarios = {
     "file": "group-between-tabs", "run": "checkGroupBetweenTabs",
     "description": "Whole groups between loose tabs; mixed order, copy, Undo and reload"
   },
+  "onboarding": {
+    "file": "onboarding", "run": "checkOnboarding",
+    "description": "First-run guide, video playback, placement, transitions, replay and uninstall",
+    "site": true
+  },
   "switcher-close": {
     "file": "switcher-close", "run": "checkSwitcherClose",
     "description": "Alt+W, group closing, focus, Undo and host-page continuation",

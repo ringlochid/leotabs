@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Open the library with a skippable guide and six bundled video demonstrations, including stashing tabs, switching collections and the visual switcher. It uses the shared flat dialogs, animated step transitions and optional import. Reopen it from Settings or Help; updates and restarts stay quiet.
+- Offer optional email feedback and explain local-data removal on a post-uninstall page, without tracking parameters or a survey service.
+
 ## 0.14.0 — 9 September 2026
 
 - Search saved tabs, groups, notes and collections across all spaces while keeping the collection-card layout. Choosing a space clears search; Clear search returns to the previous view.

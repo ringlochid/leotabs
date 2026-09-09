@@ -19,3 +19,5 @@ Publish **only website files**, never the extension repository or its history. G
 After publication, verify the deployed guides and `/privacy/`, `/support/` and `/permissions/` pages without a login. Check mobile and keyboard navigation and keep the dashboard's homepage, support and privacy URLs aligned with the deployed site. Building locally does not prove deployment.
 
 Google Search Console verifies the URL-prefix property using `website/verification/google345c4ce523429af8.html`. The build copies this file unchanged to the website root, serving it at `/leotabs/google345c4ce523429af8.html`. Keep it in future deployments after verification succeeds.
+
+`/uninstalled/` is the extension's post-uninstall destination. It offers optional email feedback and data-retention information, with no form service, analytics or identifier parameters. Keep the page live before shipping an extension package that registers this URL. It is deliberately marked noindex. The first-install guide is bundled in the library as `extension/ui/onboarding.js` and can be reopened from Settings or Help. There is no separate welcome website or page.

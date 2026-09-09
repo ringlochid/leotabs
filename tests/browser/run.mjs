@@ -26,6 +26,15 @@ let proc, stderr = '', browserClient, app, failure;
 const server = http.createServer(async (req, res) => {
   try {
     hits.push(req.url);
+    if (scenario.site && req.url.startsWith('/leotabs/')) {
+      const siteRoot=path.resolve(root,'output/site');
+      let target=path.resolve(siteRoot,decodeURIComponent(new URL(req.url,'http://localhost').pathname.slice('/leotabs/'.length)));
+      if(target!==siteRoot && !target.startsWith(siteRoot+path.sep))throw Error('Invalid fixture path');
+      if((await fs.stat(target)).isDirectory())target=path.join(target,'index.html');
+      const type={'.html':'text/html','.css':'text/css','.js':'text/javascript','.svg':'image/svg+xml','.png':'image/png'}[path.extname(target)]||'text/plain';
+      res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store'});
+      return res.end(await fs.readFile(target));
+    }
     if (req.url === '/identity-icon.png') {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public,max-age=3600' });
       return res.end(await fs.readFile(path.join(root, 'tests/fixtures/site-icon.png')));
@@ -114,7 +123,7 @@ function debugJSON(url) {
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  if (scenario.permissions?.length || scenario.localServices) {
+  if (scenario.permissions?.length || scenario.localServices || scenario.site) {
     const fixture = path.join(out, 'extension');
     await fs.cp(extensionPath, fixture, { recursive: true });
     extensionPath = fixture;
@@ -125,6 +134,13 @@ try {
     }
     if (scenario.localServices) manifest.host_permissions = ['http://127.0.0.1/*'];
     await fs.writeFile(path.join(fixture, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    if (scenario.site) {
+      // Exercise the real uninstall event against local generated pages only.
+      const file=path.join(fixture,'lib/lifecycle.js');
+      const source=await fs.readFile(file,'utf8');
+      assert.equal(source.split('https://ringlochid.me/leotabs/uninstalled/').length-1,1);
+      await fs.writeFile(file,source.replace('https://ringlochid.me/leotabs/uninstalled/',origin+'/leotabs/uninstalled/'));
+    }
     if (name === 'notion-library') {
       // Redirect only this disposable fixture; no test writes to a real account.
       const file = path.join(fixture, 'lib/notion.js');
@@ -176,13 +192,17 @@ try {
   if (!loadedId && !worker) throw Error('Extension worker did not load');
   loadedId ||= new URL(worker.url).host;
   const extensionOrigin = `chrome-extension://${loadedId}`;
-  app = await connect(available.find(target => target.type === 'page').webSocketDebuggerUrl);
+  app = await connect(available.find(target => target.type === 'page' && !target.url.startsWith(extensionOrigin)).webSocketDebuggerUrl);
   await app.send('Runtime.enable');
   await app.send('Page.navigate', { url: `${extensionOrigin}/app.html` });
   for (let i = 0; i < 100 && !await app.evaluate('!!document.querySelector("#spaces .active")'); i++) await delay(100);
   assert.equal(await app.evaluate('document.querySelector("#spaces .active")?.textContent'), 'My space');
   const rpc = (action, data = {}) => app.evaluate(`chrome.runtime.sendMessage(${JSON.stringify({ action, data })}).then(r=>{if(!r.ok)throw Error(r.error);return r.value})`);
   const own = await app.evaluate('chrome.tabs.getCurrent()');
+  if(name!=='onboarding') {
+    // Other scenarios start at the library, independently of the first-run guide.
+    await app.evaluate(`chrome.tabs.query({url:${JSON.stringify(extensionOrigin+'/app.html*')}}).then(tabs=>Promise.all(tabs.filter(tab=>tab.url.endsWith('#onboarding')).map(tab=>chrome.tabs.remove(tab.id))))`);
+  }
   const triggerSwitcher = async (tab, mode = 'switcher') => {
     // tabs.create may return a pending URL; use the settled tab to find its CDP target.
     tab = await app.evaluate(`chrome.tabs.get(${tab.id})`);
