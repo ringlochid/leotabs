@@ -119,7 +119,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     const progress=el('span',{},'Grouping by topic…');
     const cancel=button('Cancel',()=>{cancelled=true;rpc('ai-cancel',{requestId});progress.textContent='Cancelling…';});
     toast(el('span',{class:'grouping-progress'},progress,cancel),{duration:0});
-    try {await change('group-topic',{windowId:win,tabIds:groupingIds(regroupExisting),regroupExisting,requestId});}
+    try {await change('group-topic',{windowId:win,tabIds:groupingIds(),regroupExisting,requestId});}
     catch(error){toast(cancelled?'Grouping cancelled':error.message,{error:!cancelled});}
     finally{groupingBusy=false;}
   }

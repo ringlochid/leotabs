@@ -28,6 +28,10 @@ export function groupAndSortCollection(c, { regroupExisting = true } = {}) {
     for (const link of bucket.links) link.groupId = group.id;
   }
   c.groups = c.groups.filter(g => c.links.some(l => l.groupId === g.id));
+  return sortCollection(c);
+}
+
+export function sortCollection(c) {
   c.groups.sort((a, b) => a.name.localeCompare(b.name));
   const byTitle = (a, b) => (a.title || '').localeCompare(b.title || '');
   c.links = [

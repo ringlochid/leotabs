@@ -2,9 +2,10 @@
 import {askJSON} from './integrations.js';
 import {validatePlan,text} from './model.js';
 import {topicGroups} from './topic-groups.js';
+import {sortCollection} from './collection-arrangement.js';
 function collectionPlan(raw,collection,eligible,groupable) {
   if(!raw||typeof raw.name!=='string'||!raw.name.trim()||typeof raw.note!=='string'||!raw.note.trim()||!Array.isArray(raw.groups))
-    throw Error('AI returned incomplete collection details');
+    throw Error('AI returned an incomplete organisation plan');
   const groups=raw.groups.map(g=>{
     if(!g||typeof g.name!=='string'||!g.name.trim()||!Array.isArray(g.ids))
       throw Error('AI returned a group without a name or links');
@@ -47,6 +48,29 @@ export async function organiseCollection(collection,settings,key,fetcher=fetch,{
       '\n';
   }
 }
+
+// Open-tab actions use the same planner without applying its collection metadata.
+export async function organiseTabs(tabs,settings,key,fetcher=fetch,{signal,regroupExisting=true,collection}={}) {
+  if(!tabs.length||tabs.length>300||!tabs.some(t=>regroupExisting||t.groupId<0))
+    throw Error('Select 1–300 tabs');
+  const remaining=[...(collection?.links||[])];
+  const positions=new Map();
+  let matched=0;
+  const links=tabs.map(tab=>{
+    const url=tab.resourceUrl||tab.url;
+    let index=remaining.findIndex(link=>link.url===url&&link.title===tab.title);
+    if(index<0)index=remaining.findIndex(link=>link.url===url);
+    const saved=index<0?null:remaining.splice(index,1)[0];
+    if(saved){matched++;positions.set(tab.id,collection.links.indexOf(saved));}
+    return {id:tab.id,title:tab.title,url,note:saved?.note||'',groupId:tab.groupId>=0?String(tab.groupId):null};
+  });
+  // A full collection overview can mislead a partial or unrelated tab selection.
+  const complete=collection&&matched===tabs.length&&remaining.length===0;
+  if(complete)links.sort((a,b)=>positions.get(a.id)-positions.get(b.id));
+  const scope={id:'open-tabs',name:complete?collection.name:'Open tabs',note:complete?collection.note||'':'',groups:[],links};
+  const plan=await organiseCollection(scope,settings,key,fetcher,{signal,regroupExisting});
+  return plan.groups.map(group=>({name:group.name,tabIds:group.linkIds}));
+}
 export function applyCollectionOrganisation(c,plan,colour) {
   if(validatePlan({groups:[]},c).fingerprint!==plan.fingerprint)throw Error('The collection changed. Run AI organisation again.');
   const scope=new Set(plan.scopeLinkIds);
@@ -54,4 +78,5 @@ export function applyCollectionOrganisation(c,plan,colour) {
   for(const group of plan.groups){let target=c.groups.find(g=>g.name===group.name&&!c.links.some(l=>l.groupId===g.id&&!scope.has(l.id)));if(!target){target={id:crypto.randomUUID(),name:group.name,color:colour(c.groups.at(-1)?.color),collapsed:false};c.groups.push(target);}for(const l of c.links)if(group.linkIds.includes(l.id))l.groupId=target.id;}
   c.groups=c.groups.filter(g=>c.links.some(l=>l.groupId===g.id));
   c.name=plan.collectionName;c.note=plan.note;c.updatedAt=Date.now();
+  sortCollection(c);
 }

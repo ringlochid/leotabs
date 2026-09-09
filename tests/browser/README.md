@@ -9,6 +9,7 @@ npm run build
 npm run test:browser -- --list
 npm run test:browser -- collection-drag saved-drag drag-placement
 npm run test:browser -- save-flow recovery
+npm run test:browser -- library-search organisation topic-regroup switcher-close
 npm run test:browser -- --all
 ```
 

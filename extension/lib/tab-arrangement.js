@@ -56,9 +56,9 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       // With existing groups excluded from a whole-window sort, start before
       // those groups so standalone tabs do not remain stranded behind them.
       const wholeWindow=!tabIds||all.filter(t=>!t.pinned&&website(t.resourceUrl||t.url)).every(t=>tabIds.includes(t.id));
-      let index=!aiGroups&&!regroupExisting&&wholeWindow ? all.find(t=>!t.pinned).index : Math.min(...tabs.map(t=>t.index));
+      let index=!regroupExisting&&wholeWindow ? all.find(t=>!t.pinned).index : Math.min(...tabs.map(t=>t.index));
       const blocks=[...buckets.values(),...singles.map(t=>({name:t.title||'',tabs:[t],groupId:-1}))];
-      blocks.sort((a,b)=>(aiGroups?0:Number(a.groupId>=0)-Number(b.groupId>=0))||a.name.localeCompare(b.name));
+      blocks.sort((a,b)=>(Number(a.groupId>=0)-Number(b.groupId>=0))||a.name.localeCompare(b.name));
       for(const bucket of blocks) {
         const members=[...bucket.tabs].sort((a,b)=>(a.title||'').localeCompare(b.title||'')||a.index-b.index);
         // Establish a group boundary first: moving member tabs into another block can ungroup them.
@@ -78,7 +78,7 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
         retained.push({scope,orderLocked:true,at:Date.now()});
         await browser.storage.local.set({neoOrganisationCorrections:retained.slice(-2000)});
       }
-      await nativeOrganiser.remember(windowId,scope);
+      await nativeOrganiser.remember(windowId,scope,singles.map(t=>t.id));
       if(state.settings.tabSort!=='position')await db.mutate('Show browser order',s=>{s.settings.tabSort='position';});
       mark('remembered');await sessions.capture(windowId,{reason:'Grouped and sorted tabs',force:true});mark('captured');
       if(metadata){await db.mutate('Organise collection',s=>{const c=s.collections.find(c=>c.id===metadata.collectionId);if(!c)throw Error('This collection is no longer available');c.name=metadata.name;c.note=metadata.note;c.updatedAt=Date.now();});operation.afterCollection=structuredClone((await db.getState()).collections.find(c=>c.id===metadata.collectionId));}
@@ -165,7 +165,7 @@ export function tabArrangement({browser,db,ops,sessions,nativeOrganiser}) {
       for(const t of tabs)corrections.push({scope,url:t.resourceUrl||t.url,manualGroup:true,at:Date.now()});
       corrections.push({scope,orderLocked:true,at:Date.now()});
       await browser.storage.local.set({neoOrganisationCorrections:corrections.slice(-2000)});
-      await nativeOrganiser.remember(windowId,scope);
+      await nativeOrganiser.remember(windowId,scope,groupId<0?ids:[]);
       await sessions.capture(windowId,{reason:'Moved tabs',force:true});
       op.after=layoutSignature(await live(windowId),await browser.tabGroups.query({windowId}));op.status='complete';await db.write('journal',op);
       return {id:op.id,label:op.label,undoable:true};

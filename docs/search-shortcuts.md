@@ -28,11 +28,11 @@ Escape clears a query or goes back/closes the current search view. In selection 
 
 The library offers **This window** and **All windows** for its open-tab sidebar. Those choices change the live tabs shown, not the contents of a saved collection.
 
-## Filter the current space
+## Search across all spaces
 
-The search field above **Open tabs** filters the sidebar and the collections in the selected space (or the expanded collection). In the released version, the library's top-right **Search** button and **/** shortcut focus this same field. Matching text is highlighted, and folded groups expand to show matches.
+The search field above **Open tabs** filters the sidebar and searches saved tabs, collection names, group names and notes across all spaces. Press **/** to focus it. Results stay inside their collection cards, with matching text highlighted and folded groups expanded temporarily. Each card shows its space.
 
-This filter does not use `@` collection scopes or `/` commands. Press **Alt+Shift+K** to search saved work across other spaces.
+The result count and **Clear search** button appear above the cards. Clearing search returns to your previous view and scroll position. **This window** and **All windows** apply only to open tabs. This field does not use `@` collection scopes or `/` commands; use **Alt+Shift+K** for those.
 
 ## Address bar and other entry points
 

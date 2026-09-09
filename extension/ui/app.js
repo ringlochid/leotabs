@@ -30,7 +30,7 @@ import { updatePageIdentity } from '../lib/identity.js';
 import { PALETTE, duplicateCandidates, uid, newCollection, safeURL } from '../lib/model.js';
 import { parseImport, jsonExport, markdownExport, htmlExport } from '../lib/portable.js';
 import { orderedCollections, collectionAge } from '../lib/collection-workflow.js';
-import { highlightMatches, matchesPage } from './library-search.js';
+import { highlightMatches, matchesPage, matchesCollection, countCollectionMatches } from './library-search.js';
 import { collectionPreview } from './collection-preview.js';
 import { createActionDialogs } from './action-dialogs.js';
 import { createSearchController } from './search-controller.js';
@@ -66,6 +66,7 @@ let actions,
   refreshTimer,
   searchController;
 const linkLimits = new Map();
+let searchReturnView = null, revealedCollection = null;
 let dragActive = false;
 let nativeDragIds = [];
 let draggingPayload = null;
@@ -964,7 +965,10 @@ function beginName(key) {
   // starting inline editing, without expanding ordinary visible renames.
   if (![...document.querySelectorAll('[data-focus-key]')].some(node => node.dataset.focusKey === key)) {
     const owner = data.state.collections.find(c => c.groups.some(g => g.id + ':name' === key));
-    if (owner) linkLimits.set(`${owner.id}:${activeCollection === owner.id ? 'detail' : 'card'}:${libraryQuery()}`, Math.max(activeCollection === owner.id ? 80 : 8, owner.links.length + owner.groups.length));
+    if (owner) {
+      const detail = !libraryQuery() && activeCollection === owner.id;
+      linkLimits.set(`${owner.id}:${detail ? 'detail' : 'card'}:${libraryQuery()}`, Math.max(detail ? 80 : 8, owner.links.length + owner.groups.length));
+    }
   }
   editingName = key;
   renderTabs();
@@ -1209,14 +1213,16 @@ function renderBoardContent() {
   const restoreFocus = retainFocus($('#board'));
   if (activeCollection && !findCollection()) activeCollection = null;
   const board = $('#board');
-  board.className = activeCollection
+  const query = libraryQuery();
+  const detail = !query && activeCollection;
+  board.className = detail
     ? 'detail'
     : data.state.settings.view === 'list'
       ? 'list-view'
       : '';
   $('#breadcrumbs').replaceChildren(
     ...[
-      activeCollection
+      detail
         ? button(
             'All collections',
             () => {
@@ -1230,11 +1236,11 @@ function renderBoardContent() {
             {},
             `${data.state.collections.filter((c) => c.spaceId === activeSpace).length} collections`,
           ),
-      activeCollection ? el('span', {}, findCollection().name) : null,
+      detail ? el('span', {}, findCollection().name) : null,
     ].filter(Boolean),
   );
   $('#view-tools').replaceChildren(
-    ...(activeCollection
+    ...(detail
       ? [
           button('Open all', () => actions.resume(findCollection())),
           button('Open in new window', () => actions.resume(findCollection(), { target: 'new' })),
@@ -1256,33 +1262,24 @@ function renderBoardContent() {
           ),
         )),
   );
-  const query = libraryQuery();
-  const collectionMatches = (c) =>
-    !query ||
-    matchesPage({ title: c.name + ' ' + (c.note || '') }, query) ||
-    c.groups.some((g) => matchesPage({ title: g.name }, query)) ||
-    c.links.some((l) => matchesPage(l, query));
-  const collections = activeCollection
-    ? [findCollection()].filter(collectionMatches)
-    : orderedCollections(data.state.collections)
-        .filter((c) => c.spaceId === activeSpace && collectionMatches(c))
-        .slice(0, collectionLimit);
-  if (query)
+  const matchingCollections = orderedCollections(data.state.collections)
+    .filter(c => query ? matchesCollection(c, query) : c.spaceId === activeSpace);
+  const collections = detail ? [findCollection()] : matchingCollections.slice(0, collectionLimit);
+  if (query) {
+    const resultCount = matchingCollections.reduce((count, c) => count + countCollectionMatches(c, query), 0);
     $('#breadcrumbs').replaceChildren(
-      el(
-        'span',
-        {},
-        `${collections.length} matching collections ${activeCollection ? 'in this view' : 'in this space'}`,
-      ),
-      button('Show all collections', () => {
+      el('span', {role:'status'}, `${resultCount} ${resultCount === 1 ? 'result' : 'results'} across all spaces`),
+      button('Clear search', () => {
         $('#tab-search').value = '';
         $('#tab-search').dispatchEvent(new Event('input'));
+        $('#tab-search').focus({preventScroll:true});
       }),
     );
+  }
   if (!collections.length && query) {
-    board.replaceChildren(el('p', { class: 'hint' }, 'No matching collections'));
-    board.ondrop = null;
-    board.ondragover = null;
+    board.replaceChildren(el('p', {class:'hint'}, 'No matching collections'));
+    board.ondragover = board.ondrop = null;
+    restoreFocus();
     return;
   }
   if (!collections.length) {
@@ -1302,11 +1299,11 @@ function renderBoardContent() {
   board.ondragover = e=>{if(draggingCollection){e.preventDefault();e.dataTransfer.dropEffect=markCollectionAtPoint({x:e.clientX,y:e.clientY})?'move':'none';}};
   board.ondrop = act(async e=>{if(!draggingCollection)return;e.preventDefault();const id=draggingCollection,slot=markCollectionAtPoint({x:e.clientX,y:e.clientY});clearCollectionDrag();if(slot)await change('edit',{kind:'move-collection',collectionId:id,beforeId:slot.beforeId,label:'Move collection'});});
   board.replaceChildren(...collections.map(collectionCard));
-  if (!activeCollection && !query)
+  if (!detail && !query)
     board.append(
       newCollectionDropTarget(),
     );
-  if (!activeCollection && data.state.collections.length > collectionLimit)
+  if (!detail && matchingCollections.length > collectionLimit)
     board.append(
       button('Show more collections', () => {
         collectionLimit += 60;
@@ -1314,6 +1311,19 @@ function renderBoardContent() {
       }),
     );
   restoreFocus();
+}
+function revealSearchedCollection(c) {
+  searchReturnView = null;
+  activeSpace = c.spaceId;
+  localStorage.setItem('neo-space', activeSpace);
+  activeCollection = c.id;
+  revealedCollection = c.id;
+  $('#tab-search').value = '';
+  $('#tab-search').dispatchEvent(new Event('input'));
+  const card = [...$('#board').querySelectorAll('.collection')].find(node => node.dataset.collectionId === c.id);
+  const target = card?.querySelector('.collection-name');
+  target?.focus({preventScroll:true});
+  target?.scrollIntoView({block:'nearest'});
 }
 const copyDrag = (e) => e.ctrlKey || e.metaKey;
 let draggingCopy = false;
@@ -1427,6 +1437,9 @@ function renderCurrentCollection() {
 }
 
 function collectionCard(c) {
+  const query = libraryQuery();
+  const expanded = !query && activeCollection === c.id;
+  const collapsed = c.collapsed && revealedCollection !== c.id;
   const selection = savedSelections.get(c.id);
   if (selection)
     for (const id of selection.ids) if (!c.links.some((l) => l.id === id)) selection.ids.delete(id);
@@ -1477,7 +1490,7 @@ function collectionCard(c) {
     'collection-name',
   );
   if(!name.querySelector('input'))name.dataset.focusKey = c.id + ':name';
-  name.draggable = name.tagName !== 'INPUT'&&!name.querySelector('input');
+  name.draggable = !query && name.tagName !== 'INPUT'&&!name.querySelector('input');
   name.ondragstart = (e) => {
     e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
   };
@@ -1486,11 +1499,12 @@ function collectionCard(c) {
       'header',
       { class: 'collection-head' },
       button(
-        (c.collapsed ? 'Unfold ' : 'Fold ') + c.name,
-        act(() =>
-          change('edit', { kind: 'collection', collectionId: c.id, collapsed: !c.collapsed }),
-        ),
-        { glyph: c.collapsed ? 'chevron' : 'down', quiet: true, className: 'collection-fold' },
+        (collapsed ? 'Unfold ' : 'Fold ') + c.name,
+        act(() => {
+          revealedCollection = null;
+          return change('edit', { kind: 'collection', collectionId: c.id, collapsed: !collapsed });
+        }),
+        { glyph: collapsed ? 'chevron' : 'down', quiet: true, className: 'collection-fold' },
       ),
       name,
       el('small', {}, c.links.length),
@@ -1516,12 +1530,13 @@ function collectionCard(c) {
         },
       ),
       button(
-        (activeCollection === c.id ? 'Restore ' : 'Expand ') + c.name,
+        (expanded ? 'Restore ' : 'Expand ') + c.name,
         () => {
-          activeCollection = activeCollection === c.id ? null : c.id;
+          if (query) return revealSearchedCollection(c);
+          activeCollection = expanded ? null : c.id;
           renderBoard();
         },
-        { glyph: activeCollection === c.id ? 'restore' : 'expand', quiet: true },
+        { glyph: expanded ? 'restore' : 'expand', quiet: true },
       ),
       button(`Options for ${c.name}`, (e) => collectionMenu(c, e.currentTarget), {
         glyph: 'more',
@@ -1532,6 +1547,7 @@ function collectionCard(c) {
   const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
   if(lastDropCollection===c.id)card.append(button('Suggest name or destination',()=>actions.dropSuggestions(c),{glyph:'sparkles'}));
   card.append(el('div', {class:'collection-meta'},
+    query ? el('span', {class:'collection-space'}, data.state.spaces.find(s => s.id === c.spaceId)?.name || 'My space') : null,
     c.pinned ? el('span', {class:'collection-pinned'}, icon('pin'), 'Pinned') : null,
 
     currentSession ? el('span', {class:'collection-current-label'}, 'Current') : null));
@@ -1542,9 +1558,9 @@ function collectionCard(c) {
     button('Switch', act(() => actions.swap(c)), {glyph:'arrow', className:'collection-switch', 'aria-label':'Switch to collection', disabled:currentSession, title:currentSession?'This collection is already current':'Make this collection current in this window; choose whether to save the current tabs'})));
   card.querySelector('.collection-switch').setAttribute('aria-label','Switch to collection');
   const header = card.querySelector('.collection-head');
-  header.draggable = !activeCollection;
+  header.draggable = !activeCollection && !query;
   header.ondragstart = (e) => {
-    if (activeCollection || e.target.tagName === 'INPUT') {
+    if (activeCollection || query || e.target.tagName === 'INPUT') {
       e.preventDefault();
       return;
     }
@@ -1565,9 +1581,8 @@ function collectionCard(c) {
     e.preventDefault();
     collectionMenu(c, header.querySelector('button[aria-label^="Options"]'));
   };
-  const query = libraryQuery();
   const matchesCollection = query && matchesPage({ title: c.name + ' ' + (c.note || '') }, query);
-  card.classList.toggle('folded', !!c.collapsed && !query);
+  card.classList.toggle('folded', !!collapsed && !query);
   if (query) {
     const fold = card.querySelector('.collection-fold');
     fold.replaceChildren(icon('down'));
@@ -1576,8 +1591,8 @@ function collectionCard(c) {
   }
   card
     .querySelector('.collection-fold')
-    .setAttribute('aria-expanded', String(!c.collapsed || !!query));
-  if (c.collapsed && !query) return card;
+    .setAttribute('aria-expanded', String(!collapsed || !!query));
+  if (collapsed && !query) return card;
   const body = el('div', { class: 'collection-body', id: `collection-content-${c.id}` });
   if (selection) card.append(savedSelectionToolbar(c, selection));
   const matchingLinks = (links, group) => query && !matchesCollection && !(group && matchesPage({ title: group.name }, query))
@@ -1587,8 +1602,8 @@ function collectionCard(c) {
     group, links: matchingLinks(c.links.filter(l => l.groupId === group.id), group),
     collapsed: group.collapsed && !query,
   })).filter(section => !query || matchesCollection || matchesPage({ title: section.group.name }, query) || section.links.length);
-  const baseLimit = activeCollection === c.id ? 80 : 8;
-  const previewKey = `${c.id}:${activeCollection === c.id ? 'detail' : 'card'}:${query}`;
+  const baseLimit = expanded ? 80 : 8;
+  const previewKey = `${c.id}:${expanded ? 'detail' : 'card'}:${query}`;
   const limit = linkLimits.get(previewKey) || baseLimit;
   const preview = collectionPreview(ungrouped, sections, limit);
   body.append(...preview.links.map(l => savedRow(c, l)));
@@ -1605,19 +1620,19 @@ function collectionCard(c) {
     const wrap = el('div', { class: 'saved-group', dataset:{groupId:g.id} });
     const toggle = button(
       '',
-      act(() =>
-        change('edit', {
+      act(() => {
+        return change('edit', {
           kind: 'group',
           collectionId: c.id,
           groupId: g.id,
-          collapsed: !g.collapsed,
-        }),
-      ),
+          collapsed: !section.collapsed,
+        });
+      }),
       { className: 'group-toggle' },
     );
-    toggle.setAttribute('aria-expanded', String(!g.collapsed || !!query));
-    toggle.setAttribute('aria-label', `${g.collapsed ? 'Expand' : 'Collapse'} group ${g.name}`);
-    toggle.replaceChildren(icon(g.collapsed && !query ? 'chevron' : 'down'), icon('group'));
+    toggle.setAttribute('aria-expanded', String(!section.collapsed));
+    toggle.setAttribute('aria-label', `${section.collapsed ? 'Expand' : 'Collapse'} group ${g.name}`);
+    toggle.replaceChildren(icon(section.collapsed ? 'chevron' : 'down'), icon('group'));
     if (query) {
       toggle.disabled = true;
       toggle.title = 'Clear search to fold this group';
@@ -1687,7 +1702,7 @@ function collectionCard(c) {
     };
     wrap.ondragover = dragFeedback;
     wrap.ondrop = act(e => dropIntoCollection(e,card,c));
-    if (!g.collapsed || query) {
+    if (!section.collapsed) {
       const members = el('div', { class: 'group-members' });
       members.append(...section.links.map(l => savedRow(c, l)));
       wrap.append(members);
@@ -2257,7 +2272,7 @@ function searchDialog() {
       controller.destroy();
       if (searchController === controller) searchController = null;
       dialog.remove();
-      $('#global-search').focus();
+      $('#tab-search').focus();
     },
     { once: true },
   );
@@ -2283,7 +2298,6 @@ async function start() {
     $('#tab-search').focus();
     $('#tab-search').select();
   };
-  $('#global-search').onclick = focusLibrarySearch;
   chrome.permissions.onAdded.addListener(loadHistory);
   chrome.permissions.onRemoved.addListener(loadHistory);
   loadHistory();
@@ -2296,6 +2310,16 @@ async function start() {
     }
   };
   $('#tab-search').oninput = () => {
+    const query = libraryQuery();
+    if (query && !searchReturnView) searchReturnView = {space:activeSpace, collection:activeCollection, limit:collectionLimit, restore:retainScroll()};
+    const returning = !query ? searchReturnView : null;
+    if (returning) {
+      activeSpace = returning.space;
+      activeCollection = returning.collection;
+      localStorage.setItem('neo-space', activeSpace);
+      searchReturnView = null;
+    }
+    collectionLimit = returning?.limit || 60;
     selected.clear();
     anchor = null;
     tabLimit = 120;
@@ -2309,6 +2333,7 @@ async function start() {
     renderTabs();
     renderBoard();
     renderRecent();
+    returning?.restore();
   };
   tabTools = createTabTools({
     getTabs: eligibleTabs,

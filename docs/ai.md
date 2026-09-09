@@ -50,7 +50,9 @@ Automatic naming currently requires a saved key; a keyless local connection can 
 
 ## Exactly what leaves your browser
 
-Topic grouping sends the chosen tab titles, full URLs and identifiers. Collection organisation sends its name and note plus link titles, full URLs, link notes and grouping identifiers. Links excluded from regrouping can still be included as context.
+Collection organisation, open-tab grouping and the switcher use the same AI planner. Requests include chosen titles, full URLs and temporary identifiers. Collection organisation also includes its name, note and link notes. Open-tab grouping includes matching link notes from the current collection; its name and overview are included only when the selection matches the whole collection. Links excluded from regrouping can still be included as context, but cannot be reassigned.
+
+Open-tab and switcher actions change groups and order. Only **Organise collection with AI** updates the collection name and note. The same model and context can still produce different groupings on separate runs.
 
 Automatic naming sends titles and URLs of the newly saved collection. **It can happen on each eligible save without a separate confirmation once a key and access are configured.**
 
@@ -62,7 +64,7 @@ Screenshots, page-body text and browser-history search results are not sent by t
 
 Collection organisation accepts 1–300 links. Topic groups need at least two related items; isolated items may stay ungrouped. Grouping is not a promise to reorder every link or rename every tab.
 
-If the provider returns malformed collection output, LeoTabs may send one correction request with the same metadata. That additional request can incur provider usage. Organisation normally applies directly and offers Undo. If the collection or live tabs change during the request, the result can be rejected instead of applying stale changes.
+If the provider returns malformed output or invalid group references, LeoTabs may send one correction request with the same metadata. This applies to collection, open-tab and switcher grouping. That additional request can incur provider usage. Organisation normally applies directly and offers Undo. If the collection or live tabs change during the request, the result can be rejected instead of applying stale changes.
 
 Cancel stops a pending request locally where supported. Cancel and Undo cannot retract information already delivered to a provider or reverse its charges.
 

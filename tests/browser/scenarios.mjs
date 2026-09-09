@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 export const scenarios = {
+  "switcher-close": {
+    "file": "switcher-close", "run": "checkSwitcherClose",
+    "description": "Alt+W, group closing, focus, Undo and host-page continuation",
+    "localServices": true
+  },
   "ungrouped-first": {
     "file": "ungrouped-first",
     "run": "checkUngroupedFirst",

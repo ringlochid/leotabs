@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {organiseCollection,applyCollectionOrganisation} from '../extension/lib/collection-ai.js';
+import {organiseCollection,organiseTabs,applyCollectionOrganisation} from '../extension/lib/collection-ai.js';
 import {askJSON} from '../extension/lib/integrations.js';
 import {topicGroups} from '../extension/lib/topic-groups.js';
 const fixture=()=>({id:'c',name:'New collection',note:'Compare tools',groups:[],links:[{id:'long-id-chatgpt',title:'ChatGPT',url:'https://chatgpt.com/'},{id:'long-id-gemini',title:'Gemini',url:'https://gemini.google.com/'},{id:'long-id-google',title:'Google',url:'https://google.com/'}]});
@@ -86,7 +86,8 @@ test('collection AI combines name, overview and cross-site topic grouping in one
  let calls=0;const c=fixture();
  const plan=await organiseCollection(c,settings,'',async(_url,options)=>{calls++;const payload=JSON.parse(JSON.parse(options.body).messages[0].content.split('\nData: ')[1]);assert.deepEqual(payload.links.map(l=>l.id),[1,2,3]);return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({name:'AI tools and search',note:'Compare AI chatbots and keep Google as a search reference.',groups:[{name:'ChatGPT',ids:[1]},{name:'Gemini',ids:[2]},{name:'Search',ids:[3]}]})}}]}));});
  assert.equal(calls,1);assert.deepEqual(plan.groups.map(g=>[g.name,g.linkIds]),[['AI chatbots',['long-id-chatgpt','long-id-gemini']]]);
- applyCollectionOrganisation(c,plan,()=> 'mint');assert.equal(c.name,'AI tools and search');assert(plan.note&&c.note===plan.note);assert.equal(c.groups.length,1);assert.equal(c.links[2].groupId,null);
+ applyCollectionOrganisation(c,plan,()=> 'mint');assert.equal(c.name,'AI tools and search');assert(plan.note&&c.note===plan.note);assert.equal(c.groups.length,1);assert.equal(c.links[0].groupId,null);
+ assert.deepEqual(c.links.map(l=>l.title),['Google','ChatGPT','Gemini']);
 });
 test('collection AI rejects unknown IDs and preserves excluded existing groups',async()=>{
  const c=fixture();c.groups=[{id:'existing',name:'My project',color:'blue'}];c.links[0].groupId='existing';c.links[1].groupId='existing';
@@ -108,7 +109,7 @@ test('excluded saved groups keep their membership even when AI proposes the same
  applyCollectionOrganisation(c,plan,()=> 'mint');
  assert.deepEqual(c.groups.find(g=>g.id==='old'),{id:'old',name:'Research',color:'blue',collapsed:true});
  assert.deepEqual(c.links.filter(l=>l.groupId==='old').map(l=>l.id),['long-id-google']);
- assert.equal(c.links[0].groupId,c.links[1].groupId);assert.notEqual(c.links[0].groupId,'old');
+ const generated=c.links.filter(l=>l.groupId!=='old');assert.equal(generated.length,2);assert.equal(generated[0].groupId,generated[1].groupId);
 });
 test('topic grouping drops singleton groups and combines duplicates without a catch-all',()=>{
  const links=[{id:1,url:'https://a.example'},{id:2,url:'https://b.example'},{id:3,url:'https://c.example'}];
@@ -121,4 +122,60 @@ test('fast organisation uses supported GPT-5 mini latency knobs without changing
  assert.equal(bodies[0].reasoning_effort,'minimal');assert.equal(bodies[0].verbosity,'low');assert.equal(bodies[0].model,'gpt-5-mini');
  await askJSON('JSON', {...settings,model:'gpt-4.1-mini'},'',fetcher,{fast:true});assert(!('reasoning_effort' in bodies[1]));assert(!('verbosity' in bodies[1]));
  await askJSON('JSON', {...settings,model:'gpt-5-mini'},'',fetcher);assert(!('reasoning_effort' in bodies[2]));
+});
+
+test('saved and open versions of the same research tabs send identical AI requests',async()=>{
+ const topics=[
+  ['BERT and language models',['1810.04805','BERT · Hugging Face','BERT: Pre-training of Deep Bidirectional Transformers']],
+  ['Frontend web development',['place-items - Tailwind CSS','useDeferredValue – React']],
+  ['Programming language references',['Data model — Python','C# Guide','Generator.prototype.next()','Go specification','TypeScript Optional Parameters']],
+  ['Python web and data tools',['Use time-travel — LangChain','Validation Errors | Pydantic','WebSockets - FastAPI']],
+  ['PyTorch neural network components',['GELU — PyTorch','LayerNorm — PyTorch','Linear — PyTorch','Transformer — PyTorch']],
+ ];
+ const c={id:'research',name:'Programming and Machine Learning',note:'Reference materials for programming and machine learning.',groups:[],links:[]};
+ const answer=[];
+ for(const [name,titles] of topics){const ids=[];for(const title of titles){const id=c.links.length+1;ids.push(id);c.links.push({id:'saved-'+id,title,url:'https://docs.example/'+id,note:id===1?'Compare BERT references.':''});}answer.push({name,ids});}
+ const tabs=c.links.map((l,i)=>({id:100001+i,title:l.title,url:l.url,groupId:i%2?71:-1})).reverse();
+ const before=structuredClone({c,tabs}),requests=[];
+ const fetcher=async(url,options)=>{requests.push({url,body:JSON.parse(options.body)});return aiResponse(answer);};
+ const saved=await organiseCollection(c,settings,'',fetcher);
+ const open=await organiseTabs(tabs,settings,'',fetcher,{collection:c});
+ assert.deepEqual(requests[0],requests[1],'Surface-specific prompts or settings must not change the grouping request');
+ assert.deepEqual(open.map(g=>[g.name,g.tabIds.map(id=>tabs.find(t=>t.id===id).url)]),saved.groups.map(g=>[g.name,g.linkIds.map(id=>c.links.find(l=>l.id===id).url)]));
+ assert.deepEqual({c,tabs},before,'Planning must not alter tabs or collection metadata');
+ assert(open.every(g=>Object.keys(g).sort().join(',')==='name,tabIds'));
+});
+
+test('open-tab grouping shares bounded repair and maps compact IDs back to native tabs',async()=>{
+ const tabs=[0,1,2,3].map(i=>({id:900000+i,title:'Reference '+i,url:'https://example.org/'+i,groupId:i%2?-1:23}));
+ let calls=0;
+ const groups=await organiseTabs(tabs,settings,'',async(_url,options)=>{
+  const payload=JSON.parse(JSON.parse(options.body).messages[0].content.split('\nData: ')[1]);
+  assert.deepEqual(payload.groupable,[2,4]);assert.deepEqual(payload.links.map(l=>l.id),[1,2,3,4]);
+  assert(payload.links.every(l=>!('groupId' in l)));
+  return aiResponse([{name:'Useful references',ids:++calls===1?[1,2]:['2','4']}]);
+ },{regroupExisting:false});
+ assert.equal(calls,2);assert.deepEqual(groups,[{name:'Useful references',tabIds:[900001,900003]}]);
+});
+
+test('open-tab context preserves duplicate-page notes but excludes an unrelated collection overview',async()=>{
+ const c={name:'Private project overview',note:'Not relevant to the full selection',groups:[],links:[
+  {id:'a',title:'First document',url:'https://example.org/document',note:'First note'},
+  {id:'b',title:'Second document',url:'https://example.org/document',note:'Second note'},
+  {id:'other',title:'Unselected resource',url:'https://example.org/hidden',note:'Do not send this note'},
+ ]};
+ const tabs=[{id:51,title:'Second document',url:'https://example.org/document',groupId:-1},{id:52,title:'First document',url:'https://example.org/document',groupId:-1},{id:53,title:'Unrelated',url:'https://elsewhere.example',groupId:-1}];
+ await organiseTabs(tabs,settings,'',async(_url,options)=>{
+  const prompt=JSON.parse(options.body).messages[0].content,payload=JSON.parse(prompt.split('\nData: ')[1]);
+  assert.equal(payload.name,'Open tabs');assert.equal(payload.note,'');
+  assert.deepEqual(payload.links.map(l=>l.note),['Second note','First note','']);
+  assert(!prompt.includes('Private project'));assert(!prompt.includes('Do not send this note'));
+  return aiResponse([{name:'Documents',ids:[1,2]}]);
+ },{collection:c});
+});
+
+test('an all-excluded open-tab action sends no AI request',async()=>{
+ let calls=0;
+ await assert.rejects(organiseTabs([{id:1,title:'Existing group',url:'https://example.org',groupId:7}],settings,'',async()=>{calls++;return aiResponse([]);},{regroupExisting:false}),/Select 1–300 tabs/);
+ assert.equal(calls,0);
 });

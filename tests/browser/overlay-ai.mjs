@@ -5,10 +5,10 @@ export async function checkOverlayAI({app,rpc,read,click,wait,results,triggerSwi
   let requests=0;
   const server=http.createServer(async(req,res)=>{
     let raw='';for await(const part of req)raw+=part;
-    const tabs=JSON.parse(JSON.parse(raw).messages[0].content.split('\nData: ')[1]);
+    const context=JSON.parse(JSON.parse(raw).messages[0].content.split('\nData: ')[1]);
     requests++;
     res.setHeader('Content-Type','application/json');
-    res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({groups:[{name:'Overlay research',tabIds:tabs.map(t=>t.id)}]})}}]}));
+    res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({name:'Overlay research',note:'Research references.',groups:[{name:'Overlay research',ids:context.groupable}]})}}]}));
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try {

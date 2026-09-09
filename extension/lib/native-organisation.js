@@ -8,6 +8,10 @@ import {nativeColor} from './colors.js';
 export function nativeOrganisation({browser,db,ops,sessions}) {
   const scopeFor=(active,windowId)=>active[windowId]?.collectionId||'unassigned';
   const signature=(tab,groups)=>({url:tab.resourceUrl||tab.url,group:groups.find(g=>g.id===tab.groupId)?.title??null,groupId:tab.groupId,index:tab.index});
+  // Tab identity survives navigation and moves between windows. A manual
+  // ungroup stays in effect for this tab, without excluding other copies of its URL.
+  const observedTabs=observations=>Object.assign({},...Object.values(observations).map(w=>w.tabs));
+  const keepUngrouped=(tab,old)=>tab.groupId<0&&!!(old?.ungroupedByUser||old?.groupId>=0);
   async function observe(windowId,tabs,groups,scope) {
     const observations=(await browser.storage.session.get('neoOrganisationObserved')).neoOrganisationObserved||{};
     const previous=observations[windowId];
@@ -35,11 +39,13 @@ export function nativeOrganisation({browser,db,ops,sessions}) {
     if(changed)await browser.storage.local.set({neoOrganisationCorrections:corrections.slice(-2000)});
     return corrections.filter(c=>c.scope===scope);
   }
-  async function remember(windowId,scope) {
+  async function remember(windowId,scope,ungroupedIds=[]) {
     const tabs=(await ops.live()).filter(t=>t.windowId===windowId&&!t.pinned).sort((a,b)=>a.index-b.index);
     const groups=await browser.tabGroups.query({windowId});
     const observed=(await browser.storage.session.get('neoOrganisationObserved')).neoOrganisationObserved||{};
-    observed[windowId]={scope,tabs:Object.fromEntries(tabs.map(t=>[t.id,signature(t,groups)]))};
+    const previous=observedTabs(observed);
+    const keep=new Set(ungroupedIds);
+    observed[windowId]={scope,tabs:Object.fromEntries(tabs.map(t=>[t.id,{...signature(t,groups),ungroupedByUser:keepUngrouped(t,previous[t.id])||(t.groupId<0&&keep.has(t.id))}]))};
     const ids=new Set((await browser.windows.getAll({windowTypes:['normal']})).map(w=>String(w.id)));
     for(const id of Object.keys(observed))if(!ids.has(id))delete observed[id];
     await browser.storage.session.set({neoOrganisationObserved:observed});
@@ -56,14 +62,14 @@ export function nativeOrganisation({browser,db,ops,sessions}) {
     if(state.settings.autoGroup!==false) {
       const buckets=new Map();
       const stored=(await browser.storage.session.get('neoGroupKeys')).neoGroupKeys||{},owned=stored[windowId]||{};
+      const previous=observedTabs((await browser.storage.session.get('neoOrganisationObserved')).neoOrganisationObserved||{});
       for(const tab of tabs) {
-        if(corrections.some(x=>x.url===(tab.resourceUrl||tab.url)&&x.manualGroup))continue;
+        if(tab.groupId>=0||keepUngrouped(tab,previous[tab.id]))continue;
         const match=findRule(tab,state.settings.rules);
         const site=state.settings.websiteGrouping!==false?website(tab.resourceUrl||tab.url):null;
         const rule=match||(site?{group:site.name,color:'random',siteKey:site.key}:null);if(!rule||rule.exclude)continue;
         const name=templateName(rule.group,[tab],{space:state.spaces.find(s=>s.id===c?.spaceId)?.name||''});
         const targetKey=rule.siteKey||'rule:'+name;
-        if(tab.groupId>=0&&(!owned[tab.groupId]||owned[tab.groupId]===targetKey))continue;
         if(!buckets.has(targetKey))buckets.set(targetKey,{name,rule,key:targetKey,tabs:[]});buckets.get(targetKey).tabs.push(tab);
       }
       for(const bucket of buckets.values()) {
@@ -73,7 +79,7 @@ export function nativeOrganisation({browser,db,ops,sessions}) {
         if(!valid.length)continue;
         const existing=groups.find(g=>g.title===name&&(!bucket.rule.siteKey||tabs.filter(t=>t.groupId===g.id).every(t=>website(t.resourceUrl||t.url)?.key===bucket.rule.siteKey)));
         // A lone newly eligible tab does not need a new browser group.
-        if(!existing&&valid.length<2){if(bucket.tabs.some(t=>t.groupId>=0))await browser.tabs.ungroup(valid);continue;}
+        if(!existing&&valid.length<2)continue;
         const id=await browser.tabs.group({tabIds:valid,...(existing?{groupId:existing.id}:{createProperties:{windowId}})});
         if(!existing){const color=bucket.rule.color&&bucket.rule.color!=='random'?nativeColor(bucket.rule.color):variedColour(groups.map(g=>g.color));await browser.tabGroups.update(id,{title:name,color});groups.push({id,title:name,color});}
         owned[id]=bucket.key;

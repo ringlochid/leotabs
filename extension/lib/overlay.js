@@ -75,18 +75,22 @@ async function toggleSwitcher(tab, mode) {
   } catch {
     // Protected browser pages cannot host content scripts. Keep the fallback
     // bounded too, preserving the source window for all tab operations.
-    const source = await chrome.windows.get(tab.windowId);
+    await openSwitcherPopup(tab.windowId, mode);
+  }
+}
+
+export async function openSwitcherPopup(windowId, mode = 'switcher', continuation) {
+    const source = await chrome.windows.get(windowId);
     const width = Math.min(mode === 'search' ? 720 : 1180, source.width - 64),
       height = Math.min(mode === 'search' ? 520 : 760, source.height - 100);
-    await chrome.windows.create({
-      url: chrome.runtime.getURL('quick.html?window=' + tab.windowId + '&mode=' + mode),
+    return chrome.windows.create({
+      url: chrome.runtime.getURL('quick.html?' + new URLSearchParams({window:windowId, mode, ...(continuation ? {continuation} : {})})),
       type: 'popup',
       width,
       height,
       left: Math.round(source.left + (source.width - width) / 2),
       top: Math.round(source.top + (source.height - height) / 2),
     });
-  }
 }
 
 export async function isOverlaySender(message, sender) {

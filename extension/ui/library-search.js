@@ -11,6 +11,17 @@ export function matchesPage(page, query) {
     .split(/\s+/u)
     .every((term) => text.includes(term));
 }
+
+export function matchesCollection(collection, query) {
+  return !query.trim() || countCollectionMatches(collection, query) > 0;
+}
+
+export function countCollectionMatches(collection, query) {
+  if (!query.trim()) return 0;
+  return Number(matchesPage({ title: collection.name, note: collection.note }, query)) +
+    collection.groups.filter(group => matchesPage({ title: group.name }, query)).length +
+    collection.links.filter(link => matchesPage(link, query)).length;
+}
 export function highlightMatches(root, query) {
   const terms = [...new Set(query.trim().split(/\s+/u).filter(Boolean))].sort(
     (a, b) => b.length - a.length,

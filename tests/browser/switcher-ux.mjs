@@ -65,6 +65,20 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
   await click('Group');
   await waitFor(`return !!root.querySelector('.group-name-slot input');`);
   assert.equal(await read(`return !!root.querySelector('dialog[open]');`), false);
+  const renameBounds = async () => read(`
+    const input=root.querySelector('.group-name-slot input'),slot=input.parentElement,card=input.closest('.switcher-card');
+    const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};};
+    return {input:rect(input),slot:rect(slot),preview:card.querySelector('.group-preview')?rect(card.querySelector('.group-preview')):null,
+      close:rect(card.querySelector('.tile-close')),count:card.closest('.tab-list')?rect(card.querySelector('.preview-info')):null,minimum:getComputedStyle(input).minHeight};
+  `);
+  const assertRenameFits = async () => {
+    const bounds=await renameBounds();
+    assert(bounds.input.height<=bounds.slot.height+0.5,'Rename input exceeds its header slot: '+JSON.stringify(bounds));
+    if(bounds.close.width)assert(bounds.input.right<=bounds.close.x,'Rename input overlaps the close control');
+    if(bounds.count)assert(bounds.input.right+4<=bounds.count.x,'Rename input overlaps the tab count');
+    if(bounds.preview)assert(bounds.input.bottom<=bounds.preview.y,'Rename input overlaps the previews');
+  };
+  await assertRenameFits();
   await read(`root.querySelector('.group-name-slot input').value='Focus work';`);
   await delay(2800);
   assert.equal(await read(`return root.querySelector('.group-name-slot input').value;`), 'Focus work');
@@ -74,6 +88,31 @@ export async function checkSwitcherUX({ read, rpc, app, pin, nativePage, out, re
   );
   const native = (await rpc('load')).groups.find((g) => g.title === 'Focus work');
   assert(native);
+  // Editing must occupy the label's exact box in both layouts, including long names.
+  await read(`root.querySelector('#select-mode').click();`);
+  for (const mode of ['Previews', 'List']) {
+    await click(mode);
+    await waitFor(`return !![...root.querySelectorAll('.group-name')].find(n=>n.textContent==='Focus work');`);
+    const label = await read(`
+      const n=[...root.querySelectorAll('.group-name')].find(n=>n.textContent==='Focus work'),r=n.getBoundingClientRect(),s=getComputedStyle(n);
+      return {x:r.x,y:r.y,width:r.width,height:r.height,font:s.font,padding:s.padding};
+    `);
+    await click('Rename Focus work');
+    await waitFor(`return !!root.querySelector('.group-name-slot input');`);
+    await read(`const i=root.querySelector('.group-name-slot input');i.value='Programming languages and runtimes with a very long group name';i.select();`);
+    await assertRenameFits();
+    const input = (await renameBounds()).input;
+    for (const key of ['x','y','width','height'])
+      assert(Math.abs(input[key]-label[key])<0.5,`${mode} rename changed ${key}: ${JSON.stringify({label,input})}`);
+    assert.deepEqual(await read(`const s=getComputedStyle(root.querySelector('.group-name-slot input'));return {font:s.font,padding:s.padding};`),{font:label.font,padding:label.padding});
+    await screenshot('switcher-rename-'+mode.toLowerCase());
+    await read(`root.querySelector('.group-name-slot input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));`);
+    assert.equal((await rpc('load')).groups.find(g=>g.id===native.id).title,'Focus work','Cancel must preserve the group name');
+  }
+  await click('Previews');
+  await read(`root.querySelector('#select-mode').click();`);
+  await read(`[...root.querySelectorAll('.group-tile')].find(n=>n.textContent.includes('Focus work')).querySelector('.group-select').click();`);
+  results.push('Group rename keeps the label bounds and typography in preview/list views; long names do not overlap previews or close controls; Enter saves and Escape cancels');
   await rpc('settings', { settings: { theme: 'dark' } });
   await waitFor(`return getComputedStyle(root.host).colorScheme==='dark';`);
   await screenshot('switcher-select');

@@ -27,15 +27,17 @@ import { rasterCanvas } from './raster.js';
 import { installAltKeyGuard } from './alt-key.js';
 
 export async function startQuick() {
+  const continuationToken = globalThis.__neoOverlayContext ? null : new URLSearchParams(location.search).get('continuation');
+  const continuation = continuationToken ? await rpc('switcher-continuation', {token:continuationToken}) : null;
   const searchOnly =
     (globalThis.__neoOverlayContext?.mode || new URLSearchParams(location.search).get('mode')) ===
     'search';
   let data = await rpc('load',{includeTimeline:false}),
     win = await currentWindow(),
-    groupId = null;
-  let browseMode = 'window',
-    audioOnly = false;
-  let list = false,
+    groupId = continuation?.groupId ?? null;
+  let browseMode = continuation?.browseMode === 'all' ? 'all' : 'window',
+    audioOnly = continuation?.audioOnly === true;
+  let list = continuation?.list === true,
     selecting = false,
     controller,
     disposed = false,
@@ -51,6 +53,7 @@ export async function startQuick() {
   const close = () =>
     globalThis.__neoCloseOverlay ? globalThis.__neoCloseOverlay() : window.close();
   const search = el('input', { id: 'quick-search', type: 'search', 'aria-label': 'Search tabs', 'aria-keyshortcuts': '/', title: 'Press / to search' });
+  search.value = continuation?.query || '';
   const results = el('main', { id: 'quick-results', class: 'quick-grid' });
   const scope = el('div', { class: 'search-scope', hidden: true });
   const scopeBar = el('div', {
@@ -147,22 +150,7 @@ export async function startQuick() {
   );
   const closeButton = button(
     'Close tabs',
-    task(() =>
-      manage(async () => {
-        const op = await rpc('close', { tabIds: [...selected] });
-        selected.clear();
-        await refresh();
-        const feedback = operationFeedback(op, 'close');
-        if (!disposed && feedback)
-          toast(feedback.message, {
-            error: feedback.error,
-            undo: task(async () => {
-              await rpc('undo-action', { id: op.id, windowId: win });
-              await refresh();
-            }),
-          });
-      }),
-    ),
+    task(() => closeTabs([...selected])),
     { glyph: 'close' },
   );
   const selectAll = button('Select all', () => {
@@ -186,6 +174,7 @@ export async function startQuick() {
     closeButton,
   );
   closeButton.classList.add('close-selected');
+  closeButton.setAttribute('aria-keyshortcuts', 'Alt+W');
   selectAll.classList.add('icon-button');
   selectAll.replaceChildren(icon('select'));
   clear.classList.add('icon-button');
@@ -342,12 +331,33 @@ export async function startQuick() {
     revealResult(results, node);
   }
   async function closeSingle(entry) {
-    if (entry.tab.pinned || busy) return;
-    const index = [...results.querySelectorAll('.switcher-card')].indexOf(entry.node);
+    return closeTabs(entry.ids, entry);
+  }
+  async function closeTabs(ids, entry, focusIndex) {
+    if (busy) return;
+    const unpinned = allTabs().filter(t => ids.includes(t.id) && !t.pinned).map(t => t.id);
+    if (!unpinned.length) return;
+    const cards = [...results.querySelectorAll('.switcher-card')];
+    const target = entry?.node || root.activeElement?.closest('.switcher-card') ||
+      [...tiles.values()].find(tile => tile.ids.some(id => unpinned.includes(id)))?.node;
+    const index = focusIndex ?? Math.max(0, cards.indexOf(target));
     await manage(async () => {
-      await rpc('close', { tabIds: [entry.tab.id] });
-      await refresh();
+      const op = await rpc('close-switcher-tabs', { tabIds: unpinned, focusIndex:index, browseMode, list, groupId, audioOnly, query:search.value });
+      if (op.continued) { close(); return; }
+      selected.clear();
+      if (groupId !== null && !allTabs().some(t => t.groupId === groupId && !unpinned.includes(t.id))) groupId = null;
+      await refresh({settle:true});
+      const feedback = operationFeedback(op, 'close');
+      if (!disposed && feedback) toast(feedback.message, {
+        error: feedback.error,
+        undo: op.closed?.length ? task(async () => {
+          await rpc('undo-action', { id: op.id, windowId: win });
+          await refresh({settle:true});
+          focusFirstTab();
+        }) : undefined,
+      });
     });
+    if (disposed) return;
     const buttons = [...results.querySelectorAll('.preview-tile,.tab-choice')];
     focusResult(buttons[Math.min(index, buttons.length - 1)] || search);
   }
@@ -487,7 +497,8 @@ export async function startQuick() {
       entry.node.classList.toggle('is-selected', selecting && count > 0);
       entry.mark.hidden = !selecting;
       entry.mark.textContent = count === entry.ids.length ? '✓' : count ? '−' : '';
-      entry.rowActions.hidden = selecting || entry.isGroup;
+      entry.rowActions.hidden = selecting;
+      entry.closeOne.disabled = busy || !!entry.tab.pinned;
       if (selecting)
         entry.button.setAttribute(
           'aria-pressed',
@@ -704,6 +715,7 @@ export async function startQuick() {
       task(() => closeSingle(entry)),
       { glyph: 'close', quiet: true, className: 'tile-close' },
     );
+    closeOne.setAttribute('aria-keyshortcuts', 'Alt+W Delete');
     const muteOne = button(
       'Mute tab',
       task(async () => {
@@ -797,13 +809,13 @@ export async function startQuick() {
           (browseMode === 'all'
             ? ' · ' + (tab.windowId === win ? 'This window' : 'Window ' + tab.windowId)
             : '');
-      entry.rowActions.hidden = isGroup || selecting;
+      entry.rowActions.hidden = selecting;
       entry.closeOne.disabled = !!tab.pinned || busy;
       entry.closeOne.title = tab.pinned
         ? 'Unpin this tab before closing it'
-        : 'Close tab: ' + entry.name;
+        : isGroup ? 'Close group · ' + members.length + ' tabs (Alt+W)' : 'Close tab: ' + entry.name + ' (Alt+W)';
       entry.closeOne.setAttribute('aria-label', entry.closeOne.title);
-      entry.muteOne.hidden = !(tab.audible || tab.mutedInfo?.muted);
+      entry.muteOne.hidden = isGroup || !(tab.audible || tab.mutedInfo?.muted);
       entry.muteOne.title = tab.mutedInfo?.muted ? 'Unmute tab' : 'Mute tab';
       entry.muteOne.setAttribute('aria-label', entry.muteOne.title);
       if (entry.meta.textContent !== text) entry.meta.textContent = text;
@@ -962,15 +974,29 @@ export async function startQuick() {
       dismiss();
       return;
     }
+    const altClose = e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+      !e.getModifierState?.('AltGraph') && e.key.toLowerCase() === 'w' &&
+      !e.target.closest('input,textarea,select,[contenteditable]');
+    if (altClose) {
+      e.preventDefault();
+      if (e.repeat || busy) return;
+      if (selecting) task(() => closeTabs([...selected]))();
+      else {
+        const card = e.target.closest('.switcher-card');
+        const entry = [...tiles.values()].find(tile => tile.node === card);
+        if (entry) task(() => closeSingle(entry))();
+      }
+      return;
+    }
     if (e.target.closest('.group-name-slot input')) return;
     if (
-      e.key === 'Delete' &&
+      e.key === 'Delete' && !e.repeat && !e.altKey && !e.ctrlKey && !e.metaKey &&
       !selecting &&
       e.target.matches('.preview-tile,.tab-choice') &&
       results.contains(e.target)
     ) {
       const entry = [...tiles.values()].find((x) => x.button === e.target);
-      if (entry && !entry.isGroup) {
+      if (entry) {
         e.preventDefault();
         task(() => closeSingle(entry))();
       }
@@ -1004,14 +1030,24 @@ export async function startQuick() {
   const onResize = () => controller.render();
   window.addEventListener('resize', onResize);
   let generation = 0,
-    lastData = JSON.stringify(data);
-  async function refresh() {
+    lastData = JSON.stringify(data), settlingRefresh = false;
+  async function refresh({settle = false} = {}) {
+    if (settlingRefresh && !settle) return;
+    if (settle) settlingRefresh = true;
+    try {
     for (const [frame, load] of previewLoads) {
       if (!frame.isConnected) previewLoads.delete(frame);
       else load();
     }
-    const g = ++generation,
-      next = await rpc('load',{includeTimeline:false,allowBusy:true});
+    const g = ++generation;
+    let next;
+    // Close/Undo must refresh the result list before restoring keyboard focus.
+    // Background checkpoints can briefly report a busy layout after the mutation.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      next = await rpc('load',{includeTimeline:false,allowBusy:!settle});
+      if (!settle || !next.layoutBusy || disposed) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
     if (disposed || g !== generation || next.layoutBusy) return;
     const nextKey = JSON.stringify(next);
     if (lastData === nextKey) return;
@@ -1022,6 +1058,9 @@ export async function startQuick() {
     renderDock();
     tools.update();
     updateSelection();
+    } finally {
+      if (settle) settlingRefresh = false;
+    }
   }
   const onMessage = (m) => {
     if (m.event === 'changed') refresh().catch(() => {});
@@ -1029,6 +1068,7 @@ export async function startQuick() {
   globalThis.chrome.runtime.onMessage.addListener(onMessage);
   // Content scripts don't receive runtime broadcasts. Reconcile periodically too.
   const timer = setInterval(() => refresh().catch(() => {}), 2500);
+  if (continuation) await closeTabs(continuation.tabIds, null, continuation.focusIndex);
   return () => {
     disposed = true;
     removeAltGuard();

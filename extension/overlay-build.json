@@ -17,12 +17,12 @@
   "lib/portable.js": "1cddee8970263b3c98b36fe242ed2c29949ab9f6735e50f4548e1925bd0d15ae",
   "ui/link-picker.js": "595e189addc8e39bb0989dcae99e53a40a5def1798dc32605d965150b5c1d8b3",
   "ui/contextual-ai.js": "51c5087e97157d056c824a15926b888134f0ed1d578ff906899ca4baec47ffee",
-  "ui/action-dialogs.js": "423c12f9bb19eea96c0d4a9cd1e317720999facd32f55d8eb80e5cfa44fffd64",
+  "ui/action-dialogs.js": "01bae4ddf83e68b44c37569a21a4ea4a3fad489717e5ca9204fc82fede961b43",
   "ui/session-list.js": "b426dab59e0487c09eaa9d7c1fe51a114193dad6833457875db89d7e36d6646e",
   "ui/tab-tools.js": "5bfc5f155d9cf86b81ebe835071ef13a866957f311de64157c397c960114a07a",
   "ui/alt-key.js": "6cc9284dcb560df1a8c36e2b05aed1426d498e04aa8741060db657fa94cac373",
-  "ui/quick.js": "0757be05522210740fd974d7ab631eb8bc734df30d0f689036fbe8cf8ee75d3d",
-  "ui/styles.css": "ba514a457207e76a2a94763c8837e5939fedb9b639786092caba69bd741344b4",
+  "ui/quick.js": "ce2d98dee1e5ab5296ddac407ae4e764791e8ca7550ff07860a6ffe1999db096",
+  "ui/styles.css": "b1d692ebdabddbf43e381e1076660196a2b64cdd379ad30c68d7344a8f0f3a08",
   "ui/overlay-entry.js": "15e3401063de55c550eb23ee7d50e7c848a50bdc92fef9df5dd358d24388c338",
-  "overlay.js": "69cf8cf1165cd5366fee0c84c6772a65418bbc47cffa64ba2a972366ae9868fd"
+  "overlay.js": "4539002f1ee2b7731d9bf21ca02dffc5023dccad7266e2178328ccf1d45a831b"
 }

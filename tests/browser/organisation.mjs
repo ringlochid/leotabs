@@ -33,5 +33,17 @@ export async function checkOrganisation({app,rpc,results,delay,origin,out}) {
   await rpc('settings',{settings:{autoGroup:true}});
   await wait(()=>app.evaluate(`Promise.all(${JSON.stringify(tabs.map(t=>t.id))}.map(id=>chrome.tabs.get(id))).then(ts=>ts[0].groupId>=0&&ts[0].groupId===ts[1].groupId)`));
   assert.equal((await rpc('load')).state.collections.find(c=>c.id===saved.collectionId)?.name,'Keep my collection');
+  const original=await app.evaluate(`chrome.tabs.get(${tabs[0].id})`);
+  await app.evaluate(`chrome.tabs.update(${tabs[0].id},{url:${JSON.stringify(origin.replace('127.0.0.1','localhost')+'/moved')}})`);
+  await delay(1200);
+  assert.equal((await app.evaluate(`chrome.tabs.get(${tabs[0].id})`)).groupId,original.groupId,'Navigation moved an auto-grouped tab');
+  await app.evaluate(`chrome.tabs.ungroup(${tabs[0].id})`);
+  await delay(400);
+  await app.evaluate(`chrome.tabs.update(${tabs[0].id},{url:${JSON.stringify(origin+'/returned')}})`);
+  await delay(1200);
+  assert.equal((await app.evaluate(`chrome.tabs.get(${tabs[0].id})`)).groupId,-1,'Navigating a manually ungrouped tab regrouped it');
+  const newcomer=await app.evaluate(`chrome.tabs.create({url:${JSON.stringify(origin+'/newcomer')},active:false})`);
+  await wait(()=>app.evaluate(`chrome.tabs.get(${newcomer.id}).then(t=>t.groupId===${original.groupId})`));
+  results.push('Background navigation preserves auto-created groups; manual ungroup survives URL changes; new matching tabs still join an existing group');
   results.push('Organisation is absent from space, collection and Settings menus; retired endpoints reject requests; legacy policies are discarded without losing names, notes or manual ordering; built-in Auto-group still creates native groups');
 }
