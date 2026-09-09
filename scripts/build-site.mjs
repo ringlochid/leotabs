@@ -19,6 +19,8 @@ await fs.copyFile('website/theme.js',out+'/assets/theme.js');
 await fs.copyFile('extension/icons/lion.svg',out+'/assets/lion.svg');
 await fs.copyFile('LICENSE',out+'/LICENSE.txt');
 await fs.copyFile('website/assets/octicons-LICENSE.txt',out+'/assets/octicons-LICENSE.txt');
+// Keep the Search Console ownership file unchanged in every published build.
+await fs.copyFile('website/verification/google345c4ce523429af8.html',out+'/google345c4ce523429af8.html');
 for(const name of ['library.png','switcher.png'])
   await fs.copyFile('website/assets/'+name,out+'/assets/'+name);
 const guides=await guidePages(fs);

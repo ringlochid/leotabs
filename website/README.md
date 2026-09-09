@@ -17,3 +17,5 @@ Publish **only website files**, never the extension repository or its history. G
 `storeUrl` is the verified live Chrome Web Store listing and is required for the installation buttons. The header links to `ringlochid/leotabs` on GitHub; repository visibility is managed separately from website publication. The GitHub mark comes from [Primer Octicons](https://github.com/primer/octicons/blob/main/icons/mark-github-24.svg), with its MIT licence retained in `assets/octicons-LICENSE.txt` and copied into the published site.
 
 After publication, verify the deployed guides and `/privacy/`, `/support/` and `/permissions/` pages without a login. Check mobile and keyboard navigation and keep the dashboard's homepage, support and privacy URLs aligned with the deployed site. Building locally does not prove deployment.
+
+Google Search Console verifies the URL-prefix property using `website/verification/google345c4ce523429af8.html`. The build copies this file unchanged to the website root, serving it at `/leotabs/google345c4ce523429af8.html`. Keep it in future deployments after verification succeeds.
