@@ -39,6 +39,8 @@ import { createOnboarding } from './onboarding.js';
 let libraryScope = 'window';
 const onboarding = createOnboarding({
   onImport: () => actions.import(),
+  getTheme: () => data.state.settings.theme,
+  onTheme: value => change('settings', {settings:{theme:value}}),
 });
 let tabTools,
   selectingTabs = false;
@@ -202,6 +204,7 @@ async function refresh() {
   const recentChanged=!data||JSON.stringify([data.recent,data.recentSessions,data.timeline])!==JSON.stringify([next.recent,next.recentSessions,next.timeline]);
   data = next;
   theme(data.state.settings.theme);
+  onboarding.syncTheme();
   if(tabsChanged) renderTabs();
   if (boardChanged) renderBoard();
   if(recentChanged) renderRecent();

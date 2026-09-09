@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,targets,extensionOrigin,extensionClient,loadedId}) {
+export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,targets,extensionOrigin,extensionClient,loadedId,triggerSwitcher}) {
   const wait=async(fn,message)=>{
     for(let i=0;i<100;i++){const value=await fn();if(value)return value;await delay(100);}
     throw Error(message);
@@ -21,6 +21,7 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
     await settled();
   };
   const snapshot=async name=>{
+    await tour.send('Page.bringToFront');
     await settled();
     await fs.writeFile(path.join(out,name+'.png'),Buffer.from((await tour.send('Page.captureScreenshot')).data,'base64'));
   };
@@ -30,20 +31,89 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
   assert.equal((await rpc('load')).state.collections.length,0,'Onboarding must not seed or save user tabs');
   assert.deepEqual(await app.evaluate('chrome.permissions.getAll().then(p=>p.origins||[])'),[],'Onboarding requests no website access');
   assert.equal(await state(),'shown');
-  assert(await noMockUI(),'Guide still includes theme selection or mock media');
-  results.push('A real first installation opens one guided library without theme setup, mock media, sample collections or extra access');
+  assert(await noMockUI(),'Guide includes mock media');
+  assert.equal(await tour.evaluate('!!document.querySelector(".tour-import")'),false,'Import appears before the final step');
+  assert.deepEqual(await tour.evaluate('[...document.querySelectorAll("[data-tour-theme]")].map(b=>b.textContent)'),['System','Dark','Light']);
+  results.push('A real first installation opens one guided library with theme choices, no sample collections and no extra access');
 
   await tour.send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+  // Compare settled colors without background-tab CSS transitions. Motion is
+  // tested separately below after restoring the browser's normal preference.
+  await app.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await tour.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
   // Compare computed styles against the real Import dialog, not copied constants.
   await app.evaluate('document.querySelector("#imports").click()');
   await wait(()=>app.evaluate('!!document.querySelector("dialog[open] .dialog-head")'),'Reference dialog missing');
   const styleScript='(()=>{const d=document.querySelector("dialog[open]"),h=d.querySelector(".dialog-head"),t=h.querySelector("h2"),b=d.querySelector(".dialog-body"),s=getComputedStyle(d);return {radius:s.borderRadius,shadow:s.boxShadow,background:s.backgroundColor,border:s.borderTopColor,headPadding:getComputedStyle(h).padding,bodyPadding:getComputedStyle(b).padding,font:getComputedStyle(t).fontSize,weight:getComputedStyle(t).fontWeight};})()';
   assert.deepEqual(await tour.evaluate(styleScript),await app.evaluate(styleScript),'Guide does not match the shared dialog styles');
+  const buttonStyle=selector=>'(()=>{const s=getComputedStyle(document.querySelector('+JSON.stringify(selector)+'));return Object.fromEntries(["borderRadius","padding","minHeight","fontSize","fontWeight","lineHeight","borderTopWidth","borderTopColor","backgroundColor","color"].map(k=>[k,s[k]]));})()';
+  const referenceSettled=()=>wait(()=>app.evaluate('!document.querySelector("dialog[open]").getAnimations({subtree:true}).some(a=>a.playState==="running")'),'Reference button colors did not settle');
+  const secondaryStyles=new Map();
+  await app.evaluate('document.querySelector("dialog details").open=true');
+  for(const value of ['dark','light','system']) {
+    await rpc('settings',{settings:{theme:value}});
+    await wait(()=>app.evaluate('document.documentElement.dataset.theme==='+JSON.stringify(value)),'Reference theme did not apply');
+    await referenceSettled();
+    secondaryStyles.set(value,await app.evaluate(buttonStyle('dialog .dialog-action')));
+  }
+  // Review a local fixture without importing it, to compare real primary/secondary buttons.
+  const importFile=path.join(out,'theme-button-reference.md');
+  await fs.writeFile(importFile,'# Reading\n- [Example](https://example.org/)\n');
+  await app.evaluate('document.querySelector("dialog details").open=true');
+  const doc=await app.send('DOM.getDocument');
+  const input=await app.send('DOM.querySelector',{nodeId:doc.root.nodeId,selector:'dialog input[type=file]'});
+  await app.send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[importFile]});
+  await wait(()=>app.evaluate('document.querySelector("dialog[open] h2")?.textContent==="Review import"'),'Import review missing');
+  const host=await app.evaluate('chrome.tabs.create({url:'+JSON.stringify(origin+'/button-reference')+',active:false})');
+  await wait(()=>app.evaluate('chrome.tabs.get('+host.id+').then(t=>t.status==="complete"&&!t.pendingUrl)'),'Button reference host did not load');
+  await triggerSwitcher(host);
+  const read=code=>app.evaluate('chrome.scripting.executeScript({target:{tabId:'+host.id+'},func:()=>{const root=globalThis.__neoSurface;'+code+'}}).then(r=>r[0].result)');
+  await wait(()=>read(`return !!root?.querySelector('.tab-tools [aria-label="Save tabs"]')`),'Switcher toolbar missing');
+  await read(`root.querySelector('.tab-tools [aria-label="Save tabs"]').click()`);
+  await wait(()=>read('return !!root?.querySelector(".action-popover footer>.primary")'),'Switcher save dialog missing');
+  const hostTarget=await wait(async()=>(await targets()).find(t=>t.url===origin+'/button-reference'),'Switcher reference target missing');
+  const hostPage=await connect(hostTarget.webSocketDebuggerUrl);
+  await hostPage.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  for(const name of ['Dark','Light','System']) {
+    const value=name.toLowerCase();
+    await click(name);
+    await wait(async()=>(await rpc('load')).state.settings.theme===value,'Theme choice was not saved');
+    await wait(()=>tour.evaluate('document.documentElement.dataset.theme==='+JSON.stringify(value)+' && !!document.querySelector("[data-tour-theme='+value+'][aria-pressed=true]:not(:disabled)")'),'Theme choice did not update the guide');
+    await wait(()=>app.evaluate('document.documentElement.dataset.theme==='+JSON.stringify(value)),'Other library did not receive theme change');
+    await settled();await referenceSettled();
+    await wait(()=>read('return root.host.dataset.theme==='+JSON.stringify(value)+' && !root.querySelector(".action-popover").getAnimations({subtree:true}).some(a=>a.playState==="running")'),'Switcher button colors did not settle');
+    assert.equal(await tour.evaluate('document.querySelectorAll("[data-tour-theme][aria-pressed=true]").length'),1);
+    assert.deepEqual(await tour.evaluate(buttonStyle('.tour-footer>.primary')),await app.evaluate(buttonStyle('dialog footer>.primary')),'Next differs from shared primary buttons');
+    const secondary=secondaryStyles.get(value);
+    assert(await tour.evaluate('(()=>{const s=getComputedStyle(document.querySelector(".tour-skip"));return s.backgroundColor==="rgba(0, 0, 0, 0)"&&s.borderTopColor==="rgba(0, 0, 0, 0)"&&s.paddingLeft==="0px"&&s.paddingRight==="0px";})()'),'Skip must keep its text-only style');
+    assert.deepEqual(await tour.evaluate(buttonStyle('[data-tour-theme][aria-pressed=false]')),secondary,'Theme controls differ from shared buttons in '+value);
+    assert.deepEqual(await tour.evaluate(buttonStyle('.tour-footer>.primary')),await read('return '+buttonStyle('.action-popover footer>.primary').replace('document.querySelector','root.querySelector')),'Guide and switcher primary buttons differ in '+value);
+    assert.deepEqual(secondary,await read('return '+buttonStyle('.action-popover footer>button:not(.primary)').replace('document.querySelector','root.querySelector')),'Library and switcher secondary buttons differ in '+value);
+    if(value!=='system') {
+      await snapshot('welcome-'+value);
+      await hostPage.send('Page.bringToFront');
+      await fs.writeFile(path.join(out,'switcher-buttons-'+value+'.png'),Buffer.from((await hostPage.send('Page.captureScreenshot')).data,'base64'));
+    }
+  }
+  await read('globalThis.__neoCloseOverlay()');
+  await app.evaluate('chrome.tabs.remove('+host.id+')');
+  const systemBackgrounds=[];
+  for(const scheme of ['dark','light']) {
+    await tour.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:scheme}]});
+    assert(await tour.evaluate('document.documentElement.dataset.theme==="system" && !!document.querySelector("[data-tour-theme=system][aria-pressed=true]")'));
+    assert.equal(await tour.evaluate('getComputedStyle(document.documentElement).colorScheme'),'light dark');
+    systemBackgrounds.push(await tour.evaluate('getComputedStyle(document.querySelector("#onboarding-dialog")).backgroundColor'));
+    await snapshot('welcome-system-'+scheme);
+  }
+  assert.notEqual(systemBackgrounds[0],systemBackgrounds[1],'System theme did not follow OS appearance');
+  await tour.send('Emulation.setEmulatedMedia',{features:[]});
+  await app.send('Emulation.setEmulatedMedia',{features:[]});
   await app.evaluate('document.querySelector("dialog[open]").close()');
   assert((await geometry()).centered,'Welcome must be centered');
-  await rpc('settings',{settings:{theme:'dark'}});
+  await click('Dark');
   await wait(()=>tour.evaluate('document.documentElement.dataset.theme==="dark"'),'Dark theme did not apply');
   await snapshot('tour-01-welcome-dark');
+  results.push('System/Dark/Light choices persist through Settings; System follows the OS; guide actions match library and switcher buttons while Skip stays text-only');
 
   // Freeze the transition mid-flight and confirm that position really changes.
   const animation=await tour.evaluate('(()=>{const d=document.querySelector("#onboarding-dialog"),before=d.getBoundingClientRect();Array.from(d.querySelectorAll("button")).find(b=>b.textContent==="Next").click();const a=d.getAnimations().find(a=>a.id==="tour-position"),content=d.getAnimations({subtree:true}).find(a=>a.id==="tour-content");if(!a)return {exists:false};a.pause();a.currentTime=100;const middle=d.getBoundingClientRect();a.play();return {exists:true,duration:a.effect.getTiming().duration,moved:Math.abs(before.left-middle.left)>1||Math.abs(before.top-middle.top)>1,content:!!content};})()');
@@ -151,24 +221,26 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
     await wait(()=>tour.evaluate('document.documentElement.dataset.theme==='+JSON.stringify(theme)),'Theme did not apply');
     for(const [width,height] of [[1440,1000],[390,844],[320,568]]) {
       await tour.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});
-      for(let i=1;i<=9;i++) {
+      for(let i=1;i<=10;i++) {
         await tour.evaluate('document.querySelectorAll(".tour-dots button")['+(i-1)+'].click()');
         await step(i);
         const g=await geometry();
         assert(g.fits,'Guide step '+i+' overflows '+width+'px');
-        if([1,4,5,8,9].includes(i))assert(g.centered,'General step '+i+' is not centered at '+width+'px');
+        if([1,4,5,8,9,10].includes(i))assert(g.centered,'General step '+i+' is not centered at '+width+'px');
+        assert.equal(await tour.evaluate('!!document.querySelector(".tour-import")'),i===10,'Import must appear only on the final step');
         assert(await noMockUI());
         assert(await tour.evaluate('Array.from(document.querySelectorAll(".tour-body p")).map(p=>p.textContent).join(" ").split(/\\s+/).length<=20'),'Guide copy is too long');
-        if(width===390&&[2,4,9].includes(i))await snapshot('tour-'+theme+'-390-step-'+i);
+        if(width===390&&[1,2,4,9,10].includes(i))await snapshot('tour-'+theme+'-390-step-'+i);
+        if(width===1440&&i===10)await snapshot('tour-import-'+theme);
         if(width===1440&&theme==='light'&&i===4)await snapshot('tour-04-organize-light');
       }
     }
   }
-  results.push('All nine steps fit 1440px, 390px and 320px in both themes; general steps stay centered and each description stays under 20 words');
+  results.push('All ten steps fit 1440px, 390px and 320px in both themes; import appears only at the end; general steps stay centered and descriptions stay under 20 words');
 
   await tour.send('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
-  await tour.evaluate('document.querySelectorAll(".tour-dots button")[0].click()');await step(1);
-  await click('Import saved tabs');
+  await tour.evaluate('document.querySelector(".tour-dots button:last-child").click()');await step(10);
+  await click('Import');
   await wait(()=>tour.evaluate('!document.querySelector("#onboarding-dialog") && !!document.querySelector("dialog[open]")'),'Import handoff did not work');
   assert.match(await tour.evaluate('document.querySelector("dialog[open]").innerText'),/Import/);
   assert.equal(await state(),'completed');
@@ -179,6 +251,7 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
   await tour.evaluate('document.querySelectorAll(".tour-dots button")[1].click();document.querySelectorAll(".tour-dots button")[3].click();document.querySelectorAll(".tour-dots button")[8].click()');
   await step(9);assert((await geometry()).centered);
   await tour.evaluate('window.previousVideo=document.querySelector("video")');
+  await click('Next');await step(10);
   await click('Done');
   await wait(()=>tour.evaluate('!document.querySelector("#onboarding-dialog")'),'Done did not close guide');
   assert.equal(await state(),'completed');
@@ -188,6 +261,7 @@ export async function checkOnboarding({app,rpc,results,delay,origin,out,connect,
   await tour.send('Page.reload');
   await wait(()=>tour.evaluate('!!document.querySelector("#spaces .active") && !location.hash'),'Refresh repeated first-run guide');
   assert(!await tour.evaluate('!!document.querySelector("#onboarding-dialog")'));
+  assert.equal(await tour.evaluate('document.documentElement.dataset.theme'),'dark','Chosen theme did not survive reload');
   assert.equal(await state(),'shown');
   assert.equal(tour.events.length,0,JSON.stringify(tour.events));
   results.push('Settings/Help replay, import, rapid navigation, completion and refresh suppression preserve the library');

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
-import {el} from './shared.js';
+import {el,button,task} from './shared.js';
 
 export const TOUR_KEY='leotabs-onboarding-v1';
 const steps=[
-  {title:'Welcome to LeoTabs',text:'Save, organize and switch tabs.',kind:'welcome'},
+  {title:'Welcome to LeoTabs',text:'Choose your theme.',kind:'welcome'},
   {title:'Save tabs',text:'Drag tabs from the sidebar into a collection.',target:'#tabs',kind:'save',media:['save-tabs',960,640]},
   {title:'Stash all tabs',text:'Save your open tabs as a collection and close them.',target:'#tab-tools',kind:'stash',media:['stash-tabs',960,568]},
   {title:'Organize saved tabs',text:'Select saved tabs and drag them into a new collection.',kind:'organize',media:['organize',1080,600]},
@@ -12,10 +12,15 @@ const steps=[
   {title:'Search your library',target:'#tab-search',kind:'search'},
   {title:'Switch tabs',kind:'switcher',media:['switch-tabs',1080,504]},
   {title:'Pin LeoTabs for quick access',kind:'pin',media:['pin',818,430]},
+  {title:'Import saved tabs',text:'Bring your bookmarks or a LeoTabs backup.',kind:'import'},
 ];
 
-export function createOnboarding({onImport}) {
+export function createOnboarding({onImport,getTheme,onTheme}) {
   let current=null,opening=false;
+  function syncTheme() {
+    for(const choice of current?.querySelectorAll('[data-tour-theme]') || [])
+      choice.setAttribute('aria-pressed',String(choice.dataset.tourTheme===getTheme()));
+  }
   async function open({automatic=false}={}) {
     if(current || opening)return;
     opening=true;
@@ -106,7 +111,7 @@ export function createOnboarding({onImport}) {
         dialog.style.left=clamp(x,w,vw)+'px';dialog.style.top=clamp(y,h,vh)+'px';
       }
       function control(label,handler,className='') {
-        return el('button',{type:'button',class:className,onclick:handler},label);
+        return button(label,handler,{className});
       }
       function render() {
         stopVideo();
@@ -114,8 +119,23 @@ export function createOnboarding({onImport}) {
         const title=el('h2',{id:'tour-title',tabIndex:-1},step.title);
         const body=el('div',{class:'dialog-body tour-body'});
         if(step.text)body.append(el('p',{},step.text));
-        if(step.kind==='welcome')
-          body.append(control('Import saved tabs',()=>close('completed',onImport),'tour-import'));
+        if(step.kind==='welcome') {
+          const choices=el('div',{class:'tour-themes',role:'group','aria-label':'Theme'});
+          for(const [value,label] of [['system','System'],['dark','Dark'],['light','Light']]) {
+            const choice=control(label,task(async()=>{
+              if(value===getTheme())return;
+              const buttons=[...choices.querySelectorAll('button')];
+              buttons.forEach(item=>item.disabled=true);
+              try {await onTheme(value);syncTheme();}
+              finally {buttons.forEach(item=>item.disabled=false);}
+            }),'dialog-action');
+            choice.dataset.tourTheme=value;
+            choices.append(choice);
+          }
+          body.append(choices);
+        }
+        if(step.kind==='import')
+          body.append(control('Import',()=>close('completed',onImport),'dialog-action tour-import'));
         if(step.kind==='search')
           body.append(el('p',{},'Press ',el('kbd',{},'/'),' to search your library.'));
         if(step.kind==='switcher') {
@@ -166,6 +186,7 @@ export function createOnboarding({onImport}) {
         dialog.dataset.kind=step.kind;
         dialog.dataset.media=String(!!step.media);
         dialog.scrollTop=0;
+        syncTheme();
       }
       function go(next) {
         if(next===index)return;
@@ -222,5 +243,5 @@ export function createOnboarding({onImport}) {
     } finally {opening=false;}
   }
   function clearRoute(){if(['#onboarding','#tour'].includes(location.hash))history.replaceState(null,'',location.pathname+location.search);}
-  return {open};
+  return {open,syncTheme};
 }
