@@ -6,6 +6,7 @@ import {variedColour} from './lib/website-groups.js';
 import { repairParkedTabs } from './lib/parked.js';
 import { validColor, randomCollectionColor } from './lib/colors.js';
 import { groupAndSortCollection } from './lib/collection-arrangement.js';
+import { placeCollectionItems, syncCollectionOrder } from './lib/collection-order.js';
 import {nativeOrganisation} from './lib/native-organisation.js';
 import {libraryAccess} from './lib/library-access.js';
 import { updateIdentity, invalidateIdentity } from './lib/identity.js';
@@ -315,6 +316,7 @@ async function dispatch(action, data = {}, sender = {}) {
           const restored = row.version ? row.snapshot : mirrorCollection(c, row.snapshot);
           c.links = structuredClone(restored.links);
           c.groups = structuredClone(restored.groups);
+          c.itemOrder = structuredClone(restored.itemOrder);
           c.note = restored.note || '';
           c.updatedAt = stamp();
           return { beforeCollection, versionWindowId: targetWindow };
@@ -645,6 +647,7 @@ async function dispatch(action, data = {}, sender = {}) {
             JSON.stringify([
               c.links.map((l) => [l.id, l.url, l.groupId]),
               c.groups.map((g) => [g.id, g.name, g.color]),
+              c.itemOrder,
             ]);
           const beforeMembership = new Map(
             s.collections.filter((c) => activeIds.has(c.id)).map((c) => [c.id, membership(c)]),
@@ -777,6 +780,8 @@ async function dispatch(action, data = {}, sender = {}) {
               l.groupId = dest.groups.some((g) => g.id === data.groupId) ? data.groupId : null;
               const index = dest.links.findIndex((x) => x.id === data.beforeId);
               dest.links.splice(index < 0 ? dest.links.length : index, 0, l);
+              if (!l.groupId) placeCollectionItems(dest,[`link:${l.id}`],data.beforeId);
+              else syncCollectionOrder(dest);
               dest.updatedAt = stamp();
               break;
             }
@@ -803,6 +808,7 @@ async function dispatch(action, data = {}, sender = {}) {
               if(data.reveal)g.collapsed=false;
               dest.groups.splice(index < 0 ? dest.groups.length : index, 0, g);
               dest.links.push(...links);
+              placeCollectionItems(dest,[`group:${g.id}`],data.beforeId);
               dest.updatedAt = stamp();
               break;
             }
@@ -816,6 +822,7 @@ async function dispatch(action, data = {}, sender = {}) {
               throw new Error('This edit is not supported. Refresh the Library.');
           }
           for (const target of s.collections) {
+            syncCollectionOrder(target);
             if (data.reveal && target.id === data.destinationId) {
               target.collapsed = false;
               const group = target.groups.find(g => g.id === data.groupId);

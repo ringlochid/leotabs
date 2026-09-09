@@ -1611,9 +1611,10 @@ function collectionCard(c) {
   const baseLimit = expanded ? 80 : 8;
   const previewKey = `${c.id}:${expanded ? 'detail' : 'card'}:${query}`;
   const limit = linkLimits.get(previewKey) || baseLimit;
-  const preview = collectionPreview(ungrouped, sections, limit);
-  body.append(...preview.links.map(l => savedRow(c, l)));
-  for (const section of preview.groups) {
+  const preview = collectionPreview(ungrouped, sections, limit, c.itemOrder);
+  for (const item of preview.items) {
+    if (item.type === 'link') { body.append(savedRow(c, item.value)); continue; }
+    const section = item.value;
     const g = section.group;
     const children = c.links.filter((l) => l.groupId === g.id);
     if (

@@ -127,7 +127,7 @@ export async function checkDragPlacement({ app, rpc, results, delay, origin, out
   for(const folded of [false,true]){
     await rpc('edit',{kind:'collection',collectionId:empty.id,collapsed:folded});await delay(150);
     await app.evaluate(`document.querySelector('${card(empty.id)}').scrollIntoView({block:'nearest'})`);
-    data=await start(native(tabs[2].id)+' .tab-open');r=await rect(card(empty.id)+' .collection-head');p={x:r.left+60,y:r.top+20};
+    data=await start(native(tabs[2].id)+' .tab-open');r=await rect(card(empty.id)+(folded?' .collection-head':' .collection-body > .empty'));p={x:r.left+60,y:r.top+r.height/2};
     await over(data,p);assert.equal((await marker())?.height,2);await end(data,p);
   }
   assert.equal((await load(empty.id)).links.length,2);assert.equal((await load(empty.id)).groups.length,0);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { uid, stamp } from './model.js';
+import { placeCollectionItems, syncCollectionOrder } from './collection-order.js';
 
 // Atomic saved-link batch edits preserve link identity and prune emptied groups.
 export function editSavedSelection(collections, collectionId, data) {
@@ -44,6 +45,9 @@ export function editSavedSelection(collections, collectionId, data) {
     }));
     const index = dest.links.findIndex((l) => l.id === data.beforeId);
     dest.links.splice(index < 0 ? dest.links.length : index, 0, ...added);
+    if (explicitGroup && !targetGroup)
+      placeCollectionItems(dest,added.map(link=>`link:${link.id}`),data.beforeId);
+    else syncCollectionOrder(dest);
     dest.updatedAt = stamp();
   } else throw new Error('Unknown saved-link action.');
   c.groups = c.groups.filter(

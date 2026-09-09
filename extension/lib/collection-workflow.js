@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { safeURL } from './model.js';
+import { syncCollectionOrder } from './collection-order.js';
 export function orderedCollections(collections) {
   return [...collections].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
 }
@@ -90,10 +91,17 @@ export function mirrorCollection(collection, snapshot) {
     sourceTitle: live.title,
     groupId: mapped.get(live.groupId) || null,
   }));
-  return { ...collection, links, groups };
+  const next = { ...collection, links, groups };
+  if (Array.isArray(collection.itemOrder)) {
+    // A resumed manual layout follows the browser's actual mixed order, using
+    // the stable saved IDs established above rather than snapshot-only IDs.
+    next.itemOrder = [...new Set(links.map(link => link.groupId ? `group:${link.groupId}` : `link:${link.id}`))];
+    syncCollectionOrder(next);
+  }
+  return next;
 }
 export function collectionContentKey(c) {
-  return JSON.stringify([c.links.map((l) => [l.id, l.url, l.title, l.note, l.groupId]), c.groups]);
+  return JSON.stringify([c.links.map((l) => [l.id, l.url, l.title, l.note, l.groupId]), c.groups, c.itemOrder]);
 }
 export function tabSetKey(c) {
   return JSON.stringify(

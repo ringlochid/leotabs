@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 export const scenarios = {
+  "group-between-tabs": {
+    "file": "group-between-tabs", "run": "checkGroupBetweenTabs",
+    "description": "Whole groups between loose tabs; mixed order, copy, Undo and reload"
+  },
   "switcher-close": {
     "file": "switcher-close", "run": "checkSwitcherClose",
     "description": "Alt+W, group closing, focus, Undo and host-page continuation",

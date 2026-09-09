@@ -7,11 +7,44 @@ const node = (dataset, top, height=40) => ({
   dataset,
   getBoundingClientRect: () => ({left:20,right:320,top,bottom:top+height,width:300,height}),
 });
-const card = ({rows=[],groups=[]}={}) => ({
+const card = ({rows=[],groups=[],empty=null,controls=[]}={}) => ({
   querySelector: selector => selector === '.collection-body'
-    ? {querySelectorAll: () => rows}
+    ? {querySelectorAll: () => rows, querySelector: () => empty}
     : node({},20),
-  querySelectorAll: () => groups,
+  querySelectorAll: selector => selector === '.saved-group' ? groups : controls,
+});
+
+test('an empty collection accepts tabs, selections and whole groups throughout its empty area', () => {
+  const empty = node({}, 110, 70), control = node({},75,25);
+  control.getBoundingClientRect = () => ({left:20,right:100,top:75,bottom:100,width:80,height:25});
+  const target = card({empty,controls:[control]});
+  const collection = {id:'empty',groups:[],links:[]};
+  for (const payload of [
+    {type:'link',collectionId:'source',linkId:'one'},
+    {type:'links',collectionId:'source',linkIds:['one','two']},
+    {type:'tabs',ids:[1]},
+    {type:'tabs',ids:[1,2],wholeGroup:true},
+    {type:'group',collectionId:'source',groupId:'group'},
+  ]) {
+    for (const point of [{x:25,y:40},{x:160,y:90},{x:25,y:111},{x:160,y:145},{x:315,y:179}]) {
+      const plan = collectionDropPlan(target,collection,point,payload);
+      assert.ok(plan,'The empty-state prompt must accept drops');
+      assert.equal(plan.rect.top,109,'The only insertion position stays fixed');
+      assert.equal(plan.beforeId,undefined);
+      assert.equal(plan.group,payload.type==='group'||payload.wholeGroup===true);
+      if (!plan.group) assert.equal(plan.groupId,null);
+    }
+    for (const point of [{x:10,y:145},{x:330,y:145},{x:40,y:90},{x:160,y:200}])
+      assert.equal(collectionDropPlan(target,collection,point,payload),null,'Notes, controls and outside space remain neutral');
+  }
+});
+
+test('hidden or filtered content is not treated as an empty collection', () => {
+  const target=card({empty:node({},110,70)}),point={x:40,y:145};
+  for(const collection of [
+    {id:'c',groups:[],links:[{id:'hidden'}]},
+    {id:'c',groups:[{id:'hidden'}],links:[]},
+  ]) assert.equal(collectionDropPlan(target,collection,point,{type:'tabs'}),null);
 });
 
 test('a whole-group drop after the last visible group inserts before hidden groups', () => {
@@ -75,4 +108,14 @@ test('whole-group geometry includes the visible source and rejects tall group ce
   assert.equal(plan.rect.top,99);assert.equal(plan.beforeId,'g2');
   assert.equal(collectionDropPlan(card({groups}),collection,{x:40,y:290},payload),null);
   assert.equal(collectionDropPlan(card({groups}),collection,{x:40,y:500},payload),null);
+});
+
+test('a whole group can be inserted between ungrouped tabs without nesting', () => {
+  const rows=[node({linkId:'one'},100),node({linkId:'two'},150)];
+  const collection={id:'c',groups:[],links:[{id:'one'},{id:'two'}]};
+  for (const payload of [{type:'group',collectionId:'source',groupId:'g'},{type:'tabs',wholeGroup:true}]) {
+    const plan=collectionDropPlan(card({rows}),collection,{x:40,y:149},payload);
+    assert.ok(plan,'The gap between loose tabs must accept a whole group');
+    assert.equal(plan.group,true);assert.equal(plan.beforeId,'two');
+  }
 });

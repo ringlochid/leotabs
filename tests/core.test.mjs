@@ -210,6 +210,17 @@ test('a loose-tab drop into a new collection suppresses automatic grouping', asy
   assert.equal(f.state.collections[0].links[0].groupId, null);
 });
 
+test('a browser group saves its members between loose links in the chosen order', async () => {
+  const f=fixture([baseTab(1,{groupId:5}),baseTab(2,{groupId:5})]);
+  const destination=snapshotTabs([baseTab(10),baseTab(11)]);
+  f.state.collections.push(destination);
+  await f.ops.save({tabIds:[1,2],destinationId:destination.id,drop:{group:true,beforeId:destination.links[1].id}});
+  const saved=f.state.collections[0];
+  assert.deepEqual(saved.links.map(l=>l.title),['Page 10','Page 1','Page 2','Page 11']);
+  assert.equal(saved.itemOrder[1],`group:${saved.groups[0].id}`);
+  assert.deepEqual(saved.links.map(l=>l.groupId),[null,saved.groups[0].id,saved.groups[0].id,null]);
+});
+
 test('dropping into a tracked collection pauses mirroring and reveals the destination', async () => {
   const f = fixture([baseTab(1)]);
   const destination = { ...newCollection('Tracked'), autoUpdate:true, collapsed:true };

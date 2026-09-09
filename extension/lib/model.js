@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 export const SCHEMA = 1;
 import { validColor } from './colors.js';
+import { syncCollectionOrder } from './collection-order.js';
 import { duplicateKey } from './tab-policy.js';
 import { DEFAULT_RULES } from './arrange.js';
 import {PROVIDERS, MODEL_DEFAULTS_VERSION, migrateModelDefaults} from './providers.js';
@@ -171,7 +172,7 @@ export function validateCollections(input, { freshIds = false } = {}) {
         ...(g.manualName?{manualName:true}:{}),
       };
     });
-    const ids = new Set();
+    const ids = new Set(), linkMap = new Map();
     c.links = raw.links.map((l) => {
       if (++count > 50000) throw new Error('Import exceeds the 50,000-link limit');
       const url = safeURL(l?.url);
@@ -179,6 +180,7 @@ export function validateCollections(input, { freshIds = false } = {}) {
       const id = freshIds ? uid() : text(l.id || uid(), 100);
       if (ids.has(id)) throw new Error('The import contains duplicate link IDs');
       ids.add(id);
+      if (typeof l.id === 'string') linkMap.set(l.id, id);
       return {
         id,
         title: text(l.title || url),
@@ -189,6 +191,15 @@ export function validateCollections(input, { freshIds = false } = {}) {
         ...(l.manualGroup?{manualGroup:true}:{}),
       };
     });
+    if (Array.isArray(raw.itemOrder)) {
+      c.itemOrder = raw.itemOrder.slice(0, raw.links.length + c.groups.length).flatMap(key => {
+        if (typeof key !== 'string') return [];
+        const split = key.indexOf(':'), type = key.slice(0, split), oldId = key.slice(split + 1);
+        const id = type === 'link' ? linkMap.get(oldId) : type === 'group' ? map.get(oldId) : null;
+        return id ? [`${type}:${id}`] : [];
+      });
+      syncCollectionOrder(c);
+    }
     return c;
   });
 }

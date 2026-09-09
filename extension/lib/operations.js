@@ -4,6 +4,7 @@ import { snapshotTabs, safeURL, sameCapturedTab, stamp, uid } from './model.js';
 import { manageableURL } from './tab-policy.js';
 import { randomCollectionColor } from './colors.js';
 import {policyFor,applySavedPolicy} from './organisation.js';
+import { collectionItems, placeCollectionItems, syncCollectionOrder } from './collection-order.js';
 
 // Dependencies are explicit so failure tests use the exact production operation path.
 export function operations({ browser, db, beforeStashClose = async () => {}, afterStashClose = async () => {} }) {
@@ -156,17 +157,21 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       if (destinationId) {
         const dest = state.collections.find((c) => c.id === destinationId);
         if (!dest) throw new Error('This collection is no longer available');
-        const items = drop?.group ? dest.groups : dest.links;
+        const topDrop = drop && (drop.group || !drop.groupId);
+        const items = topDrop ? collectionItems(dest) : dest.links;
         const index = items.findIndex(item => item.id === drop?.beforeId);
         if (drop?.beforeId && index < 0) throw new Error('The drop target changed. Drag again.');
         if (drop?.group) {
-          dest.groups.splice(index < 0 ? dest.groups.length : index, 0, ...captured.groups);
+          dest.groups.push(...captured.groups);
           dest.links.push(...captured.links);
         } else {
           dest.groups.push(...captured.groups);
           dest.links.splice(index < 0 ? dest.links.length : index, 0, ...captured.links);
         }
         if (drop) {
+          if (topDrop) placeCollectionItems(dest,
+            drop.group ? captured.groups.map(g=>`group:${g.id}`) : captured.links.map(l=>`link:${l.id}`),drop.beforeId);
+          else syncCollectionOrder(dest);
           dest.manualOrder = true;
           dest.collapsed = false;
           const group = dest.groups.find(g => g.id === drop.groupId);

@@ -28,6 +28,7 @@ Saved-link selection offers actions such as Open, Group, Ungroup, Rename group, 
 
 - Drag open tabs into a collection and follow the insertion line to choose their position. The browser tabs stay open.
 - When dragging individual tabs or selected links, their source group does not come with them. Drop inside a saved group to join it; drag the group header to carry the whole group.
+- Place a whole group before, between or after ungrouped tabs. Manual order is saved; explicit Group & sort or AI organisation puts ungrouped tabs first again.
 - Dropping into a folded collection or group expands it. Editing an active saved collection pauses Auto-update so live browsing does not overwrite your placement.
 - Drag saved links or a saved group to move them; hold Ctrl while dragging to copy where the drop hint indicates copying.
 - Drag live tabs onto another live group or the Ungroup area to change membership.

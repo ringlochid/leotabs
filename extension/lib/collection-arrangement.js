@@ -32,6 +32,7 @@ export function groupAndSortCollection(c, { regroupExisting = true } = {}) {
 }
 
 export function sortCollection(c) {
+  delete c.itemOrder;
   c.groups.sort((a, b) => a.name.localeCompare(b.name));
   const byTitle = (a, b) => (a.title || '').localeCompare(b.title || '');
   c.links = [

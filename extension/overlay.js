@@ -82,6 +82,38 @@
     return message || "Couldn't complete this action. Try again.";
   }
 
+  // extension/lib/collection-order.js
+  var collectionItemKey = (item) => `${item.type}:${item.id}`;
+  function orderCollectionItems(items, order) {
+    if (!Array.isArray(order)) return items;
+    const remaining = new Map(items.map((item) => [collectionItemKey(item), item]));
+    const result = [];
+    for (const key of order) {
+      const item = remaining.get(key);
+      if (item) {
+        result.push(item);
+        remaining.delete(key);
+      }
+    }
+    return [...result, ...remaining.values()];
+  }
+  function collectionItems(c) {
+    return orderCollectionItems([
+      ...c.links.filter((link) => !link.groupId).map((link) => ({ type: "link", id: link.id, value: link })),
+      ...c.groups.map((group) => ({ type: "group", id: group.id, value: group }))
+    ], c.itemOrder);
+  }
+  function syncCollectionOrder(c) {
+    if (!Array.isArray(c.itemOrder)) return;
+    const items = collectionItems(c), members = new Map(c.groups.map((g) => [g.id, []]));
+    for (const link of c.links) if (link.groupId) members.get(link.groupId)?.push(link);
+    c.itemOrder = items.map(collectionItemKey);
+    const links = items.flatMap((item) => item.type === "link" ? [item.value] : members.get(item.id));
+    const included = new Set(links.map((link) => link.id));
+    c.links = [...links, ...c.links.filter((link) => !included.has(link.id))];
+    c.groups = items.filter((item) => item.type === "group").map((item) => item.value);
+  }
+
   // extension/lib/tab-policy.js
   function manageableURL(url = "") {
     return /^(?:https?|file|chrome|edge|chrome-extension|extension):/i.test(url) || /^about:(?:blank|newtab)/i.test(url);
@@ -233,7 +265,7 @@
           ...g.manualName ? { manualName: true } : {}
         };
       });
-      const ids = /* @__PURE__ */ new Set();
+      const ids = /* @__PURE__ */ new Set(), linkMap = /* @__PURE__ */ new Map();
       c.links = raw.links.map((l) => {
         if (++count > 5e4) throw new Error("Import exceeds the 50,000-link limit");
         const url = safeURL(l?.url);
@@ -241,6 +273,7 @@
         const id = freshIds ? uid() : text(l.id || uid(), 100);
         if (ids.has(id)) throw new Error("The import contains duplicate link IDs");
         ids.add(id);
+        if (typeof l.id === "string") linkMap.set(l.id, id);
         return {
           id,
           title: text(l.title || url),
@@ -251,6 +284,15 @@
           ...l.manualGroup ? { manualGroup: true } : {}
         };
       });
+      if (Array.isArray(raw.itemOrder)) {
+        c.itemOrder = raw.itemOrder.slice(0, raw.links.length + c.groups.length).flatMap((key) => {
+          if (typeof key !== "string") return [];
+          const split = key.indexOf(":"), type = key.slice(0, split), oldId = key.slice(split + 1);
+          const id = type === "link" ? linkMap.get(oldId) : type === "group" ? map.get(oldId) : null;
+          return id ? [`${type}:${id}`] : [];
+        });
+        syncCollectionOrder(c);
+      }
       return c;
     });
   }

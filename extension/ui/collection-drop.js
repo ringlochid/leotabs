@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 import { nearestRow, rowSlot } from './insertion.js';
+import { collectionItems } from '../lib/collection-order.js';
 
 const NEUTRAL = 4;
 const EDGE_REACH = 24;
@@ -40,29 +41,40 @@ export function collectionDropPlan(card, collection, point, payload, {copy = fal
   const excluded = new Set(own ? groupDrag ? [payload.groupId] : payload.linkIds || [payload.linkId] : []);
   const groups = [...card.querySelectorAll('.saved-group')];
   const loose = [...(body?.querySelectorAll(':scope > .saved-row') || [])];
+  const roots = [...loose,...groups].sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top);
+  const rootItems = collectionItems(collection);
   const header = card.querySelector('.collection-head').getBoundingClientRect();
   const headerTarget = inside(header, point);
+  // Empty cards have no rows to anchor to. Their visible drop prompt is the
+  // first insertion slot; keep that line fixed across the prompt and header.
+  // Include the blank space above it, but not buttons, notes or the footer.
+  const empty = !collection.links.length && !collection.groups.length
+    ? body?.querySelector(':scope > .empty')?.getBoundingClientRect() : null;
+  const emptyTarget = empty && {left:empty.left,right:empty.right,top:header.bottom,bottom:empty.bottom};
+  if (emptyTarget && (headerTarget || inside(emptyTarget, point))) {
+    const control = !headerTarget && [...card.querySelectorAll('button,input,textarea,[contenteditable="true"]')]
+      .some(node => inside(node.getBoundingClientRect(), point));
+    if (!control) return {rect:line(empty,empty.top), group:groupDrag, ...(!groupDrag && {groupId:null})};
+  }
 
   if (groupDrag) {
-    const target = nearbySlot(groups, point, {groups:true});
+    if (headerTarget) {
+      const first=roots[0]?.getBoundingClientRect();
+      return {rect:first?line(first,first.top):line(header,header.bottom,6),
+        beforeId:rootItems.find(item=>!excluded.has(item.id))?.id,group:true};
+    }
+    const target = nearbySlot(roots, point, {groups:true});
     if (target) {
       const {slot, nearest} = target;
-      return {rect:slot, beforeId:anchor(collection.groups, nearest.dataset.groupId, slot.after, excluded), group:true};
-    }
-    if (!groups.length) {
-      const last = loose.at(-1)?.getBoundingClientRect();
-      if (last && point.x >= last.left && point.x <= last.right && Math.abs(point.y-last.bottom) <= EDGE_REACH)
-        return {rect:line(last,last.bottom), group:true};
-      if (!last && headerTarget) return {rect:line(header,header.bottom,6), group:true};
+      return {rect:slot, beforeId:anchor(rootItems, nearest.dataset.groupId||nearest.dataset.linkId, slot.after, excluded), group:true};
     }
     return null;
   }
 
   if (headerTarget) {
-    const first = loose[0]?.getBoundingClientRect();
-    const links = collection.links.filter(link => !link.groupId);
+    const first = roots[0]?.getBoundingClientRect();
     return {rect:first ? line(first,first.top) : line(header,header.bottom,6),
-      beforeId:links.find(link=>!excluded.has(link.id))?.id, groupId:null, group:false};
+      beforeId:rootItems.find(item=>!excluded.has(item.id))?.id, groupId:null, group:false};
   }
   const group = groups.find(node => inside(node.getBoundingClientRect(), point));
   const groupId = group?.dataset.groupId || null;
@@ -79,8 +91,14 @@ export function collectionDropPlan(card, collection, point, payload, {copy = fal
         beforeId:links.find(link=>!excluded.has(link.id))?.id, groupId, group:false};
     }
   } else {
-    // Loose links always precede groups. Gaps beside/between/below groups are
-    // not alternative loose-link positions, even when the collection is tall.
+    if (collection.itemOrder) {
+      const target = nearbySlot(roots, point, {groups:true});
+      if (!target) return null;
+      const {slot, nearest} = target;
+      return {rect:slot,beforeId:anchor(rootItems,nearest.dataset.groupId||nearest.dataset.linkId,slot.after,excluded),groupId:null,group:false};
+    }
+    // In the default layout loose links precede groups. Don't mistake gaps
+    // elsewhere in that layout for the end of the loose-link list.
     if (groups.some(node => point.y >= node.getBoundingClientRect().top)) return null;
   }
   const target = nearbySlot(nodes, point);
