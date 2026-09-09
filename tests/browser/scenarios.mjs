@@ -21,6 +21,11 @@ export const scenarios = {
     "run": "checkSavedDrag",
     "description": "Saved link and group insertion; neutral drop zones"
   },
+  "rename-selection": {
+    "file": "rename-selection",
+    "run": "checkRenameSelection",
+    "description": "Mouse text selection during collection and group renaming"
+  },
   "mixed-drag": {
     "file": "mixed-drag",
     "run": "checkMixedDrag",

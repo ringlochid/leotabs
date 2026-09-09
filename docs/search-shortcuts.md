@@ -34,6 +34,8 @@ The search field above **Open tabs** filters the sidebar and searches saved tabs
 
 The result count and **Clear search** button appear above the cards. Clearing search returns to your previous view and scroll position. **This window** and **All windows** apply only to open tabs. This field does not use `@` collection scopes or `/` commands; use **Alt+Shift+K** for those.
 
+No space is highlighted during global search. Click a space to clear the query and open its collections, including the space you were browsing before searching.
+
 ## Address bar and other entry points
 
 Type `leotabs`, then Tab or Space, in the address bar. Enter a query or press Enter to open the library. The toolbar lion also opens the library, and Settings offers **Open Library in its own window**.

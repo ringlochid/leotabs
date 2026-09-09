@@ -458,7 +458,7 @@ function renderTabsContent() {
           'div',
           {
             class: 'group-label open-group-header',
-            draggable: true,
+            draggable: editingName !== 'native:' + t.groupId,
             dataset: { groupId: t.groupId },
             title: 'Drag ' + name + ' (' + members.length + ' tabs) to a collection',
           },
@@ -483,7 +483,7 @@ function renderTabsContent() {
         );
         nativeDropTarget(container,{windowId:t.windowId,groupId:t.groupId});
         header.ondragstart = (e) => {
-          if (e.target.tagName === 'INPUT' || e.target.closest('.open-group-fold')) {
+          if (!header.draggable || e.target.tagName === 'INPUT' || e.target.closest('.open-group-fold')) {
             e.preventDefault();
             return;
           }
@@ -1087,26 +1087,36 @@ function confirmRemoveWorkspace(space) {
   cancel.focus();
 }
 
+function openSpace(id) {
+  // Choosing a destination leaves search; it must not restore the search's origin.
+  searchReturnView = null;
+  activeSpace = id;
+  activeCollection = null;
+  revealedCollection = null;
+  collectionLimit = 60;
+  localStorage.setItem('neo-space', activeSpace);
+  const search = $('#tab-search');
+  if (search.value) {
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
+  } else renderBoard();
+  $('#main').scrollTop = 0;
+}
 function renderSpaces() {
   const spaces = data.state.spaces;
+  const searching = !!libraryQuery();
   if (!spaces.some((s) => s.id === activeSpace)) activeSpace = spaces[0].id;
   const restore = retainFocus($('#spaces'));
   $('#spaces').replaceChildren(
     ...spaces.map((s) =>
       el(
         'div',
-        { class: 'space-tab' + (s.id === activeSpace ? ' active' : ''), dataset: { spaceId: s.id } },
-        s.id === activeSpace
+        { class: 'space-tab' + (!searching && s.id === activeSpace ? ' active' : ''), dataset: { spaceId: s.id } },
+        !searching && s.id === activeSpace
           ? editableName(s.name, 'space:' + s.id, (name) =>
               change('edit', { kind: 'space', spaceId: s.id, name }),
             )
-          : button(s.name, () => {
-              activeSpace = s.id;
-              activeCollection = null;
-              collectionLimit = 60;
-              localStorage.setItem('neo-space', activeSpace);
-              renderBoard();
-            }),
+          : button(s.name, () => openSpace(s.id)),
         button(
           'Workspace options for ' + s.name,
           (event) =>
@@ -1116,10 +1126,7 @@ function renderSpaces() {
                 [
                   'Rename workspace',
                   () => {
-                    activeSpace = s.id;
-                    activeCollection = null;
-                    localStorage.setItem('neo-space', activeSpace);
-                    renderBoard();
+                    openSpace(s.id);
                     beginName('space:' + s.id);
                   },
                   'rename',
@@ -1127,9 +1134,7 @@ function renderSpaces() {
                 [
                   'Add collection',
                   () => {
-                    activeSpace = s.id;
-                    activeCollection = null;
-                    localStorage.setItem('neo-space', activeSpace);
+                    openSpace(s.id);
                     return createCollection();
                   },
                   'plus',
@@ -1149,9 +1154,7 @@ function renderSpaces() {
       'Add space',
       act(async () => {
         await change('edit', { kind: 'create-space' });
-        activeSpace = data.state.spaces.at(-1).id;
-        activeCollection = null;
-        localStorage.setItem('neo-space', activeSpace);
+        openSpace(data.state.spaces.at(-1).id);
         beginName('space:' + activeSpace);
       }),
       { glyph: 'plus', quiet: true },
@@ -1175,7 +1178,9 @@ function renderSpaces() {
   });
   for (const tab of nav.querySelectorAll('.space-tab')) {
     const name = tab.firstElementChild;
+    name.dataset.focusKey = 'space:' + tab.dataset.spaceId;
     if (name.tagName !== 'BUTTON') continue;
+    if (!searching && tab.dataset.spaceId === activeSpace) name.setAttribute('aria-current', 'page');
     name.draggable = spaces.length > 1;
     name.ondragstart = event => {
       draggingSpace = tab.dataset.spaceId;
@@ -1491,9 +1496,9 @@ function collectionCard(c) {
   );
   if(!name.querySelector('input'))name.dataset.focusKey = c.id + ':name';
   name.draggable = !query && name.tagName !== 'INPUT'&&!name.querySelector('input');
-  name.ondragstart = (e) => {
+  name.ondragstart = name.draggable ? (e) => {
     e.dataTransfer.setData('application/x-neo', JSON.stringify({ type: 'collection', id: c.id }));
-  };
+  } : null;
   card.append(
     el(
       'header',
@@ -1558,9 +1563,10 @@ function collectionCard(c) {
     button('Switch', act(() => actions.swap(c)), {glyph:'arrow', className:'collection-switch', 'aria-label':'Switch to collection', disabled:currentSession, title:currentSession?'This collection is already current':'Make this collection current in this window; choose whether to save the current tabs'})));
   card.querySelector('.collection-switch').setAttribute('aria-label','Switch to collection');
   const header = card.querySelector('.collection-head');
-  header.draggable = !activeCollection && !query;
+  // A draggable ancestor steals mouse text selection from its rename field.
+  header.draggable = !activeCollection && !query && editingName !== c.id + ':name';
   header.ondragstart = (e) => {
-    if (activeCollection || query || e.target.tagName === 'INPUT') {
+    if (!header.draggable || e.target.tagName === 'INPUT') {
       e.preventDefault();
       return;
     }
@@ -1649,11 +1655,11 @@ function collectionCard(c) {
         'div',
         {
           class: 'group-header',
-          draggable: true,
+          draggable: editingName !== g.id + ':name',
           dataset: { groupId: g.id },
           title: 'Drag to move. Hold Ctrl to copy this group.',
           ondragstart: (e) => {
-            if (e.target.tagName === 'INPUT') {
+            if (!e.currentTarget.draggable || e.target.tagName === 'INPUT') {
               e.preventDefault();
               return;
             }

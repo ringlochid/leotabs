@@ -12,7 +12,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   };
   const query = async (value) => {
     await app.evaluate(
-      `(()=>{const input=document.querySelector('#tab-search');input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input'));})()`,
+      `(()=>{const input=document.querySelector('#tab-search');input.focus({preventScroll:true});input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input'));})()`,
     );
     await delay(400);
   };
@@ -56,7 +56,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   });
   const fixture = imported.state.collections.find((c) => c.name === 'Design references');
   await app.evaluate(`import(chrome.runtime.getURL('lib/db.js')).then(db=>db.mutate('Other space fixture',s=>{
-    s.spaces.push({id:'other-space',name:'Other space'});
+    s.spaces.push({id:'other-space',name:'Other space'},{id:'empty-space',name:'Empty space'});
     s.collections.push({id:'other-collection',spaceId:'other-space',name:'Remote archive',collapsed:true,groups:[{id:'remote-group',name:'Deep research',collapsed:true}],links:[{id:'remote-link',title:'Remote reference',url:'https://example.org/reference',note:'research in a different space',groupId:'remote-group'},{id:'long-title',title:'LongUnbrokenPageTitle'.repeat(25),url:'https://example.org/overflow-case?token='+'a'.repeat(800)}]});
   }))`);
   await app.evaluate(
@@ -75,6 +75,7 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   await app.send('Page.reload');
   await wait(() => app.evaluate('!!document.querySelector(".recent-mode")'));
   await query('research');
+  assert(await app.evaluate('!document.querySelector("#spaces .active,#spaces [aria-current]")'),'Global search must not mark a space as current');
   assert(await app.evaluate('document.querySelectorAll("#tabs mark").length>0'));
   await wait(() => app.evaluate('document.querySelectorAll("#recent .recent-pages mark").length>0'));
   assert(await app.evaluate('document.querySelectorAll("#board mark").length>0'));
@@ -146,7 +147,47 @@ export async function checkLibrarySearch({ app, rpc, out, results, delay, origin
   assert(await app.evaluate(`!!document.querySelector('#board.detail [data-collection-id="other-collection"]')`));
   assert(await app.evaluate(`document.activeElement.id==='tab-search'`));
   assert.equal(await app.evaluate(`document.querySelector('#main').scrollTop`),oldScroll,'Clear search lost the detail scroll position');
-  await app.evaluate(`document.querySelector('[data-space-id="main"]').firstElementChild.click()`);
+  const chooseSpace=async(id,keyboard=false)=>{
+    const selector=`#spaces [data-space-id="${id}"] > button:first-child`;
+    if(keyboard) {
+      await app.evaluate(`document.querySelector(${JSON.stringify(selector)}).focus()`);
+      await app.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13});
+      await app.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+    } else {
+      const p=await app.evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};})()`);
+      for(const type of ['mousePressed','mouseReleased'])await app.send('Input.dispatchMouseEvent',{type,...p,button:'left',clickCount:1});
+    }
+    await wait(()=>app.evaluate(`document.querySelector('#tab-search').value===''&&document.querySelector('#spaces .active')?.dataset.spaceId===${JSON.stringify(id)}`));
+    assert.equal(await app.evaluate(`localStorage.getItem('neo-space')`),id);
+    assert(await app.evaluate(`!document.querySelector('#board.detail,#spaces input,#breadcrumbs [role="status"]')`),'Space navigation should show its collection board, not rename or return to old detail');
+    assert.equal(await app.evaluate(`document.querySelector('#main').scrollTop`),0);
+    assert.equal(await app.evaluate(`document.querySelector('#spaces [aria-current="page"]').closest('.space-tab').dataset.spaceId`),id);
+    assert.equal(await app.evaluate(`document.activeElement.closest('.space-tab')?.dataset.spaceId`),id,'Space navigation lost keyboard focus');
+    const state=(await rpc('load')).state;
+    const expected=state.collections.filter(c=>c.spaceId===id).map(c=>c.id).sort();
+    assert.deepEqual(await app.evaluate(`[...document.querySelectorAll('#board .collection')].map(c=>c.dataset.collectionId).sort()`),expected);
+    assert(await app.evaluate(`document.querySelectorAll('#tabs .tab-row').length>0`),'Clearing global search should also reset open-tab filtering');
+  };
+  await query('research');
+  await chooseSpace('other-space'); // The space active before search must navigate, not rename.
+  await query('research');
+  await app.evaluate(`document.querySelector('#breadcrumbs button').click()`);
+  assert(await app.evaluate(`!document.querySelector('#board.detail')&&document.querySelector('#spaces .active').dataset.spaceId==='other-space'`),'Clear search resurrected the detail view from before explicit navigation');
+  await query('no-matching-saved-content');
+  await chooseSpace('main',true);
+  await query('research');
+  await app.evaluate(`document.querySelector('button[aria-label="Workspace options for Other space"]').click()`);
+  await app.evaluate(`[...document.querySelectorAll('#action-popover button')].find(b=>b.textContent==='Rename workspace').click()`);
+  assert(await app.evaluate(`document.querySelector('#tab-search').value===''&&document.activeElement.matches('[data-space-id="other-space"] input')`),'Explicit workspace rename must leave search and focus the editor');
+  for(const type of ['keyDown','keyUp'])await app.send('Input.dispatchKeyEvent',{type,key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  assert(await app.evaluate(`!document.querySelector('#spaces input')`));
+  await query('research');
+  await chooseSpace('empty-space');
+  await query('research');
+  await app.evaluate(`document.querySelector('#breadcrumbs button').click()`);
+  assert(await app.evaluate(`document.querySelector('#spaces .active').dataset.spaceId==='empty-space'&&!document.querySelector('#board .collection')`));
+  await chooseSpace('main');
+  results.push('Global search has no current-space indicator; mouse/keyboard space navigation clears query and opens the chosen board, including the prior or empty space; Clear search retains its own return behavior');
   await app.evaluate(
     `document.querySelector('[data-collection-id="${fixture.id}"] button[aria-label="Expand Design references"]').click()`,
   );
