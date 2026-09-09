@@ -2,7 +2,7 @@
 
 A tab manager and keyboard switcher for Chrome and Edge. Save tabs as collections, organise them into spaces, and reopen a project when you're ready to continue.
 
-[Install](#install) · [User guide](https://ringlochid.me/leotabs/docs/) · [Website](https://ringlochid.me/leotabs/) · [Contribute](#contribute)
+[Add to Chrome](https://chromewebstore.google.com/detail/leotabs/heolckkdeandgagkiefggcneodniojhb) · [User guide](https://ringlochid.me/leotabs/docs/) · [Website](https://ringlochid.me/leotabs/) · [Contribute](#contribute)
 
 ![LeoTabs library with open tabs on the left and coding collections, groups and notes on the right](website/assets/library.png)
 
@@ -21,19 +21,22 @@ LeoTabs is free to use. Everyday tab management works without an account or an A
 
 Use Chrome 123 or newer, or a compatible Chromium browser such as Edge.
 
-1. Download this repository using **Code → Download ZIP** and extract it, or clone it.
-2. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
-3. Turn on **Developer mode**, choose **Load unpacked**, and select the repository's **`extension/`** folder. It contains `manifest.json`.
-4. Pin LeoTabs from the browser's extensions menu, then click the lion to open the library.
+1. Open [LeoTabs in the Chrome Web Store](https://chromewebstore.google.com/detail/leotabs/heolckkdeandgagkiefggcneodniojhb) and choose **Add to Chrome**. In Edge, allow extensions from other stores if prompted.
+2. Confirm **Add extension** in the browser's installation dialog.
+3. Pin LeoTabs from the extensions menu, then click the lion to open the library.
 
-The generated switcher bundle is included, so this installation does not require Node.js. Keep the extracted folder in place while the extension is installed. See the [installation guide](https://ringlochid.me/leotabs/docs/getting-started/) for more help.
+The store installation does not need Developer mode or Node.js. For a development copy, use [Run locally](#run-locally).
+
+Moving from an unpacked copy? Export **Settings → Export & import → Backup JSON** from that copy first. Install the store version, import the backup and check your collections before removing the old installation. [Migration instructions](https://ringlochid.me/leotabs/docs/import-export/).
 
 ## Save your first collection
 
 1. Open a few web pages and open LeoTabs.
 2. Choose **Save tabs** beside **Open tabs**. Select individual tabs first if you only want to save some of them.
-3. Review **and close them**, then save the collection. Checking it closes the tabs after saving.
-4. Give the collection a name and add a note about where you stopped.
+3. Leave **and close them** unchecked to keep browsing, or check it to close the saved tabs. **and switch to new collection** makes the new collection current without reopening those tabs; the two options are mutually exclusive.
+4. Choose **Save tabs** or **Stash tabs**, then name the new collection and add a note about where you stopped.
+
+To add tabs to an existing collection, drag them from Open tabs into that collection. The original browser tabs stay open.
 
 Choose **Open** to add its saved pages to your browser, or **Switch** to make it the current collection in that window. Switch lets you decide what to save from the outgoing work; pinned tabs stay open. See [Saving and switching](https://ringlochid.me/leotabs/docs/saving-switching/).
 
@@ -91,7 +94,7 @@ npm run build
 npm run check
 ```
 
-Load `extension/` using the [installation steps](#install). Use a separate browser profile with sample tabs when testing saves, closes, imports and recovery.
+Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this repository's **`extension/`** folder. Keep the folder in place while that copy is installed. Use a separate browser profile with sample tabs when testing saves, closes, imports and recovery.
 
 LeoTabs uses JavaScript modules, HTML and CSS with Manifest V3. The library runs from its source files; esbuild bundles the injected switcher from `extension/ui/overlay-entry.js` into `extension/overlay.js`.
 
@@ -102,6 +105,8 @@ LeoTabs uses JavaScript modules, HTML and CSS with Manifest V3. The library runs
 | [extension/background.js](extension/background.js) | Browser events and background request handling |
 | [tests/](tests/) | Unit tests and browser regression scenarios |
 | [scripts/](scripts/) | Build, validation, packaging and test runners |
+| [docs/](docs/) | User guides shared with the website |
+| [website/](website/) | Website templates, styles and approved screenshots |
 
 After editing switcher sources, run `npm run build`. Reload LeoTabs on the browser's extensions page, then refresh its library tab and any web page used to test the switcher.
 
@@ -114,6 +119,8 @@ npm run check
 ```
 
 Run the relevant [browser regression scenarios](tests/browser/README.md) with `npm run test:browser -- <scenario>`. Use `npm run test:browser -- --list` to see the available checks. Each scenario uses a disposable profile.
+
+For documentation changes, run `npm run docs:check`. Build the shared online guides with `npm run site:build`, then run `npm run site:check`. See [Contributing](CONTRIBUTING.md) for development conventions and [the website README](website/README.md) for publication steps.
 
 Test the affected workflow in the browser as well. In your pull request, explain the problem, the resulting behaviour and how you checked it. Include screenshots for visual changes, using sample data. Add regression tests for behaviour changes, especially ordering, saving and recovery.
 

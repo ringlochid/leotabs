@@ -1,8 +1,26 @@
-Already installed LeoTabs? Reload its existing card at chrome://extensions, then refresh your LeoTabs library tabs.
+Install LeoTabs
 
-For a first installation, choose Load unpacked and select:
-C:\Users\ring_\Desktop\Neo tab manger\extension
+Open the Chrome Web Store listing in Chrome or Edge:
+https://chromewebstore.google.com/detail/leotabs/heolckkdeandgagkiefggcneodniojhb
 
-Do not select this project root. The extension subfolder contains manifest.json.
-The release ZIP can also be extracted into a fresh folder; its manifest is at the ZIP root.
-Keep the existing installed path to retain your saved library and shortcut settings.
+Choose Add to Chrome, then Add extension. In Edge, allow extensions from other
+stores if prompted. Pin LeoTabs from the extensions menu and click the lion
+to open the library. The store version does not require Node.js or Developer mode.
+
+For a local development copy
+
+1. Use Node.js 22+ and run npm ci in this repository.
+2. Run npm run build and npm run check.
+3. Open chrome://extensions or edge://extensions and enable Developer mode.
+4. Choose Load unpacked and select this repository's extension folder.
+5. Keep the folder in place while the development copy is installed.
+
+After source changes, rebuild, reload the extension and refresh open pages.
+Run npm test and the relevant browser scenarios before submitting a change.
+
+Alt+Q opens the switcher; Alt+Shift+Q opens the library; Alt+Shift+K opens search.
+
+Back up before changing installations. Unpacked and store installations can
+have different IDs and separate data. Export Backup JSON from the original
+copy, import into the destination, and check the collections before removing
+the original. See https://ringlochid.me/leotabs/docs/import-export/.

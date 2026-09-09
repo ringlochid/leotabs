@@ -9,12 +9,15 @@
     "check": "node scripts/check.mjs",
     "build": "node scripts/build-overlay.mjs",
     "package": "node scripts/package.mjs",
+    "site:build": "node scripts/build-site.mjs",
+    "site:check": "node scripts/check-site.mjs",
+    "docs:check": "node scripts/check-docs.mjs",
     "test:browser": "node scripts/test-browser.mjs"
-  },
-  "engines": {
-    "node": ">=22"
   },
   "devDependencies": {
     "esbuild": "0.25.10"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
