@@ -158,7 +158,9 @@ try {
     '--disable-gpu', '--disable-background-networking', '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
-    ...(edge ? [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`] : []),
+    // Keep Edge's compatibility launcher from exiting and orphaning a second
+    // browser process before the runner can attach or clean up this profile.
+    ...(edge ? ['--edge-skip-compat-layer-relaunch', `--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`] : []),
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
   proc.on('error', error => { launchError = error; });

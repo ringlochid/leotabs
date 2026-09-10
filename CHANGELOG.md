@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.1 — 10 September 2026
 
 - Remove the name and destination suggestion after dragging tabs into a new collection.
 - Keep switcher close buttons and their hover and focus states inside the card header.
