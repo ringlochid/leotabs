@@ -22,18 +22,44 @@ const outcomes = {
   'Apply organisation plan': 'Organisation applied',
   'Export browser bookmarks': 'Bookmarks exported',
 };
+const skipReasons = {
+  navigated: count => `${countLabel(count, 'tab')} changed pages`,
+  moved: count => `${countLabel(count, 'tab')} moved to another window`,
+  regrouped: count => `${countLabel(count, 'tab')} changed groups`,
+  pinned: count => `${countLabel(count, 'tab')} ${count === 1 ? 'was' : 'were'} pinned`,
+  private: count => `${countLabel(count, 'tab')} ${count === 1 ? 'was' : 'were'} in private browsing`,
+  changed: count => `${countLabel(count, 'tab')} changed before closing`,
+  unavailable: count => `Couldn't access ${countLabel(count, 'tab')}`,
+  'ungroup-failed': count => `Couldn't ungroup ${countLabel(count, 'tab')}`,
+  'close-failed': count => `Closing wasn't confirmed for ${countLabel(count, 'tab')}`,
+  cancelled: count => `Closing was cancelled for ${countLabel(count, 'tab')}`,
+  unknown: count => `No reason recorded for ${countLabel(count, 'tab')}`,
+};
+function skippedDetails(op, skipped) {
+  const reasons = new Map((op.skipReasons || []).map(entry => [entry.tabId, entry.reason]));
+  const counts = new Map();
+  for (const id of skipped) {
+    const reason = Object.hasOwn(skipReasons, reasons.get(id)) ? reasons.get(id) : 'unknown';
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  return [...counts].map(([reason, count]) => skipReasons[reason](count));
+}
 export function operationFeedback(op, action) {
   if (!op?.label || op.unchanged || action === 'settings' || action === 'undo-action') return null;
   let message = outcomes[op.label] || op.label;
   const incomplete = op.status === 'partial' || !!op.skipped?.length;
+  const closing = ['Close tabs', 'Close utility tabs', 'Stash tabs'].includes(op.label);
+  const skipped = closing ? [...new Set(op.skipped || [])] : [];
   if (op.label === 'Save tabs') message = `Saved ${countLabel(op.snapshot?.links.length || 0, 'tab')}`;
   if (op.label === 'Stash tabs')
     message = `Saved ${countLabel(op.snapshot?.links.length || 0, 'tab')} · ${op.closed?.length || 0} closed`;
   if (['Close tabs', 'Close utility tabs'].includes(op.label))
     message = op.closed?.length ? `Closed ${countLabel(op.closed.length, 'tab')}` : 'No tabs closed';
+  if (skipped.length) message += ` · ${skipped.length} skipped`;
   if (op.cancelled) message += ' · Cancelled';
-  else if (incomplete) message += ' · Incomplete';
-  return { message, error: incomplete && !op.cancelled };
+  else if (incomplete && !skipped.length) message += ' · Incomplete';
+  return { message, error: incomplete && !op.cancelled,
+    ...(skipped.length ? { details: skippedDetails(op, skipped) } : {}) };
 }
 
 export function operationStatus(status) {

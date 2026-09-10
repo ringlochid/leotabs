@@ -309,6 +309,34 @@ test('navigation after snapshot prevents closure of changed instance', async () 
   const op = await f.ops.save({ close: true });
   assert.deepEqual(f.removed, [2]);
   assert.deepEqual(op.skipped, [1]);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'navigated' }]);
+  assert.deepEqual(f.stores.journal.get(op.id).skipReasons, op.skipReasons);
+});
+
+test('close records why a captured tab became unsafe without removing it', async () => {
+  for (const [change, reason] of [
+    [{ pendingUrl: 'https://example.org/loading' }, 'navigated'],
+    [{ windowId: 2 }, 'moved'],
+    [{ pinned: true }, 'pinned'],
+    [{ incognito: true }, 'private'],
+  ]) {
+    const f = fixture([baseTab(1), baseTab(2)]), get = f.browser.tabs.get;
+    f.browser.tabs.get = async id => ({ ...await get(id), ...(id === 1 ? change : {}) });
+    const op = await f.ops.close([1, 2]);
+    assert.deepEqual(op.closed, [2]);
+    assert.deepEqual(op.skipped, [1]);
+    assert.deepEqual(op.skipReasons, [{ tabId: 1, reason }]);
+    assert.deepEqual(f.removed, [2]);
+  }
+});
+
+test('a failed tab lookup records uncertainty rather than claiming the tab was closed', async () => {
+  const f = fixture([baseTab(1)]);
+  f.browser.tabs.get = async () => { throw Error('private browser diagnostic'); };
+  const op = await f.ops.close([1]);
+  assert.deepEqual(op.closed, []);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'unavailable' }]);
+  assert.deepEqual(f.removed, []);
 });
 test('explicit close retains a recovery snapshot without adding clutter to library', async () => {
   const f = fixture();
@@ -363,6 +391,7 @@ test('regrouping after capture protects the changed tab from cleanup', async () 
   };
   const op = await f.ops.close([1]);
   assert.deepEqual(op.skipped, [1]);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'regrouped' }]);
   assert(!f.events.some((e) => e[0] === 'ungroup' || e[0] === 'close'));
 });
 
@@ -373,6 +402,7 @@ test('cleanup rejection leaves grouped tab open for retry', async () => {
   };
   const op = await f.ops.close([1]);
   assert.deepEqual(op.skipped, [1]);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'ungroup-failed' }]);
   assert.equal(f.tabs[0].groupId, 5);
   assert.equal(f.removed.length, 0);
 });
@@ -394,6 +424,7 @@ test('failed close recreates deleted group for surviving tab', async () => {
   };
   const op = await f.ops.close([1]);
   assert.deepEqual(op.skipped, [1]);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'close-failed' }]);
   assert.equal(f.tabs[0].groupId, 20);
   assert.deepEqual(repaired, { id: 20, title: 'Research', color: 'green', collapsed: true });
 });
@@ -410,6 +441,7 @@ test('navigation during ungroup prevents closing changed page and restores its g
   };
   const op = await f.ops.close([1]);
   assert.deepEqual(op.skipped, [1]);
+  assert.deepEqual(op.skipReasons, [{ tabId: 1, reason: 'navigated' }]);
   assert.equal(f.tabs[0].groupId, 5);
   assert.equal(f.removed.length, 0);
 });

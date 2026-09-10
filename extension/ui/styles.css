@@ -2574,6 +2574,7 @@ progress {
 .tile-actions button {
   width: 28px;
   height: 28px;
+  min-height: 28px;
   min-width: 28px;
   padding: 5px;
   border-radius: 6px;
@@ -3054,6 +3055,24 @@ progress {
   border-radius: 3px;
   color: var(--text);
 }
+.task-view .tile-actions .tile-close:is(:hover, :active) {
+  color: light-dark(#b42335, #ff8795);
+  background: light-dark(#fff0f2, #48232c);
+}
+.tile-actions button:focus-visible { outline-offset: 0; }
+.load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--bg);
+}
+.load-error button { flex: none; color: var(--accent); }
 .task-view .native-group-card {
   background: var(--group-frame);
 }

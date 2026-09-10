@@ -37,6 +37,20 @@ export async function rpc(action, data = {}) {
   if (!result?.ok) throw new Error(errorText(result?.error || 'LeoTabs did not respond. Reopen the Library.'));
   return result.value;
 }
+// Only reads may time out and retry; never repeat a mutation after an uncertain reply.
+export async function loadSnapshot(options = {}) {
+  let timer;
+  try {
+    return await Promise.race([
+      rpc('load', options),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Loading timed out. Try again.')), 8000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -193,7 +207,7 @@ export function favicon(item) {
   }
   return mark;
 }
-export function toast(message, { undo, error = false, duration = undo ? 8000 : 5000 } = {}) {
+export function toast(message, { undo, details, error = false, duration = undo ? 8000 : 5000 } = {}) {
   if (error) message = errorText(message);
   let node = $('#toast');
   if (!node) {
@@ -212,6 +226,8 @@ export function toast(message, { undo, error = false, duration = undo ? 8000 : 5
     ...[
       el('span', {}, message),
       undo ? button('Undo', task(async()=>{node.hidden=true;await undo();})) : null,
+      details?.length ? button('Details', () => modal('Skipped tabs',
+        el('ul', {}, details.map(detail => el('li', {}, detail))))) : null,
       button('Dismiss', () => (node.hidden = true), { glyph: 'close', quiet: true }),
     ].filter(Boolean),
   );

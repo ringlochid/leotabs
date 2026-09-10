@@ -10,6 +10,7 @@ import {
   toast,
   task,
   rpc,
+  loadSnapshot,
   currentWindow,
   favicon,
   domain,
@@ -128,6 +129,32 @@ function retainScroll() {
   return () => positions.forEach(([node, left, top]) => { node.scrollLeft = left; node.scrollTop = top; });
 }
 let refreshGeneration = 0;
+let started = false, starting = false, recoveryTimer, recoveryAttempts = 0, renderInvalid = false, layoutBusyAt = 0;
+const loadError = el('div', {class:'load-error', role:'status', hidden:true},
+  el('span'), button('Retry', () => { recoveryAttempts = 0; recover(); }));
+$('#main').prepend(loadError);
+function loadFailed(error) {
+  loadError.hidden = false;
+  loadError.lastChild.disabled = false;
+  loadError.firstChild.textContent = data ? "Can't refresh library" : "Can't load library";
+  loadError.title = error.message;
+  if (!recoveryTimer && recoveryAttempts < 3)
+    recoveryTimer = setTimeout(recover, 800 * 2 ** recoveryAttempts++);
+}
+function loadRecovered() {
+  clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+  recoveryAttempts = 0;
+  loadError.hidden = true;
+  loadError.lastChild.disabled = false;
+}
+function recover() {
+  clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+  loadError.lastChild.disabled = true;
+  if (started) refresh().catch(() => {});
+  else start();
+}
 let rendering = 0;
 let draggingCollection = null;
 let draggingSpace = null;
@@ -186,22 +213,29 @@ function updateInsertion(point) {
 }
 const act = (fn) => task(fn);
 async function refresh() {
+  let generation;
+  try {
   clearTimeout(refreshTimer);
   refreshTimer = null;
   if (dragActive) { refreshAfterDrag = true; return; }
-  const generation = ++refreshGeneration,
-    next = await rpc('load',{includeTimeline:recentMode==='sessions',allowBusy:true});
-  if (generation !== refreshGeneration) return;
-  if(next.layoutBusy){
-    if(!data){await new Promise(resolve=>setTimeout(resolve,80));return refresh();}
-    refreshTimer=setTimeout(()=>refresh().catch(()=>{}),80);return;
+  generation = ++refreshGeneration;
+  let next;
+  while (true) {
+    next = await loadSnapshot({includeTimeline:recentMode==='sessions',allowBusy:true});
+    if (generation !== refreshGeneration) return;
+    if (!next.layoutBusy) break;
+    layoutBusyAt ||= Date.now();
+    if (Date.now() - layoutBusyAt >= 8000) throw new Error('Tabs are still changing. Try again.');
+    if (data) { refreshTimer=setTimeout(()=>refresh().catch(()=>{}),80); return; }
+    await new Promise(resolve=>setTimeout(resolve,80));
   }
+  layoutBusyAt = 0;
   if (dragActive) { refreshAfterDrag = true; return; }
   const restoreScroll = retainScroll();
-  const boardChanged = !data || JSON.stringify([data.state.collections,data.state.spaces,data.state.settings,data.sessionState?.active]) !==
+  const boardChanged = renderInvalid || !data || JSON.stringify([data.state.collections,data.state.spaces,data.state.settings,data.sessionState?.active]) !==
     JSON.stringify([next.state.collections,next.state.spaces,next.state.settings,next.sessionState?.active]);
-  const tabsChanged=!data||JSON.stringify([data.tabs,data.groups,data.state.settings])!==JSON.stringify([next.tabs,next.groups,next.state.settings]);
-  const recentChanged=!data||JSON.stringify([data.recent,data.recentSessions,data.timeline])!==JSON.stringify([next.recent,next.recentSessions,next.timeline]);
+  const tabsChanged=renderInvalid||!data||JSON.stringify([data.tabs,data.groups,data.state.settings])!==JSON.stringify([next.tabs,next.groups,next.state.settings]);
+  const recentChanged=renderInvalid||!data||JSON.stringify([data.recent,data.recentSessions,data.timeline])!==JSON.stringify([next.recent,next.recentSessions,next.timeline]);
   data = next;
   theme(data.state.settings.theme);
   onboarding.syncTheme();
@@ -213,6 +247,14 @@ async function refresh() {
   if(closeAll)closeAll.disabled=!data.tabs.some(t=>t.windowId===win&&!t.pinned);
   searchController?.update();
   restoreScroll();
+  renderInvalid = false;
+  if (started) loadRecovered();
+  } catch (error) {
+    if (generation !== refreshGeneration) return;
+    renderInvalid = true;
+    if (started) loadFailed(error);
+    throw error;
+  }
 }
 async function change(action, payload) {
   if (action === 'save' || action === 'switch') payload.spaceId ||= activeSpace;
@@ -230,6 +272,7 @@ async function change(action, payload) {
         feedback.message,
         {
           error: feedback.error,
+          details: feedback.details,
         undo:
           action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
             ? () => change('undo-action', { id: op.id, windowId: win })
@@ -1403,7 +1446,6 @@ function dragPayload(e) {
   }
 }
 
-let lastDropCollection;
 function newCollectionDropTarget() {
   const target=button('New collection', act(createCollection), {glyph:'plus',className:'add-collection'});
   target.ondragover=e=>{if(!draggingPayload)return;dragFeedback(e);target.classList.add('drag-over');};
@@ -1412,9 +1454,7 @@ function newCollectionDropTarget() {
     const payload=dragPayload(e); if(!['tabs','link','links','group'].includes(payload?.type))return;
     e.preventDefault(); e.stopPropagation();
     finishDrag();
-    const result=await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
-    lastDropCollection=(result.operation||result).collectionId;
-    const scroll=$('#main').scrollTop;renderBoard();$('#main').scrollTop=scroll;
+    await change('drop-new', {payload,copy:copyDrag(e),spaceId:activeSpace});
   });
   return target;
 }
@@ -1557,7 +1597,6 @@ function collectionCard(c) {
     ),
   );
   const currentSession = data.sessionState?.active?.[win]?.collectionId === c.id;
-  if(lastDropCollection===c.id)card.append(button('Suggest name or destination',()=>actions.dropSuggestions(c),{glyph:'sparkles'}));
   card.append(el('div', {class:'collection-meta'},
     query ? el('span', {class:'collection-space'}, data.state.spaces.find(s => s.id === c.spaceId)?.name || 'My space') : null,
     c.pinned ? el('span', {class:'collection-pinned'}, icon('pin'), 'Pinned') : null,
@@ -2292,7 +2331,7 @@ function searchDialog() {
   );
   controller.focus();
 }
-async function start() {
+async function initialise() {
   win = await currentWindow();
   actions = createActionDialogs({
     inLibrary: true,
@@ -2438,4 +2477,17 @@ function handleNavigation() {
   if (['settings', 'import', 'export', 'ai'].includes(params.get('action')))
     actions[params.get('action')](findCollection());
 }
-start().catch((e) => toast(e.message, { error: true }));
+async function start() {
+  if (starting || started) return;
+  starting = true;
+  try {
+    await initialise();
+    started = true;
+    loadRecovered();
+  } catch (error) {
+    loadFailed(error);
+  } finally {
+    starting = false;
+  }
+}
+start();

@@ -17,6 +17,39 @@ export async function checkSwitcherClose({app,rpc,origin,delay,targets,connect,t
   const read=code=>app.evaluate(`chrome.scripting.executeScript({target:{tabId:${host.id}},func:()=>{const root=globalThis.__neoSurface;${code}}}).then(r=>r[0].result)`);
   const groupCard=`[...root.querySelectorAll('.group-name')].find(n=>n.textContent==='Close fixture')?.closest('.switcher-card')`;
   await wait(()=>read(`return !!(${groupCard})`),'Group card missing');
+  const closeBounds=await read(`
+    const card=(${groupCard}),button=card.querySelector('.tile-close'),r=button.getBoundingClientRect();
+    return {bottom:r.bottom,previewTop:card.querySelector('.group-preview').getBoundingClientRect().top,height:r.height};
+  `);
+  assert(closeBounds.bottom<=closeBounds.previewTop,'Close button overlaps the thumbnail: '+JSON.stringify(closeBounds));
+  await read(`
+    const send=chrome.runtime.sendMessage.bind(chrome.runtime);
+    globalThis.__failQuickLoads=1;
+    chrome.runtime.sendMessage=(message,...args)=>{
+      if(message?.action==='load' && globalThis.__failQuickLoads-->0) return Promise.reject(new Error('Test: temporary switcher connection failure'));
+      return send(message,...args);
+    };
+  `);
+  const pointerTab=await app.evaluate(`chrome.tabs.create({url:${JSON.stringify(origin+'/pointer-close')},active:false})`);
+  const pointerCard=`[...root.querySelectorAll('.switcher-card')].find(c=>c.dataset.key.includes(':tab:${pointerTab.id}:'))`;
+  await wait(()=>read('return !!root.querySelector(".load-error:not([hidden])")'),'Switcher hid a failed refresh');
+  assert(await read(`return !!(${groupCard})`),'A refresh failure erased existing switcher cards');
+  await read('root.querySelector(".load-error button").click()');
+  await wait(()=>read(`return !!(${pointerCard})`),'New tab did not reach the switcher');
+  await wait(()=>read('return !!root.querySelector(".load-error[hidden]")'),'Switcher Retry did not clear the error');
+  await read(`(${pointerCard}).scrollIntoView({block:'nearest'})`);
+  const point=await read(`const card=(${pointerCard}),b=card.querySelector('.tile-close'),r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.bottom-1,previewTop:card.querySelector('.preview-image').getBoundingClientRect().top};`);
+  assert(point.y<point.previewTop,'Close hit area reaches into the thumbnail');
+  await page.send('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x,y:point.y});
+  const hit=await read(`const target=root.elementFromPoint(${point.x},${point.y});return {close:target?.closest('.tile-close')===(${pointerCard}).querySelector('.tile-close'),target:target?.outerHTML.slice(0,200)};`);
+  assert(hit.close,'Pointer misses Close: '+JSON.stringify({point,hit}));
+  await fs.writeFile(path.join(out,'close-hover.png'),Buffer.from((await page.send('Page.captureScreenshot')).data,'base64'));
+  await page.send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
+  await page.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',clickCount:1});
+  await wait(()=>app.evaluate(`chrome.tabs.query({}).then(ts=>!ts.some(t=>t.id===${pointerTab.id}))`),'Real pointer click did not close the tab');
+  await wait(()=>read(`return !(${pointerCard})`),'Closed tab left a stale thumbnail');
+  assert(await read('return !!root.querySelector(".task-view")'),'Close activated the thumbnail and dismissed the switcher');
+  results.push('Close hover and pointer hit area stay in the header; a real click closes and refreshes without activating the preview');
   for(const mode of ['Previews','List']) {
     await read(`root.querySelector('[aria-label="${mode}"]').click()`);
     await wait(()=>read(`return !!(${groupCard})`),'Group view missing');
@@ -46,25 +79,28 @@ export async function checkSwitcherClose({app,rpc,origin,delay,targets,connect,t
   assert.equal(await alive(tabs.map(t=>t.id)),3,'Held shortcut closed tabs');
   await read(`root.querySelector('#quick-search').focus()`);await altW();await delay(200);
   assert.equal(await alive(tabs.map(t=>t.id)),3,'Typing focus allowed destructive shortcut');
-  await read(`(${groupCard}).querySelector('.preview-tile').focus()`);await altW();
+  await read(`globalThis.__previousToast=root.querySelector('#toast>span'); (${groupCard}).querySelector('.preview-tile').focus()`);await altW();
   await wait(async()=>await alive(tabs.slice(0,2).map(t=>t.id))===0,'Alt+W did not close group');
   await wait(()=>read(`return !!root.activeElement?.closest('.switcher-card')`),'Close lost keyboard focus');
-  await wait(()=>read(`return !![...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo')`),'Group close has no Undo');
+  await wait(()=>read(`return root.querySelector('#toast>span')!==globalThis.__previousToast && !![...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo')`),'Group close has no new Undo');
   await read(`[...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo').click()`);
   await wait(()=>read(`return !!(${groupCard})`),'Undo did not restore group');
   await wait(()=>app.evaluate(`chrome.tabGroups.query({}).then(gs=>gs.some(g=>g.title==='Close fixture'&&g.color==='green'))`),'Undo lost the group name or color');
   await read(`root.querySelector('[aria-label="List"]').click()`);
   await wait(()=>read(`return !!(${groupCard})?.querySelector('.tab-choice')`),'List view did not load');
-  await read(`(${groupCard}).querySelector('.tile-close').click()`);
+  await read(`globalThis.__previousToast=root.querySelector('#toast>span'); (${groupCard}).querySelector('.tile-close').click()`);
   await wait(()=>read(`return !(${groupCard})`),'Group x did not close group');
+  await wait(()=>read(`return root.querySelector('#toast>span')!==globalThis.__previousToast && !![...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo')`),'List close has no new Undo');
   await read(`[...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo').click()`);
   await wait(()=>read(`return !!(${groupCard})`),'List Undo failed');
   results.push('Native Alt+W closes focused group; repeated keys and text inputs are safe; group x works in List view; focus and group Undo retained');
 
   await read(`root.querySelector('[aria-label="Select tabs"]').click()`);
   await read(`(${groupCard}).querySelector('.group-select').click(); [...root.querySelectorAll('.switcher-card')].find(c=>c.dataset.key.includes(':tab:${host.id}:')).querySelector('.tab-choice').click(); (${groupCard}).querySelector('.tab-choice').focus()`);
+  await read(`globalThis.__previousToast=root.querySelector('#toast>span')`);
   await altW();await wait(()=>read(`return !(${groupCard})`),'Selection shortcut failed');
   assert.equal(await alive([host.id]),1,'Bulk close removed pinned host');
+  await wait(()=>read(`return root.querySelector('#toast>span')!==globalThis.__previousToast && !![...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo')`),'Selection close has no new Undo');
   await read(`[...root.querySelectorAll('#toast button')].find(b=>b.textContent==='Undo').click()`);
   await wait(()=>read(`return !!(${groupCard})`),'Selection Undo failed');
   results.push('Selection Alt+W closes selected group while preserving pinned tabs');

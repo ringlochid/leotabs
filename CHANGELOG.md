@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Remove the name and destination suggestion after dragging tabs into a new collection.
+- Keep switcher close buttons and their hover and focus states inside the card header.
+- Report skipped-tab counts when closing tabs, with Details explaining why a tab was skipped.
+- Retry temporary Library loading failures and show a Retry action when loading or live refresh fails. Time out stalled reads without repeating tab operations.
+
 ## 0.15.0 — 9 September 2026
 
 - Get started with a skippable guide, six offline video demonstrations, theme choices and optional import. Reopen the guide from Settings or Help; updates and restarts stay quiet.

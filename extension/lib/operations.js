@@ -6,6 +6,15 @@ import { randomCollectionColor } from './colors.js';
 import {policyFor,applySavedPolicy} from './organisation.js';
 import { collectionItems, placeCollectionItems, syncCollectionOrder } from './collection-order.js';
 
+function changedTabReason(current, captured) {
+  if (current.pinned) return 'pinned';
+  if (current.incognito) return 'private';
+  if (current.windowId !== captured.windowId) return 'moved';
+  if (current.url !== captured.url || (current.pendingUrl || '') !== (captured.pendingUrl || '')) return 'navigated';
+  if (current.groupId !== captured.groupId) return 'regrouped';
+  return 'changed';
+}
+
 // Dependencies are explicit so failure tests use the exact production operation path.
 export function operations({ browser, db, beforeStashClose = async () => {}, afterStashClose = async () => {} }) {
   const ownURL = browser.runtime.getURL('');
@@ -28,6 +37,11 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
     operation.attempted ||= [];
     operation.closed ||= [];
     operation.skipped ||= [];
+    operation.skipReasons ||= [];
+    const skip = (tabId, reason) => {
+      operation.skipped.push(tabId);
+      operation.skipReasons.push({ tabId, reason });
+    };
     const restoredGroups = new Map();
     async function restoreGrouping(tab, group) {
       // A failed/cancelled close must not leave a surviving tab detached. Do not
@@ -69,7 +83,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
       try {
         current = await browser.tabs.get(captured.id);
       } catch {
-        operation.skipped.push(captured.id);
+        skip(captured.id, 'unavailable');
         continue;
       }
       if (signal?.aborted) {
@@ -77,7 +91,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
         break;
       }
       if (!sameCapturedTab(current, captured) || current.groupId !== captured.groupId) {
-        operation.skipped.push(captured.id);
+        skip(captured.id, changedTabReason(current, captured));
         continue;
       }
       operation.attempted.push(captured.id);
@@ -87,25 +101,30 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
         break;
       }
       let detached = false;
+      let failureReason = 'close-failed';
       const group = operation.sourceGroups?.find((g) => g.id === current.groupId);
       try {
         // Closing grouped tabs can leave a saved Chrome group behind. Ungroup
         // only the captured outgoing tabs first; empty groups are then deleted.
         // Snapshot/journal writes above must succeed before either mutation.
         if (current.groupId >= 0 && typeof browser.tabs.ungroup === 'function') {
+          failureReason = 'ungroup-failed';
           await browser.tabs.ungroup(current.id);
           detached = true;
+          failureReason = 'unavailable';
           const latest = await browser.tabs.get(current.id);
           if (signal?.aborted || !sameCapturedTab(latest, captured) || latest.groupId !== -1) {
             if (signal?.aborted) operation.cancelled = true;
+            failureReason = signal?.aborted ? 'cancelled' : changedTabReason(latest, { ...captured, groupId: -1 });
             throw new Error('Tab changed during group cleanup');
           }
         }
+        failureReason = 'close-failed';
         await browser.tabs.remove(captured.id);
         operation.closed.push(captured.id);
       } catch {
         if (detached) await restoreGrouping(current, group);
-        operation.skipped.push(captured.id);
+        skip(captured.id, failureReason);
       }
       await db.write('journal', operation);
     }

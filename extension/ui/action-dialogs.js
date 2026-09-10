@@ -28,7 +28,6 @@ import {
 } from '../lib/portable.js';
 import { endpointOrigin } from '../lib/integrations.js';
 import { linkPicker } from './link-picker.js';
-import {assist} from './contextual-ai.js';
 
 export function createActionDialogs({ getData, windowId, getTabIds, change, onOpen = () => {}, inLibrary = false, onQuickStart }) {
   const data = new Proxy({}, { get: (_, key) => getData()[key] });
@@ -962,7 +961,7 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
         el(
           'p',
           { class: 'hint' },
-          'Saving this connection enables AI requests directly to your provider. Newly saved collections may be named automatically using their titles and full URLs. AI organisation also sends collection names and notes; filing suggestions can include names, notes and sample URLs from other collections. Screenshots and page text are not sent. Your provider may retain requests and charge for them.',
+          'Saving this connection enables AI requests directly to your provider. Newly saved collections may be named automatically using their titles and full URLs. AI organisation also sends collection names and notes. Screenshots and page text are not sent. Your provider may retain requests and charge for them.',
         ),
         el('p', {class:'hint'}, 'Keys stay in browser-local storage, without LeoTabs-managed encryption, and are excluded from backups. Forget a key or revoke optional website access to stop its use.'),
         el('a', {href:'privacy.html', target:'_blank', rel:'noopener'}, 'Privacy policy'),
@@ -1279,19 +1278,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
   function stashDialog(context) {
     return saveTo(context, { closeTabs: true });
   }
-  function dropSuggestions(c) {
-    const options=el('div',{}),status=el('p',{class:'hint',role:'status'});
-    const render=rows=>options.replaceChildren(...rows.map(r=>button('File in '+(data.state.collections.find(x=>x.id===r.id)?.name||r.name),act(async()=>{
-      await change('ai-library-apply',{plan:{revision:data.state.revision,scope:{type:'all'},actions:[{type:'merge',collectionId:c.id,destinationId:r.id}]}});close();
-    }),{title:r.reason||'Move these links, groups and notes into this collection'})));
-    const {close}=popover('Name or file dropped tabs',el('div',{},options,status),[button('Ask AI',act(async()=>{
-      status.textContent='Finding suggestions…';
-      const result=await assist(data.state,{kind:'destinations',collectionId:c.id});
-      render(result.destinations);status.textContent='';
-      if(result.name)options.prepend(button('Name this '+result.name,act(async()=>{await change('edit',{kind:'collection',collectionId:c.id,name:result.name});close();})));
-    }),{glyph:'sparkles'}),button('Keep here',()=>close())]);
-    rpc('destination-suggestions',{collectionId:c.id}).then(render).catch(error=>status.textContent=error.message);
-  }
   return {
     save: saveTo,
     update: updateCollection,
@@ -1306,7 +1292,6 @@ export function createActionDialogs({ getData, windowId, getTabIds, change, onOp
     export: exportDialog,
     ai: aiSaved,
     aiTabs,
-    dropSuggestions,
     arrangeRules: () => change('arrange-tabs', {windowId:win}),
     groupSort,
     groupCollection,

@@ -62,7 +62,3 @@ export function applyLibraryPlan(state,plan) {
     dest.updatedAt=Date.now();source.updatedAt=Date.now();
   }
 }
-export function destinationSuggestions(tabs,collections) {
-  const hosts=new Set(tabs.map(t=>{try{return new URL(t.resourceUrl||t.url).hostname;}catch{return '';}}));
-  return collections.map(c=>({id:c.id,name:c.name,score:c.links.reduce((n,l)=>{try{return n+Number(hosts.has(new URL(l.url).hostname));}catch{return n;}},0)})).filter(c=>c.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
-}

@@ -10,9 +10,13 @@ Default shortcuts are Alt+Q, Alt+Shift+Q and Alt+Shift+K. [Shortcut guide](searc
 
 ## The library looks empty
 
-Check the selected space, search query and collection scope. The sidebar search field filters the current space; press **Alt+Shift+K** to search saved work across spaces. Folded collections and preview limits can hide links; use the chevron or Show more. Confirm you are in the same browser profile and installation as before.
+Check the search query and collection scope. Library search covers all spaces; choosing a space clears the search. Folded collections and preview limits can hide links; use the chevron or Show more. Confirm you are in the same browser profile and installation as before.
 
 An unpacked build and a store installation can have different IDs and local libraries. Do not uninstall the old one until you have exported and verified a backup. [Migration guide](import-export.md).
+
+## The library stops updating
+
+LeoTabs retries temporary loading failures. If a loading or refresh message remains, choose **Retry**. The last loaded view stays visible during recovery. If the extension was updated while the page was open, reload the page. For an unpacked build, reload the extension first.
 
 ## A collection changes when I browse
 
@@ -49,6 +53,10 @@ Check the format, use a supported export, and read the import preview. Imports a
 ## Tabs closed unexpectedly
 
 Check Undo and Timeline. To open Recovery, press **Alt+Shift+K**, type **/recovery** and choose **Recovery**. Avoid further changes while you inspect the recorded operation. Recovery can reopen URLs and groups but cannot restore unsaved form contents. [Recovery guide](recovery.md).
+
+## Closing tabs reports skipped tabs
+
+The message counts confirmed closures and skipped tabs separately. Choose **Details** for the reason. LeoTabs skips tabs that change pages, windows or groups while closing, and reports browser failures without retrying the close. Undo restores the tabs that were closed.
 
 ## Report an issue safely
 

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 export const scenarios = {
+  "library-recovery": {
+    "file": "library-recovery", "run": "checkLibraryRecovery",
+    "description": "Library startup and live refresh recover from a failed load"
+  },
   "group-between-tabs": {
     "file": "group-between-tabs", "run": "checkGroupBetweenTabs",
     "description": "Whole groups between loose tabs; mixed order, copy, Undo and reload"

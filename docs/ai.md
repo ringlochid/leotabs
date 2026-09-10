@@ -11,7 +11,6 @@ An AI connection uses **your provider account and API access**. A subscription t
 | Automatic naming | Save a new collection after configuring a saved key and provider access | A short descriptive name may replace the generated save name |
 | Group open tabs by topic | Choose the AI topic-grouping action for open tabs | Related tabs form groups across websites |
 | Organise collection with AI | Collection menu → Organise collection with AI | Collection name, overview note and topic groups |
-| Filing suggestions | After a drag-created collection, choose Suggest name or destination, then Ask AI | Suggestions for a name or an existing destination; choose one to apply |
 
 Website grouping is local and does not use AI. Current AI tools infer from link metadata: they do not read the full article/page body. The collection overview is a summary of that metadata, not verified research.
 
@@ -55,8 +54,6 @@ Collection organisation, open-tab grouping and the switcher use the same AI plan
 Open-tab and switcher actions change groups and order. Only **Organise collection with AI** updates the collection name and note. The same model and context can still produce different groupings on separate runs.
 
 Automatic naming sends titles and URLs of the newly saved collection. **It can happen on each eligible save without a separate confirmation once a key and access are configured.**
-
-Filing suggestions can include the selected links and names, notes and sample URLs from other collections across all spaces. Do not use that feature if you do not want the broader library context sent.
 
 Screenshots, page-body text and browser-history search results are not sent by these AI tools. Sensitive information can still appear in URLs, titles or notes. Requests go directly to your configured provider, which applies its own retention, processing and billing rules. See the [privacy policy](../extension/privacy.html).
 

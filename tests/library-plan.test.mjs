@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateLibraryPlan,applyLibraryPlan,destinationSuggestions} from '../extension/lib/library-plan.js';
+import {validateLibraryPlan,applyLibraryPlan} from '../extension/lib/library-plan.js';
 import {libraryAccess} from '../extension/lib/library-access.js';
 const fixture=()=>({revision:3,spaces:[{id:'one'},{id:'two'}],collections:[
   {id:'a',name:'A',spaceId:'one',note:'Source note',groups:[{id:'g',name:'Research'}],links:[{id:'l',url:'https://a.test',title:'A link',groupId:'g'}]},
@@ -27,7 +27,6 @@ test('selected moves and collection order preserve other items',()=>{
   applyLibraryPlan(s,plan);
   assert.deepEqual(s.collections.map(c=>c.id),['b','a','c']);
   assert.equal(s.collections[1].links.length,0);assert.equal(s.collections[0].links.length,1);
-  assert.equal(destinationSuggestions([{url:'https://a.test/other'}],s.collections)[0].id,'b');
 });
 test('omnibox handler uses encoded search and respects new-tab disposition; standalone Library uses popup window',async()=>{
   let entered;const calls=[];

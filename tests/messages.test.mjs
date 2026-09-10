@@ -13,13 +13,26 @@ test('no-op and settings results do not request a toast', () => {
   assert.equal(operationFeedback({label:'Undid Save tabs'}, 'undo-action'), null);
 });
 test('close feedback reports confirmed counts without claiming skipped tabs remain open', () => {
-  const op={label:'Close tabs',closed:[1],skipped:[2],status:'complete'};
+  const op={label:'Close tabs',closed:[1],skipped:[2],skipReasons:[{tabId:2,reason:'navigated'}],status:'complete'};
   const feedback=operationFeedback(op,'close');
-  assert.equal(feedback.message,'Closed 1 tab · Incomplete');
-  assert.equal(feedback.error,true);
+  assert.deepEqual(feedback,{message:'Closed 1 tab · 1 skipped',error:true,details:['1 tab changed pages']});
   assert.equal(op.label,'Close tabs');
-  assert.deepEqual(operationFeedback({...op,closed:[],cancelled:true,status:'partial'},'close'),{message:'No tabs closed · Cancelled',error:false});
-  assert.equal(operationFeedback({label:'Stash tabs',snapshot:{links:[{},{}]},closed:[1],skipped:[2]},'save').message,'Saved 2 tabs · 1 closed · Incomplete');
+  assert.deepEqual(operationFeedback({...op,closed:[],cancelled:true,status:'partial'},'close'),
+    {message:'No tabs closed · 1 skipped · Cancelled',error:false,details:['1 tab changed pages']});
+  assert.equal(operationFeedback({...op,label:'Stash tabs',snapshot:{links:[{},{}]}},'save').message,'Saved 2 tabs · 1 closed · 1 skipped');
+});
+test('successful close stays concise without a Details action', () => {
+  assert.deepEqual(operationFeedback({label:'Close tabs',closed:[1],skipped:[],status:'complete'},'close'),{message:'Closed 1 tab',error:false});
+  assert.deepEqual(operationFeedback({label:'Close utility tabs',closed:[1,2],status:'complete'},'close'),{message:'Closed 2 tabs',error:false});
+});
+test('skipped details count unique tabs by reason and do not invent reasons for older records', () => {
+  const op={label:'Close tabs',closed:[],skipped:[1,2,3,4,5,5],skipReasons:[
+    {tabId:1,reason:'navigated'},{tabId:2,reason:'navigated'},{tabId:3,reason:'close-failed'},
+    {tabId:4,reason:'toString'},
+  ]};
+  assert.deepEqual(operationFeedback(op,'close'),{message:'No tabs closed · 5 skipped',error:true,
+    details:['2 tabs changed pages',"Closing wasn't confirmed for 1 tab",'No reason recorded for 2 tabs']});
+  assert.deepEqual(operationFeedback({label:'Close tabs',skipped:[1]},'close').details,['No reason recorded for 1 tab']);
 });
 test('AI HTTP failures identify the failed step without blaming every setting', async () => {
   for(const [status,expected] of [[401,/rejected the API key/],[403,/denied access/],[404,/endpoint or model not found/],[429,/limit reached/],[503,/unavailable/]]) {

@@ -8,6 +8,7 @@ import {
   button,
   theme,
   rpc,
+  loadSnapshot,
   currentWindow,
   domain,
   favicon,
@@ -32,7 +33,7 @@ export async function startQuick() {
   const searchOnly =
     (globalThis.__neoOverlayContext?.mode || new URLSearchParams(location.search).get('mode')) ===
     'search';
-  let data = await rpc('load',{includeTimeline:false}),
+  let data = await loadSnapshot({includeTimeline:false}),
     win = await currentWindow(),
     groupId = continuation?.groupId ?? null;
   let browseMode = continuation?.browseMode === 'all' ? 'all' : 'window',
@@ -231,6 +232,9 @@ export async function startQuick() {
     view,
   );
   mount.append(backdrop);
+  const loadError=el('div',{class:'load-error',role:'status',hidden:true},
+    el('span',{},"Can't refresh tabs"),button('Retry',()=>refresh().catch(()=>{})));
+  view.insertBefore(loadError,results);
   const actions = createActionDialogs({
     getData: () => data,
     windowId: win,
@@ -249,6 +253,7 @@ export async function startQuick() {
       if (feedback)
         toast(feedback.message, {
           error: feedback.error,
+          details: feedback.details,
           undo:
             action !== 'undo-action' && (op.undoable || op.before || op.closed?.length)
               ? async () => {
@@ -271,6 +276,7 @@ export async function startQuick() {
       if (feedback)
         toast(feedback.message, {
           error: feedback.error,
+          details: feedback.details,
           undo: op.closed?.length
             ? async () => {
                 await rpc('undo-action', { id: op.id, windowId: win });
@@ -350,6 +356,7 @@ export async function startQuick() {
       const feedback = operationFeedback(op, 'close');
       if (!disposed && feedback) toast(feedback.message, {
         error: feedback.error,
+        details: feedback.details,
         undo: op.closed?.length ? task(async () => {
           await rpc('undo-action', { id: op.id, windowId: win });
           await refresh({settle:true});
@@ -1030,35 +1037,47 @@ export async function startQuick() {
   const onResize = () => controller.render();
   window.addEventListener('resize', onResize);
   let generation = 0,
-    lastData = JSON.stringify(data), settlingRefresh = false;
+    lastData = JSON.stringify(data), settlingRefresh = false, loadingRefresh = false, layoutBusyAt = 0;
   async function refresh({settle = false} = {}) {
-    if (settlingRefresh && !settle) return;
+    if ((settlingRefresh || loadingRefresh) && !settle) return;
     if (settle) settlingRefresh = true;
+    loadingRefresh = true;
+    const g = ++generation;
     try {
     for (const [frame, load] of previewLoads) {
       if (!frame.isConnected) previewLoads.delete(frame);
       else load();
     }
-    const g = ++generation;
     let next;
     // Close/Undo must refresh the result list before restoring keyboard focus.
     // Background checkpoints can briefly report a busy layout after the mutation.
     for (let attempt = 0; attempt < 40; attempt++) {
-      next = await rpc('load',{includeTimeline:false,allowBusy:!settle});
+      next = await loadSnapshot({includeTimeline:false,allowBusy:!settle});
       if (!settle || !next.layoutBusy || disposed) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    if (disposed || g !== generation || next.layoutBusy) return;
+    if (disposed || g !== generation) return;
+    if (next.layoutBusy) {
+      layoutBusyAt ||= Date.now();
+      if (Date.now() - layoutBusyAt >= 8000) throw new Error('Tabs are still changing. Try again.');
+      return;
+    }
+    layoutBusyAt = 0;
     const nextKey = JSON.stringify(next);
-    if (lastData === nextKey) return;
-    lastData = nextKey;
+    if (lastData === nextKey) { loadError.hidden=true; return; }
     data = next;
     theme(data.state.settings.theme);
     controller.update();
     renderDock();
     tools.update();
     updateSelection();
+    lastData = nextKey;
+    loadError.hidden=true;
+    } catch (error) {
+      if (!disposed && g===generation) { loadError.hidden=false; loadError.title=error.message; }
+      throw error;
     } finally {
+      if (g===generation) loadingRefresh = false;
       if (settle) settlingRefresh = false;
     }
   }
