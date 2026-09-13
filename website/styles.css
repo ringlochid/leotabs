@@ -91,10 +91,9 @@ html.video-open{overflow:hidden}
 .keys>div{padding-block:24px;border-top:1px solid var(--line)}
 kbd{display:inline-block;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;padding:4px 7px;border:1px solid var(--control);border-radius:4px;background:var(--surface);color:var(--ink)}
 .keys p{color:var(--muted);font-size:14px;margin:16px 0 0}
-.privacy-callout{padding:40px;background:var(--surface);border:1px solid var(--line);border-radius:8px;display:grid;grid-template-columns:1fr 1.1fr;gap:60px}
+.privacy-callout,.faq{display:grid;grid-template-columns:.85fr 1.15fr;gap:70px}
 .privacy-callout h2{margin:0}
 .privacy-callout p{color:var(--muted);font-size:15px}
-.faq{display:grid;grid-template-columns:.85fr 1.15fr;gap:70px}
 .faq details{border-bottom:1px solid var(--line)}
 .faq summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 0;cursor:pointer;font-size:16px;font-weight:550;list-style:none}
 .faq summary::-webkit-details-marker{display:none}
@@ -138,7 +137,7 @@ kbd{display:inline-block;font:12px ui-monospace,SFMono-Regular,Consolas,monospac
 @media(max-width:900px){
   .wrap{width:calc(100% - 48px)}.site-head{gap:20px}.site-head nav{gap:18px}.theme-control>span{display:none}
   .hero{padding-top:60px}.section{padding:56px 0}.section-heading{gap:32px}.workflow article{padding-inline:22px}
-  .privacy-callout{padding:28px;gap:32px}.faq{gap:36px}.site-foot{flex-direction:column;gap:14px}
+  .privacy-callout,.faq{gap:36px}.site-foot{flex-direction:column;gap:14px}
 }
 @media(max-width:640px){
   .wrap{width:calc(100% - 40px)}.site-head{padding:20px 0 12px;gap:12px;flex-wrap:wrap}.brand{font-size:21px}
@@ -150,7 +149,7 @@ kbd{display:inline-block;font:12px ui-monospace,SFMono-Regular,Consolas,monospac
   .workflow,.integrations,.keys,.privacy-callout,.faq{grid-template-columns:1fr}
   .workflow article{border-left:0;border-top:1px solid var(--line);padding:24px 0}.workflow article:first-child{border-top:0;padding-top:0}.workflow article:last-child{padding-bottom:0}
   .integration{padding:24px}.integration+.integration{border-left:0;border-top:1px solid var(--line)}
-  .keys{gap:0;margin:24px 0 0}.keys>div{padding:22px 0}.keys p{margin-top:12px}.privacy-callout{padding:24px;gap:24px}.faq{gap:20px}
+  .keys{gap:0;margin:24px 0 0}.keys>div{padding:22px 0}.keys p{margin-top:12px}.privacy-callout,.faq{gap:20px}
   .closing{display:block}.closing .button{margin-top:24px}.prose{padding:40px 0 60px}.prose h1{font-size:36px}
   .prose>p:first-of-type{font-size:17px}.prose th,.prose td{padding:12px 10px}.prose table{font-size:13px}.prose td:first-child{width:36%}
 }
