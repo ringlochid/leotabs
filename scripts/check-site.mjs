@@ -11,7 +11,11 @@ for(const file of pages){
   const prefix='../'.repeat(file.split('/').length-1);
   const themeTag='<script src="'+prefix+'assets/theme.js"></script>';
   if(html.split(themeTag).length!==2)throw Error('Expected one local theme script in '+file);
-  if(/<script|<iframe|\son\w+=|\{\{/i.test(html.replace(themeTag,'')))throw Error('Unexpected script, embed or unresolved placeholder in '+file);
+  const videoTag='<script src="assets/video.js" defer></script>';
+  if(file==='index.html' && html.split(videoTag).length!==2)throw Error('Expected the local video script on the homepage.');
+  const permittedScripts=html.replace(themeTag,'').replace(file==='index.html'?videoTag:'\0','');
+  if(/<script|<iframe|\son\w+=|\{\{/i.test(permittedScripts))throw Error('Unexpected script, eagerly loaded embed or unresolved placeholder in '+file);
+  if(file==='index.html' && (!html.includes('data-video-id="'+config.videoId+'"') || !html.includes("frame-src https://www.youtube-nocookie.com")))throw Error('Missing video trigger or player CSP.');
   if(!html.includes('aria-label="Colour theme"'))throw Error('Missing accessible theme control in '+file);
   if((html.match(/<h1\b/g)||[]).length!==1)throw Error('Expected one h1 in '+file);
   if(!html.includes('support@ringlochid.me'))throw Error('Missing contact in '+file);
@@ -40,4 +44,4 @@ for(const guide of guides){
   for(const [,title] of renderGuide(guide.markdown).matchAll(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/g))
     if(!html.includes(title))throw Error('Guide content missing: '+guide.file);
 }
-console.log(`Checked ${pages.length} pages and ${guides.length} shared guides: links, assets, contact, headings, local theme script only and no remote embeds.`);
+console.log(`Checked ${pages.length} pages and ${guides.length} shared guides: links, assets, contact, headings, approved local scripts and no eagerly loaded embeds.`);

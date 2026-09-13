@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
-// A static site with a local theme preference; no framework or remote assets.
+// Static pages with local scripts and an optional click-to-load video player.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {renderGuide,guidePages} from './guide-markdown.mjs';
 const config=JSON.parse(await fs.readFile('website/config.json','utf8'));
 if(!config.storeUrl)throw Error('Configure the published Chrome Web Store URL in website/config.json.');
+if(!/^[\w-]{11}$/.test(config.videoId||''))throw Error('Configure a valid YouTube video ID.');
+const videoUrl='https://www.youtube.com/watch?v='+config.videoId;
+const baseCsp="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'";
+const videoCsp=baseCsp+"; frame-src https://www.youtube-nocookie.com";
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 for(const key of ['origin','storeUrl','hostingPrivacyUrl']) if(config[key] && new URL(config[key]).protocol!=='https:') throw Error(key+' must use HTTPS.');
 if(config.origin){
@@ -16,6 +20,7 @@ const out='output/site';
 await fs.mkdir(out+'/assets',{recursive:true});
 await fs.copyFile('website/styles.css',out+'/assets/styles.css');
 await fs.copyFile('website/theme.js',out+'/assets/theme.js');
+await fs.copyFile('website/video.js',out+'/assets/video.js');
 await fs.copyFile('extension/icons/lion.svg',out+'/assets/lion.svg');
 await fs.copyFile('LICENSE',out+'/LICENSE.txt');
 await fs.copyFile('website/assets/octicons-LICENSE.txt',out+'/assets/octicons-LICENSE.txt');
@@ -52,16 +57,18 @@ for(const [slug,title] of pages){
   }
   if(guide && slug!=='docs')body='<nav class="guide-breadcrumb" aria-label="Guide"><a href="'+prefix+'docs/">← All guides</a></nav>'+body+'<nav class="guide-next" aria-label="Related guides"><a href="'+prefix+'docs/">All guides</a><a href="'+prefix+'docs/ai/">AI setup</a><a href="'+prefix+'docs/notion/">Notion setup</a><a href="'+prefix+'docs/troubleshooting/">Troubleshooting</a></nav>';
   body=body.replaceAll('{{INSTALL}}','<a class="button" href="'+escape(config.storeUrl)+'">Add to Chrome</a>');
+  body=body.replaceAll('{{WATCH_VIDEO}}',`<a class="button secondary watch-video" href="${videoUrl}" data-video-id="${config.videoId}"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="m10 8 6 4-6 4z" fill="currentColor"/></svg>Watch video</a>`);
+  body=body.replaceAll('{{VIDEO_LINK}}',`<a href="${videoUrl}" target="_blank" rel="noopener">Watch on YouTube ↗</a>`);
   if(slug==='privacy' && config.hostingName && config.hostingPrivacyUrl) body=body.replace('Hosting details will be identified on the website before it is published.',`This website is hosted by ${escape(config.hostingName)}; see its <a href="${escape(config.hostingPrivacyUrl)}">privacy policy</a> for its handling of operational logs.`);
   const canonical=config.origin?new URL(slug?slug+'/':'',config.origin).href:null;
   const html=`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="${slug?baseCsp:videoCsp}">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer"><meta name="description" content="LeoTabs keeps your browsing work in local collections. Save, organise and switch tabs, with optional AI and portable exports.">
 ${!config.origin||slug==='uninstalled'?'<meta name="robots" content="noindex,nofollow">':''}${canonical?'<link rel="canonical" href="'+escape(canonical)+'">':''}
 <title>${title==='Home'?'LeoTabs — Your tabs, right where you left them':escape(title)+' · LeoTabs'}</title>
-<link rel="icon" href="${prefix}assets/lion.svg" type="image/svg+xml"><script src="${prefix}assets/theme.js"></script><link rel="stylesheet" href="${prefix}assets/styles.css"></head>
+<link rel="icon" href="${prefix}assets/lion.svg" type="image/svg+xml"><script src="${prefix}assets/theme.js"></script>${slug?'':'<script src="assets/video.js" defer></script>'}<link rel="stylesheet" href="${prefix}assets/styles.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><div class="wrap"><header class="site-head"><a class="brand" href="${prefix||'./'}"><img src="${prefix}assets/lion.svg" alt="" width="28" height="28">LeoTabs</a><nav aria-label="Main">${[['docs','Guide'],['privacy','Privacy'],['support','Support']].map(([id,label])=>`<a href="${prefix}${id}/"${slug===id||slug.startsWith(id+'/')?' aria-current="page"':''}>${label}</a>`).join('')}</nav><div class="header-actions"><label class="theme-control" hidden><select id="theme" aria-label="Colour theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>${githubLink}</div></header>
 <main id="main"${slug?' class="prose"':''}>${body}</main>
 <footer class="site-foot"><span>Made by Leo</span><nav aria-label="Footer"><a href="${prefix}privacy/">Privacy</a><a href="${prefix}permissions/">Permissions</a><a href="${prefix}changelog/">Changelog</a><a href="${prefix}LICENSE.txt">MPL-2.0</a><a href="mailto:support@ringlochid.me">Contact</a></nav></footer></div></body></html>`;
@@ -70,5 +77,5 @@ ${!config.origin||slug==='uninstalled'?'<meta name="robots" content="noindex,nof
 await fs.writeFile(out+'/robots.txt',config.origin?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');
 // Static-host hints; publish only the generated output/site directory.
 await fs.writeFile(out+'/.nojekyll','');
-await fs.writeFile(out+'/_headers',"/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'\n");
+await fs.writeFile(out+'/_headers',`/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: ${videoCsp}; frame-ancestors 'none'\n`);
 console.log(`Built ${pages.length} static pages, including ${guides.length} shared user guides. Nothing published.`);

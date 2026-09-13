@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
-// The site's only script: a local appearance preference, with no network calls.
+// Local appearance preference, with no network calls.
 (() => {
   const key = 'leotabs-site-theme';
   const normalise = value => ['light', 'dark'].includes(value) ? value : 'system';
