@@ -2,8 +2,12 @@
 // Static pages with local scripts and an optional click-to-load video player.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {renderGuide,guidePages} from './guide-markdown.mjs';
+import {canonicalSlug,pageUrl,breadcrumbItems,structuredData} from './site-seo.mjs';
 const config=JSON.parse(await fs.readFile('website/config.json','utf8'));
+const metadata=JSON.parse(await fs.readFile('website/seo.json','utf8'));
+if(process.argv.includes('--preview'))config.origin=null;
 if(!config.storeUrl)throw Error('Configure the published Chrome Web Store URL in website/config.json.');
 if(!/^[\w-]{11}$/.test(config.videoId||''))throw Error('Configure a valid YouTube video ID.');
 const videoUrl='https://www.youtube.com/watch?v='+config.videoId;
@@ -30,6 +34,7 @@ for(const name of ['library.png','switcher.png'])
   await fs.copyFile('website/assets/'+name,out+'/assets/'+name);
 const guides=await guidePages(fs);
 const pages=[['','Home'],['privacy','Privacy'],['permissions','Permissions'],['support','Support'],['changelog','Changelog'],['uninstalled','Help me improve LeoTabs'],...guides.map(g=>[g.slug,g.title])];
+if(Object.keys(metadata).length!==pages.length || pages.some(([slug])=>!metadata[slug]?.title || !metadata[slug]?.description))throw Error('Every page needs explicit SEO metadata in website/seo.json.');
 const policy=await fs.readFile('extension/privacy.html','utf8');
 const article=policy.match(/<article id="privacy-policy">([\s\S]*?)<\/article>/)?.[1];
 if(!article)throw Error('Missing canonical privacy article.');
@@ -43,7 +48,7 @@ for(const [slug,title] of pages){
     if(/^[\w-]+\.md(?:#.*)?$/.test(url)){
       const [file,fragment]=url.split('#'),target=guides.find(g=>g.file===file);
       if(!target)throw Error('Unknown guide link '+url);
-      return prefix+target.slug+'/'+(fragment?'#'+fragment:'');
+      return prefix+canonicalSlug(target.slug,metadata)+'/'+(fragment?'#'+fragment:'');
     }
     return url;
   };
@@ -55,27 +60,44 @@ for(const [slug,title] of pages){
       body=body.replace(/(?=<h2\b)/,contents);
     }
   }
-  if(guide && slug!=='docs')body='<nav class="guide-breadcrumb" aria-label="Guide"><a href="'+prefix+'docs/">← All guides</a></nav>'+body+'<nav class="guide-next" aria-label="Related guides"><a href="'+prefix+'docs/">All guides</a><a href="'+prefix+'docs/ai/">AI setup</a><a href="'+prefix+'docs/notion/">Notion setup</a><a href="'+prefix+'docs/troubleshooting/">Troubleshooting</a></nav>';
+  if(slug && slug!=='uninstalled'){
+    const crumbs=breadcrumbItems(slug,title,config.origin||'https://preview.invalid/',metadata);
+    body='<nav class="guide-breadcrumb" aria-label="Breadcrumb">'+crumbs.map((item,index)=>index===crumbs.length-1?'<span aria-current="page">'+escape(item.name)+'</span>':'<a href="'+prefix+new URL(item.url).pathname.replace(new URL(config.origin||'https://preview.invalid/').pathname,'')+'">'+escape(item.name)+'</a>').join(' <span aria-hidden="true">/</span> ')+ '</nav>'+body;
+  }
+  if(guide && slug!=='docs')body+='<nav class="guide-next" aria-label="Related guides"><a href="'+prefix+'docs/">All guides</a><a href="'+prefix+'docs/saving-switching/">Save and reopen tabs</a><a href="'+prefix+'docs/import-export/">Backups and exports</a><a href="'+prefix+'docs/troubleshooting/">Troubleshooting</a></nav><p class="guide-install">LeoTabs is free for Chrome and Edge. <a href="'+escape(config.storeUrl)+'">Install LeoTabs from the Chrome Web Store</a>.</p>';
   body=body.replaceAll('{{INSTALL}}','<a class="button" href="'+escape(config.storeUrl)+'">Add to Chrome</a>');
   body=body.replaceAll('{{WATCH_VIDEO}}',`<a class="button secondary watch-video" href="${videoUrl}" data-video-id="${config.videoId}"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/><path d="m10 8 6 4-6 4z" fill="currentColor"/></svg>Watch video</a>`);
   body=body.replaceAll('{{VIDEO_LINK}}',`<a href="${videoUrl}" target="_blank" rel="noopener">Watch on YouTube ↗</a>`);
   if(slug==='privacy' && config.hostingName && config.hostingPrivacyUrl) body=body.replace('Hosting details will be identified on the website before it is published.',`This website is hosted by ${escape(config.hostingName)}; see its <a href="${escape(config.hostingPrivacyUrl)}">privacy policy</a> for its handling of operational logs.`);
-  const canonical=config.origin?new URL(slug?slug+'/':'',config.origin).href:null;
+  const canonical=config.origin?pageUrl(config.origin,canonicalSlug(slug,metadata)):null;
+  const schema=structuredData(slug,title,config,metadata);
+  const schemaJSON=schema?JSON.stringify(schema).replaceAll('<','\\u003c'):null;
+  const csp=(slug?baseCsp:videoCsp).replace("script-src 'self'", "script-src 'self'"+(schemaJSON?" 'sha256-"+createHash('sha256').update(schemaJSON).digest('base64')+"'":''));
+  const social=canonical?`<meta property="og:type" content="website"><meta property="og:site_name" content="LeoTabs"><meta property="og:locale" content="en_US">
+<meta property="og:title" content="${escape(metadata[slug].title)}"><meta property="og:description" content="${escape(metadata[slug].description)}"><meta property="og:url" content="${escape(canonical)}">
+<meta property="og:image" content="${escape(new URL('assets/library.png',config.origin).href)}"><meta property="og:image:width" content="1920"><meta property="og:image:height" content="1200"><meta property="og:image:type" content="image/png"><meta property="og:image:alt" content="LeoTabs library with tabs, project collections, groups and notes">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escape(metadata[slug].title)}"><meta name="twitter:description" content="${escape(metadata[slug].description)}"><meta name="twitter:image" content="${escape(new URL('assets/library.png',config.origin).href)}"><meta name="twitter:image:alt" content="LeoTabs library with tabs, project collections, groups and notes">`:'';
   const html=`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${slug?baseCsp:videoCsp}">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="color-scheme" content="light dark">
-<meta name="referrer" content="no-referrer"><meta name="description" content="LeoTabs keeps your browsing work in local collections. Save, organise and switch tabs, with optional AI and portable exports.">
+<meta name="referrer" content="no-referrer"><meta name="description" content="${escape(metadata[slug].description)}">
 ${!config.origin||slug==='uninstalled'?'<meta name="robots" content="noindex,nofollow">':''}${canonical?'<link rel="canonical" href="'+escape(canonical)+'">':''}
-<title>${title==='Home'?'LeoTabs — Your tabs, right where you left them':escape(title)+' · LeoTabs'}</title>
+<title>${escape(metadata[slug].title)}</title>
+${social}
+${schemaJSON?'<script type="application/ld+json">'+schemaJSON+'</script>':''}
 <link rel="icon" href="${prefix}assets/lion.svg" type="image/svg+xml"><script src="${prefix}assets/theme.js"></script>${slug?'':'<script src="assets/video.js" defer></script>'}<link rel="stylesheet" href="${prefix}assets/styles.css"></head>
 <body><a class="skip" href="#main">Skip to content</a><div class="wrap"><header class="site-head"><a class="brand" href="${prefix||'./'}"><img src="${prefix}assets/lion.svg" alt="" width="28" height="28">LeoTabs</a><nav aria-label="Main">${[['docs','Guide'],['privacy','Privacy'],['support','Support']].map(([id,label])=>`<a href="${prefix}${id}/"${slug===id||slug.startsWith(id+'/')?' aria-current="page"':''}>${label}</a>`).join('')}</nav><div class="header-actions"><label class="theme-control" hidden><select id="theme" aria-label="Colour theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>${githubLink}</div></header>
 <main id="main"${slug?' class="prose"':''}>${body}</main>
-<footer class="site-foot"><span>Made by Leo</span><nav aria-label="Footer"><a href="${prefix}privacy/">Privacy</a><a href="${prefix}permissions/">Permissions</a><a href="${prefix}changelog/">Changelog</a><a href="${prefix}LICENSE.txt">MPL-2.0</a><a href="mailto:support@ringlochid.me">Contact</a></nav></footer></div></body></html>`;
+<footer class="site-foot"><span>Made by <a href="https://github.com/ringlochid">Leo</a></span><nav aria-label="Footer"><a href="${prefix}privacy/">Privacy</a><a href="${prefix}permissions/">Permissions</a><a href="${prefix}changelog/">Changelog</a>${config.origin?'<a href="'+prefix+'sitemap.xml">Sitemap</a>':''}<a href="${prefix}LICENSE.txt">MPL-2.0</a><a href="mailto:support@ringlochid.me">Contact</a></nav></footer></div></body></html>`;
   const directory=path.join(out,slug);await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'index.html'),html);
 }
-await fs.writeFile(out+'/robots.txt',config.origin?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');
+const sitemapUrls=config.origin?pages.filter(([slug])=>slug!=='uninstalled' && canonicalSlug(slug,metadata)===slug).map(([slug])=>pageUrl(config.origin,slug)):[];
+await fs.writeFile(out+'/sitemap.xml','<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+sitemapUrls.map(url=>'  <url><loc>'+escape(url)+'</loc></url>').join('\n')+'\n</urlset>\n');
+await fs.writeFile(out+'/robots.txt',config.origin?'User-agent: *\nAllow: /\nSitemap: '+new URL('sitemap.xml',config.origin).href+'\n':'User-agent: *\nDisallow: /\n');
 // Static-host hints; publish only the generated output/site directory.
 await fs.writeFile(out+'/.nojekyll','');
-await fs.writeFile(out+'/_headers',`/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: ${videoCsp}; frame-ancestors 'none'\n`);
+// Per-page CSP, including the JSON-LD hash, lives in HTML. A second script policy
+// here would block the hashed data on hosts that support this optional file.
+await fs.writeFile(out+'/_headers',`/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: no-referrer\n  Content-Security-Policy: frame-ancestors 'none'\n`);
 console.log(`Built ${pages.length} static pages, including ${guides.length} shared user guides. Nothing published.`);

@@ -1,4 +1,6 @@
-# Send collections to Notion
+# Export browser tabs and bookmarks to Notion
+
+To export Chrome or Edge tabs to Notion, first [save them as a LeoTabs collection](saving-switching.md), then connect a destination page and export that collection. Imported bookmarks can be exported through the same workflow.
 
 LeoTabs exports a **snapshot** into Notion. It creates pages containing your collection names, saved links, groups and notes. It is not two-way sync: editing either side does not update the other, and there is no Notion-to-LeoTabs sync/import connection.
 

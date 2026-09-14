@@ -1,0 +1,83 @@
+{
+  "": {
+    "title": "LeoTabs — Tab & Bookmark Organizer for Chrome and Edge",
+    "description": "Save tabs and bookmarks into project collections. Switch projects, search saved links, and reopen your work with LeoTabs, a free Chrome and Edge extension."
+  },
+  "privacy": {
+    "title": "Privacy Policy — Local Storage & Optional Services | LeoTabs",
+    "description": "Read how LeoTabs stores your tab collections, handles optional AI and Notion connections, and protects your browsing data without ads or telemetry."
+  },
+  "permissions": {
+    "title": "Chrome Extension Permissions Explained | LeoTabs",
+    "description": "Understand why LeoTabs needs tab and storage access, when it requests optional bookmark or history permissions, and how to revoke service access."
+  },
+  "support": {
+    "title": "LeoTabs Support — Help with Tabs, Collections & Backups",
+    "description": "Get help with LeoTabs for Chrome and Edge. Find troubleshooting guides, report a bug, or contact the developer about collections, backups and integrations."
+  },
+  "changelog": {
+    "title": "LeoTabs Changelog — Features, Fixes & Release Notes",
+    "description": "See what's changed in LeoTabs, including tab management improvements, collection features, fixes and links to published extension releases."
+  },
+  "uninstalled": {
+    "title": "After Uninstalling LeoTabs — Data & Feedback",
+    "description": "Learn what happens to your local collections after uninstalling LeoTabs, find backup information, and optionally share feedback with the developer."
+  },
+  "docs": {
+    "title": "LeoTabs Guides — Save, Organize & Restore Browser Tabs",
+    "description": "Learn to save and reopen tabs, organize bookmarks by project, use keyboard shortcuts, import collections, and export saved links to Notion with LeoTabs."
+  },
+  "docs/ai": {
+    "title": "Group Tabs with AI — Provider Setup & Privacy | LeoTabs",
+    "description": "Connect your own AI provider to group browser tabs by topic and organize saved collections. Learn setup, costs, data handling and troubleshooting in LeoTabs."
+  },
+  "docs/getting-started": {
+    "title": "Install LeoTabs in Chrome or Edge & Save Your First Tabs",
+    "description": "Install LeoTabs from the Chrome Web Store, open the library, and save your first tab collection. Start organizing browsing projects without an account."
+  },
+  "docs/groups-selection": {
+    "title": "Group, Sort & Remove Duplicate Tabs | LeoTabs Guide",
+    "description": "Organize browser tabs and saved links with groups, sorting and drag and drop. Learn multi-selection and how to close duplicate tabs safely in LeoTabs."
+  },
+  "docs/import-export": {
+    "title": "Import Bookmarks & Export Tabs as HTML, JSON or Markdown",
+    "description": "Back up LeoTabs collections, import browser bookmarks, and export saved tabs as JSON, bookmark HTML or Markdown. Move your library between Chrome and Edge."
+  },
+  "docs/library": {
+    "title": "Organize Tabs & Bookmarks by Project | LeoTabs Guide",
+    "description": "Organize research and work into LeoTabs spaces and collections. Group saved links, add project notes, reorder bookmarks, and switch between browsing tasks."
+  },
+  "docs/migrate-tabs": {
+    "title": "Import OneTab, Toby & Browser Bookmarks into LeoTabs",
+    "description": "Move saved tabs from OneTab text, supported Toby JSON or browser bookmarks into LeoTabs. Preview imports, check transferred links, and keep a backup."
+  },
+  "docs/notion": {
+    "title": "Export Chrome Tabs & Bookmarks to Notion | LeoTabs",
+    "description": "Save browser tabs as LeoTabs collections and export their links, groups and notes to Notion. Follow the connection setup and create your first snapshot page."
+  },
+  "docs/permissions": {
+    "title": "LeoTabs Permissions Guide — Required & Optional Access",
+    "description": "Learn which browser permissions LeoTabs uses for tabs, bookmarks, history and optional integrations, with explanations and controls for revoking access.",
+    "canonicalSlug": "permissions"
+  },
+  "docs/recovery": {
+    "title": "Restore Tabs & Collection Versions with LeoTabs Recovery",
+    "description": "Recover supported changes with Undo, reopen recently closed pages, and restore saved collections through LeoTabs Timeline and version history."
+  },
+  "docs/saving-switching": {
+    "title": "Save & Reopen Chrome Tabs — Switch Projects with LeoTabs",
+    "description": "Save open Chrome or Edge tabs into a collection, close them when ready, and reopen a project later. Learn how Open, Switch and Auto-update work in LeoTabs."
+  },
+  "docs/search-shortcuts": {
+    "title": "Search Tabs & Bookmarks with Keyboard Shortcuts | LeoTabs",
+    "description": "Find open tabs and saved bookmarks with LeoTabs search and its visual switcher. Learn Alt+Q, search scopes, collection filters and customizable shortcuts."
+  },
+  "docs/settings-privacy": {
+    "title": "LeoTabs Settings — Themes, Previews & Privacy Controls",
+    "description": "Configure LeoTabs appearance, tab previews, automatic updates and optional connections. Manage browser permissions, stored credentials and local data."
+  },
+  "docs/troubleshooting": {
+    "title": "Fix LeoTabs Shortcuts, Imports & Collection Problems",
+    "description": "Troubleshoot LeoTabs keyboard shortcuts, saved tabs, imports, previews and integrations. Find safe recovery steps and details to include in a support request."
+  }
+}

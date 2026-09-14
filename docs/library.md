@@ -1,6 +1,22 @@
-# Your library
+# Organize tabs and bookmarks by project
 
-Use spaces to separate areas of your life or work, and collections to save a task you want to return to.
+LeoTabs organizes saved browser tabs and bookmarks into collections, with spaces for broader areas of work. A collection keeps the links for one task together with groups and notes, so you can return to the work without searching through an unrelated list of bookmarks.
+
+## Set up a project library
+
+1. Create a space for an area such as Work, Study or Personal.
+2. Open the pages for one task, then [save those tabs as a collection](saving-switching.md), or choose **New collection** to start empty.
+3. Name the collection for the task, such as “Website redesign”, and add a note with the next step.
+4. Group links by purpose: reference material, drafts and tools, for example. Drag additional open tabs into the collection as you find them.
+5. When you return, choose **Open** to open its links alongside your current tabs, or **Switch** to make it the current project in that window.
+
+For a Study space, keep an “Assignment research” collection separate from “Course administration”. Within research, groups can distinguish papers, datasets and your draft. Use a collection note for context such as “Compare the second paper's evaluation method next”.
+
+## Bookmarks and open tabs
+
+Open tabs are live browser pages. Collections hold saved links that can be reopened even after those pages are closed. [Import browser bookmarks](import-export.md) to organize existing saved links in the same library, or [move a OneTab or Toby export](migrate-tabs.md).
+
+An import makes separate copies in LeoTabs. Changes to these copies do not continuously synchronize with Chrome or Edge bookmarks. You can export collections back to browser bookmarks, bookmark HTML or Markdown when you want to use them elsewhere. Collections do not automatically synchronize across devices; use a backup to move them between browser profiles.
 
 ## Spaces
 

@@ -1,4 +1,20 @@
-# Save, open and switch
+# Save and reopen tabs in Chrome or Edge
+
+Save your open browser tabs as a LeoTabs collection so you can close a project and reopen its links later. Collections can keep groups and notes alongside the links. The same workflow works in Chrome and compatible versions of Edge, without an account or an AI connection.
+
+## Save a project for later
+
+1. Open LeoTabs from the lion icon, or press **Alt+Shift+Q**.
+2. In **Open tabs**, select the pages you want to save, or leave them unselected to save the eligible tabs in the window.
+3. Choose **Save tabs** beside Open tabs. Leave **and close them** unchecked to keep working, or check it when you want to put the project away.
+4. Choose **Save tabs** or **Stash tabs**, then give the new collection a name such as “Research — next draft”. Add a note about what you need to do next.
+5. Return to the collection and choose **Open** to reopen its links. Choose **Open in new window** from its menu if you want a separate window.
+
+For example, save an assignment brief, two reference pages and a draft document as one collection. Closing those tabs after saving clears the window; opening the collection later restores the links. Save changes inside the document's own app before closing it: a collection does not preserve unsaved forms, scroll position or a page's full application state.
+
+To keep several projects separate, see [organizing tabs and bookmarks by project](library.md). Before changing browser profiles or installations, [export a backup](import-export.md).
+
+## Choose Save, Open or Switch
 
 Choose an action based on whether you want to keep browsing, put work away, or replace the current window's task.
 

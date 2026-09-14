@@ -1,6 +1,17 @@
-# Backup, import and export
+# Import bookmarks and export saved tabs
 
-A backup is the best way to carry your library to another installation. Markdown and bookmark HTML are useful when you want your links outside LeoTabs.
+A LeoTabs JSON backup carries your saved library to another installation. Bookmark HTML and Markdown let you use saved tabs in a browser's bookmarks or another app. You can also import Chrome or Edge bookmarks directly into collections.
+
+Moving from another tab manager? Follow the [OneTab and Toby migration guide](migrate-tabs.md) for export formats, preview checks and transfer limits.
+
+## Import Chrome or Edge bookmarks
+
+1. Open **Settings → Export & import → Import data** in LeoTabs.
+2. Choose **Import browser bookmarks** and grant bookmark access when requested.
+3. Review the import preview and any skipped links, then choose **Import collections**.
+4. Inspect the imported collections and open a few links to check the result.
+
+LeoTabs imports copies. It does not move or delete the original bookmarks, and it does not continuously synchronize later changes with your browser's bookmark tree. To organize the imported links, see [spaces, collections and groups](library.md).
 
 ## Choose an export
 

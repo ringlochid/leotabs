@@ -1,6 +1,6 @@
-# LeoTabs
+# LeoTabs — Tab & Bookmark Organizer
 
-A tab manager and keyboard switcher for Chrome and Edge. Save tabs as collections, organise them into spaces, and reopen a project when you're ready to continue.
+A free, open-source tab and bookmark organizer for Chrome and Edge. Save tabs and imported bookmarks as project collections, organise them into spaces, and reopen your work when you're ready to continue. Find open tabs and saved links with search or the visual keyboard switcher.
 
 [Add to Chrome](https://chromewebstore.google.com/detail/leotabs/heolckkdeandgagkiefggcneodniojhb) · [User guide](https://ringlochid.me/leotabs/docs/) · [Website](https://ringlochid.me/leotabs/) · [Contribute](#contribute)
 
@@ -16,6 +16,15 @@ A tab manager and keyboard switcher for Chrome and Edge. Save tabs as collection
 - **Take your library with you.** Export backup JSON, bookmark HTML or Markdown. Import saved links and backups, or export collections to Notion.
 
 LeoTabs is free to use. Everyday tab management works without an account or an AI connection.
+
+## Guides for your workflow
+
+- [Save and reopen Chrome or Edge tabs](https://ringlochid.me/leotabs/docs/saving-switching/)
+- [Organize tabs and bookmarks by project](https://ringlochid.me/leotabs/docs/library/)
+- [Import OneTab, Toby or browser bookmarks](https://ringlochid.me/leotabs/docs/migrate-tabs/)
+- [Export tabs and saved links to Notion](https://ringlochid.me/leotabs/docs/notion/)
+
+Imported bookmarks live in LeoTabs collections. They are separate copies, not a continuously synchronized view of your browser's bookmark tree.
 
 ## Install
 

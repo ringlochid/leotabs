@@ -14,6 +14,7 @@ Connecting a service? Go straight to [AI setup](ai.md) or [Notion setup](notion.
 | [Search and shortcuts](search-shortcuts.md) | Switcher, search, keyboard navigation and scopes |
 | [Groups and selection](groups-selection.md) | Group, sort, drag, copy and act on multiple tabs |
 | [Backup, import and export](import-export.md) | Keep portable copies and move between installations |
+| [Move from OneTab, Toby or browser bookmarks](migrate-tabs.md) | Choose an export format, preview the import and verify transferred links |
 | [Undo and recovery](recovery.md) | Recover saved work and understand what cannot be restored |
 
 ## Connections

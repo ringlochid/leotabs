@@ -131,6 +131,7 @@ kbd{display:inline-block;font:12px ui-monospace,SFMono-Regular,Consolas,monospac
 .prose .notice p{margin:0}
 .guide-breadcrumb{font-size:13px;margin:0 0 30px;color:var(--muted)}
 .guide-next{display:flex;gap:16px 24px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:24px;margin-top:48px;font-size:13px}
+.guide-install{margin-top:24px;font-size:14px;color:var(--muted)}
 .on-this-page{margin:32px 0;padding:18px 22px;border:1px solid var(--line);border-radius:6px}
 .on-this-page summary{cursor:pointer;font-size:14px;font-weight:600}
 .on-this-page ul{margin-bottom:0;font-size:14px}
