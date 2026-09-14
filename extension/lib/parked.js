@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+import { safeURL } from './model.js';
 export const parkedTitle = (record) =>
   record.title?.trim() || new URL(record.url).hostname || record.url;
 export const hasParkedIdentity = (tab, title) =>
@@ -35,7 +36,7 @@ export async function repairParkedTabs(browser, db, { repairDiscarded = true } =
         const candidate = pending.shift();
         try {
           const record = await db.read('parked', new URL(candidate.url).searchParams.get('id'));
-          if (!record) continue;
+          if (!record || !safeURL(record.url)) continue;
           const tab = await browser.tabs.get(candidate.id);
           if (
             tab.active ||

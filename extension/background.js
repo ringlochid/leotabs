@@ -18,7 +18,8 @@ import {
   updateSignature,
   mirrorCollection,
 } from './lib/collection-workflow.js';
-import { sessionManager } from './lib/sessions.js';
+import { sessionManager, restoreBrowserSession } from './lib/sessions.js';
+import { localFileURL } from './lib/tab-policy.js';
 import { operations } from './lib/operations.js';
 import {
   newCollection,
@@ -58,8 +59,8 @@ let resumeQueue = Promise.resolve();
 async function startResume(data) {
   const c = collection(await db.getState(), data.collectionId),
     ids = data.linkIds ? new Set(data.linkIds) : null;
-  const snapshot = { ...c, links: c.links.filter((link) => !ids || ids.has(link.id)) };
-  if (!snapshot.links.length) throw new Error('Select a tab to open');
+  const snapshot = { ...c, links: c.links.filter((link) => safeURL(link.url) && (!ids || ids.has(link.id))) };
+  if (!snapshot.links.length) throw new Error('No web tabs to open');
   const job = {
     id: uid(),
     kind: 'resume',
@@ -194,6 +195,8 @@ async function loadParked(tabId) {
   const tab = await chrome.tabs.get(tabId);
   if (!tab.active || !tab.url?.startsWith(own + 'parked.html?')) return;
   const record = await db.read('parked', new URL(tab.url).searchParams.get('id'));
+  if (record && !safeURL(record.url))
+    throw Error(localFileURL(record.url) ? "Can't reopen local files" : "This saved URL isn't supported");
   if (record && safeURL(record.url)) {
     const current = await chrome.tabs.get(tabId);
     if (current.active && current.url === tab.url)
@@ -356,11 +359,10 @@ async function dispatch(action, data = {}, sender = {}) {
     case 'session-checkpoint':
       return serial(async () => sessions.capture(await windowId(data), { reason: 'Checkpoint' }));
     case 'restore-session':
-      await chrome.sessions.restore(data.sessionId);
-      return;
+      return restoreBrowserSession(chrome, data.sessionId);
     case 'closed-records':
       return (await db.all('closed'))
-        .filter((r) => r.at >= Date.now() - 30 * 86400000)
+        .filter((r) => r.at >= Date.now() - 30 * 86400000 && safeURL(r.url))
         .sort((a, b) => b.at - a.at)
         .slice(0, 1000);
     case 'restore-closed': {
@@ -420,7 +422,9 @@ async function dispatch(action, data = {}, sender = {}) {
       const c = collection(state, data.collectionId);
       const link = c.links.find((l) => l.id === data.linkId);
       if (!link) throw new Error('Link not found.');
-      return chrome.tabs.create({ url: link.url, windowId: await windowId(data), active: true });
+      const url = safeURL(link.url);
+      if (!url) throw Error(localFileURL(link.url) ? "Can't reopen local files" : "This saved URL isn't supported");
+      return chrome.tabs.create({ url, windowId: await windowId(data), active: true });
     }
     case 'resume':
       return runResume((await startResume(data)).id);
@@ -744,7 +748,7 @@ async function dispatch(action, data = {}, sender = {}) {
               break;
             case 'add-link': {
               const url = safeURL(data.url);
-              if (!url) throw new Error('Enter an http://, https:// or file:// URL');
+              if (!url) throw new Error('Enter an http:// or https:// URL');
               c.links.push({
                 id: uid(),
                 url,
@@ -1179,11 +1183,11 @@ async function dispatch(action, data = {}, sender = {}) {
     }
     case 'history':
       await requirePermission({ permissions: ['history'] });
-      return chrome.history.search({
+      return (await chrome.history.search({
         text: text(data.query, 300),
         maxResults: 40,
         startTime: Date.now() - 30 * 86400000,
-      });
+      })).filter(page => safeURL(page.url));
     default:
       throw new Error('Unknown action.');
   }

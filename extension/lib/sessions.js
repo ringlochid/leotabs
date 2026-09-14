@@ -1,6 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 import { mirrorCollection, collectionContentKey, tabSetKey } from './collection-workflow.js';
-import { snapshotTabs, uid } from './model.js';
+import { snapshotTabs, uid, safeURL } from './model.js';
+
+export async function restoreBrowserSession(browser, sessionId) {
+  const recent = await browser.sessions.getRecentlyClosed({ maxResults: 25 });
+  const session = recent.find(s => (s.window?.sessionId || s.tab?.sessionId) === sessionId);
+  const tabs = session?.window?.tabs || (session?.tab ? [session.tab] : []);
+  const webTabs = tabs.filter(tab => !tab.incognito && safeURL(tab.url));
+  if (!webTabs.length) throw Error('No web tabs to reopen');
+  if (webTabs.length === tabs.length) return browser.sessions.restore(sessionId);
+  // Native window restore would also reopen excluded local/utility pages.
+  return browser.windows.create({ url: webTabs.map(tab => safeURL(tab.url)) });
+}
 
 // Live tab IDs belong to this browser session only. Durable snapshots contain URLs,
 // never reusable browser IDs. Active collections mirror their eligible open pages.

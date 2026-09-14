@@ -261,6 +261,36 @@ test('save-only leaves all live tabs unchanged', async () => {
   assert.equal(f.state.collections.length, 1);
 });
 
+test('local-file-only saves behave like new tabs; mixed stash recovers only web pages', async () => {
+  const local=baseTab(1,{url:'file:///C:/fixtures/document.pdf',groupId:5});
+  const only=fixture([local]);
+  await assert.rejects(only.ops.save({close:false}),/Can't save utility tabs/);
+  assert.deepEqual(only.removed,[]);
+  const f=fixture([local,baseTab(2)]);
+  const saved=await f.ops.save({close:true});
+  assert.deepEqual(saved.snapshot.links.map(l=>l.url),['https://example.org/2']);
+  assert.deepEqual(saved.snapshot.groups,[]);
+  assert.deepEqual(f.removed,[1,2]);
+  const restored=await f.ops.recover(saved.id,1);
+  assert.equal(restored.created.length,1);
+  assert(f.created.every(t=>!t.url.startsWith('file:')));
+  assert([...f.stores.parked.values()].every(r=>!r.url.startsWith('file:')));
+});
+
+test('old saved local documents are skipped on immediate and deferred resume', async () => {
+  for (const deferred of [true,false]) {
+    const f=fixture([]), collection={groups:[],links:[
+      {id:'local',url:'file:///C:/fixtures/document.pdf',title:'Local PDF'},
+      {id:'web',url:'https://example.org/document.pdf',title:'Web PDF'},
+    ]};
+    const result=await f.ops.openLinks({collection,windowId:1,deferred});
+    assert.equal(result.created.length,1);
+    assert.deepEqual(result.failed,[]);
+    assert(f.created.every(t=>!t.url.startsWith('file:')));
+    assert([...f.stores.parked.values()].every(r=>!r.url.startsWith('file:')));
+  }
+});
+
 test('deliberate save retains Web Store resources',async()=>{
   const f=fixture([baseTab(1,{url:'https://chromewebstore.google.com/detail/example'})]);
   await f.ops.save({close:false});assert.equal(f.state.collections[0].links[0].url,'https://chromewebstore.google.com/detail/example');

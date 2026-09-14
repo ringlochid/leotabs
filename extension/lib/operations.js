@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 import { parkedTitle, settleParked } from './parked.js';
 import { snapshotTabs, safeURL, sameCapturedTab, stamp, uid } from './model.js';
-import { manageableURL } from './tab-policy.js';
+import { manageableURL, localFileURL } from './tab-policy.js';
 import { randomCollectionColor } from './colors.js';
 import {policyFor,applySavedPolicy} from './organisation.js';
 import { collectionItems, placeCollectionItems, syncCollectionOrder } from './collection-order.js';
@@ -252,7 +252,7 @@ export function operations({ browser, db, beforeStashClose = async () => {}, aft
     signal,
     onProgress = async () => {},
   }) {
-    const links = collection.links.filter((l) => !linkIds || linkIds.includes(l.id));
+    const links = collection.links.filter((l) => !localFileURL(l.url) && (!linkIds || linkIds.includes(l.id)));
     const existing = await live();
     const used = new Set(),
       result = { created: [], reused: [], failed: [], groupFailures: [] };

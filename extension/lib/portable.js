@@ -9,6 +9,7 @@ import {
   SCHEMA,
 } from './model.js';
 import { portableSettings } from './settings.js';
+import { localFileURL } from './tab-policy.js';
 const escapeHTML = (s) =>
   String(s).replace(
     /[&<>"']/g,
@@ -123,6 +124,11 @@ export function parseImport(source, filename = 'import.json') {
     settings,
     recovery,
     spaces;
+  const validate = input => {
+    const result = validateCollections(input, { freshIds: true });
+    skipped += input.reduce((n, c) => n + c.links.filter(l => localFileURL(l?.url)).length, 0);
+    return result;
+  };
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     let data;
     try { data = JSON.parse(trimmed); }
@@ -134,13 +140,13 @@ export function parseImport(source, filename = 'import.json') {
       throw new Error('This backup version is not supported');
     if (isBackup) {
       spaces = validateSpaces(data.spaces);
-      collections = validateCollections(data.collections, { freshIds: true });
+      collections = validate(data.collections);
       settings = portableSettings(data.settings);
       recovery = recoveryLog(data.recovery || []);
     } else if (isCollection)
-      collections = validateCollections(data.collections, { freshIds: true });
+      collections = validate(data.collections);
     else if (Array.isArray(data) && data.every((c) => Array.isArray(c.links)))
-      collections = validateCollections(data, { freshIds: true });
+      collections = validate(data);
     else if (
       Array.isArray(data.collections) &&
       data.collections.every((c) => Array.isArray(c.cards))

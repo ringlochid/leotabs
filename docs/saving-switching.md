@@ -16,6 +16,8 @@ Choose an action based on whether you want to keep browsing, put work away, or r
 
 Use **Save tabs**, the tray icon beside **Open tabs**, in the library or switcher. Select tabs first to limit the action. This dialog creates a new collection; it does not have a destination picker.
 
+Local files, including PDFs opened from your device, behave like New Tab pages: they stay visible in open tabs but are excluded from saved collections, Auto-update and reopening. Online PDFs remain ordinary web pages. Older saved local-file links are skipped when reopening a collection.
+
 **and close them** closes the tabs after saving. The confirmation button reads **Stash tabs** when this is checked, or **Save tabs** when it is not. Choosing **Stash tabs** from the search command list opens the dialog with closing selected.
 
 **and switch to new collection** makes the new collection current in this window without reopening its tabs. It requires all unpinned tabs in that window. Closing and switching to the new collection are mutually exclusive.
@@ -36,7 +38,7 @@ Choose **Switch** on the destination collection. Read the outgoing-work choices 
 
 A one-time update does not automatically enable ongoing Auto-update. Recovery information is kept for supported switching operations even if you do not retain an outgoing collection.
 
-Pinned browser tabs stay open. Browser-internal and other extension pages are not saved as ordinary links; new-tab/settings pages may close during a switch. Saving a URL does not capture unsaved form input or a website's in-memory state.
+Pinned browser tabs stay open. Local files, browser-internal and other extension pages are not saved as ordinary links; these utility pages may close during a switch or stash and cannot be reopened by Undo. Saving a URL does not capture unsaved form input or a website's in-memory state.
 
 ## Auto-update
 

@@ -144,6 +144,7 @@
   }
 
   // extension/lib/tab-policy.js
+  var localFileURL = (url = "") => /^file:/i.test(String(url).trim());
   function manageableURL(url = "") {
     return /^(?:https?|file|chrome|edge|chrome-extension|extension):/i.test(url) || /^about:(?:blank|newtab)/i.test(url);
   }
@@ -201,7 +202,7 @@
   function safeURL(value) {
     try {
       const u = new URL(value);
-      return ["http:", "https:", "file:"].includes(u.protocol) ? u.href : null;
+      return ["http:", "https:"].includes(u.protocol) ? u.href : null;
     } catch {
       return null;
     }
@@ -295,15 +296,20 @@
         };
       });
       const ids = /* @__PURE__ */ new Set(), linkMap = /* @__PURE__ */ new Map();
-      c.links = raw.links.map((l) => {
+      const omittedGroups = /* @__PURE__ */ new Set();
+      c.links = raw.links.flatMap((l) => {
         if (++count > 5e4) throw new Error("Import exceeds the 50,000-link limit");
+        if (localFileURL(l?.url)) {
+          omittedGroups.add(map.get(l.groupId));
+          return [];
+        }
         const url = safeURL(l?.url);
         if (!url) throw new Error("An imported URL is not supported");
         const id = freshIds ? uid() : text(l.id || uid(), 100);
         if (ids.has(id)) throw new Error("The import contains duplicate link IDs");
         ids.add(id);
         if (typeof l.id === "string") linkMap.set(l.id, id);
-        return {
+        return [{
           id,
           title: text(l.title || url),
           url,
@@ -311,8 +317,10 @@
           groupId: map.get(l.groupId) || null,
           createdAt: Number(l.createdAt) || stamp(),
           ...l.manualGroup ? { manualGroup: true } : {}
-        };
+        }];
       });
+      const populatedGroups = new Set(c.links.map((l) => l.groupId));
+      c.groups = c.groups.filter((g) => !omittedGroups.has(g.id) || populatedGroups.has(g.id));
       if (Array.isArray(raw.itemOrder)) {
         c.itemOrder = raw.itemOrder.slice(0, raw.links.length + c.groups.length).flatMap((key) => {
           if (typeof key !== "string") return [];
@@ -1626,6 +1634,11 @@
       throw new Error("Import must be a text file under 20 MB");
     const trimmed = source.trim();
     let collections = [], skipped = 0, settings, recovery, spaces;
+    const validate = (input) => {
+      const result = validateCollections(input, { freshIds: true });
+      skipped += input.reduce((n, c) => n + c.links.filter((l) => localFileURL(l?.url)).length, 0);
+      return result;
+    };
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       let data;
       try {
@@ -1639,13 +1652,13 @@
         throw new Error("This backup version is not supported");
       if (isBackup) {
         spaces = validateSpaces(data.spaces);
-        collections = validateCollections(data.collections, { freshIds: true });
+        collections = validate(data.collections);
         settings = portableSettings(data.settings);
         recovery = recoveryLog(data.recovery || []);
       } else if (isCollection)
-        collections = validateCollections(data.collections, { freshIds: true });
+        collections = validate(data.collections);
       else if (Array.isArray(data) && data.every((c) => Array.isArray(c.links)))
-        collections = validateCollections(data, { freshIds: true });
+        collections = validate(data);
       else if (Array.isArray(data.collections) && data.collections.every((c) => Array.isArray(c.cards))) {
         collections = data.collections.map((c) => {
           const dest = newCollection(c.title || c.name);

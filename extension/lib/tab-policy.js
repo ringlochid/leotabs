@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // Being unsuitable for a library is different from being unmanageable.
+export const localFileURL = (url = '') => /^file:/i.test(String(url).trim());
 export function utilityTab(url = '') {
-  return /^(?:chrome|edge):\/\/(?:newtab|new-tab-page|settings|extensions|history|downloads)(?:[/?#]|$)/i.test(url)
+  return localFileURL(url) || /^(?:chrome|edge):\/\/(?:newtab|new-tab-page|settings|extensions|history|downloads)(?:[/?#]|$)/i.test(url)
     || /^about:(?:blank|newtab)(?:[?#]|$)/i.test(url);
 }
 export function manageableURL(url = '') {

@@ -12,7 +12,7 @@
   <a href="help.html">← Help</a>
   <article id="privacy-policy">
     <h1>Privacy policy</h1>
-    <p>Last updated: 13 September 2026 · LeoTabs 0.15.1</p>
+    <p>Last updated: 14 September 2026 · LeoTabs 0.15.1</p>
     <p>LeoTabs is developed by Leo (ringlochid). Contact <a href="mailto:support@ringlochid.me">support@ringlochid.me</a> with privacy questions or requests.</p>
     <h2>Your library stays in your browser</h2>
     <p>LeoTabs manages tabs, groups, collections and notes in your browser profile. It requires no LeoTabs account and has no developer-operated backend, advertising, analytics or telemetry. The developer does not automatically receive your library or browsing activity. Optional AI and Notion connections send the information described below directly to the service you configure.</p>
@@ -25,6 +25,7 @@
       <li><strong>Optional browser data:</strong> with your permission, history search reads up to 40 matches from the previous 30 days. Bookmark access reads the bookmark tree to choose an export destination and creates bookmarks when you request an export. Browser settings may independently sync those bookmarks.</li>
     </ul>
     <p>Data is stored in IndexedDB, extension-local storage and temporary browser storage. LeoTabs does not use Chrome storage sync for its library. Private/incognito tabs are excluded from managed tab operations and preview capture. LeoTabs does not collect page passwords, cookies or form fields as separate data; titles, URLs, notes and screenshots can nevertheless contain sensitive information.</p>
+    <p>Local-file tabs are treated as utility pages. They are shown among open tabs but are not added as collection links or reopened from saved work.</p>
     <h2>Optional AI connections</h2>
     <p>AI is optional. Core tab management, website grouping, saving, search and file export work without it. When you save an AI connection and grant its website permission, AI actions send information directly to the configured provider. With a saved key and access, newly saved collections can also be named automatically: this sends their link titles and URLs without a separate prompt on each save.</p>
     <p>AI grouping sends the selected titles, full URLs and temporary identifiers. Collection organisation also sends the collection name, note and link notes. Open-tab and switcher grouping include matching link notes from the current collection; its name and overview are included only when the selection matches the whole collection. Existing links may be included as context even when excluded from regrouping. Other naming or organisation requests can include group names and your instructions. Malformed organisation output or invalid group references may cause one correction request with the same metadata. Organisation can apply directly with Undo; cancelling or undoing does not retract data already sent.</p>

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Treat local-file tabs as utility pages: exclude them from saving, Auto-update and reopening. Skip local-file links in older backups and stop unsupported parked pages from spinning or repeatedly reloading.
+
 ## 0.15.1 — 10 September 2026
 
 - Remove the name and destination suggestion after dragging tabs into a new collection.

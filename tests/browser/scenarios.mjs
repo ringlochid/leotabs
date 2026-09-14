@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 export const scenarios = {
+  "local-files": {
+    "file": "local-files", "run": "checkLocalFiles",
+    "description": "Local documents stay manageable but are excluded from saving and reopening"
+  },
   "library-recovery": {
     "file": "library-recovery", "run": "checkLibraryRecovery",
     "description": "Library startup and live refresh recover from a failed load"

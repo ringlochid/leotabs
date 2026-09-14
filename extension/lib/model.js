@@ -2,7 +2,7 @@
 export const SCHEMA = 1;
 import { validColor } from './colors.js';
 import { syncCollectionOrder } from './collection-order.js';
-import { duplicateKey } from './tab-policy.js';
+import { duplicateKey, localFileURL } from './tab-policy.js';
 import { DEFAULT_RULES } from './arrange.js';
 import {PROVIDERS, MODEL_DEFAULTS_VERSION, migrateModelDefaults} from './providers.js';
 export const PALETTE = ['mint', 'blue', 'lavender', 'peach', 'rose', 'teal', 'yellow', 'grey'];
@@ -15,7 +15,7 @@ export function text(value, max = 500) {
 export function safeURL(value) {
   try {
     const u = new URL(value);
-    return ['http:', 'https:', 'file:'].includes(u.protocol) ? u.href : null;
+    return ['http:', 'https:'].includes(u.protocol) ? u.href : null;
   } catch {
     return null;
   }
@@ -123,6 +123,8 @@ export function snapshotTabs(tabs, groups = []) {
   );
   const mapped = new Map();
   for (const tab of [...tabs].sort((a, b) => a.windowId - b.windowId || a.index - b.index)) {
+    const link = tabLink(tab);
+    if (!link) continue;
     if (tab.groupId >= 0 && !mapped.has(tab.groupId)) {
       const source = groups.find((g) => g.id === tab.groupId);
       const group = {
@@ -134,8 +136,8 @@ export function snapshotTabs(tabs, groups = []) {
       mapped.set(tab.groupId, group.id);
       collection.groups.push(group);
     }
-    const link = tabLink(tab, mapped.get(tab.groupId) || null);
-    if (link) collection.links.push(link);
+    link.groupId = mapped.get(tab.groupId) || null;
+    collection.links.push(link);
   }
   return collection;
 }
@@ -173,15 +175,18 @@ export function validateCollections(input, { freshIds = false } = {}) {
       };
     });
     const ids = new Set(), linkMap = new Map();
-    c.links = raw.links.map((l) => {
+    const omittedGroups = new Set();
+    c.links = raw.links.flatMap((l) => {
       if (++count > 50000) throw new Error('Import exceeds the 50,000-link limit');
+      // Preserve web links in old backups without importing local documents.
+      if (localFileURL(l?.url)) { omittedGroups.add(map.get(l.groupId)); return []; }
       const url = safeURL(l?.url);
       if (!url) throw new Error('An imported URL is not supported');
       const id = freshIds ? uid() : text(l.id || uid(), 100);
       if (ids.has(id)) throw new Error('The import contains duplicate link IDs');
       ids.add(id);
       if (typeof l.id === 'string') linkMap.set(l.id, id);
-      return {
+      return [{
         id,
         title: text(l.title || url),
         url,
@@ -189,8 +194,10 @@ export function validateCollections(input, { freshIds = false } = {}) {
         groupId: map.get(l.groupId) || null,
         createdAt: Number(l.createdAt) || stamp(),
         ...(l.manualGroup?{manualGroup:true}:{}),
-      };
+      }];
     });
+    const populatedGroups = new Set(c.links.map(l => l.groupId));
+    c.groups = c.groups.filter(g => !omittedGroups.has(g.id) || populatedGroups.has(g.id));
     if (Array.isArray(raw.itemOrder)) {
       c.itemOrder = raw.itemOrder.slice(0, raw.links.length + c.groups.length).flatMap(key => {
         if (typeof key !== 'string') return [];

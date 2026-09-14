@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 import { $, rpc } from './shared.js';
 import { parkedTitle } from '../lib/parked.js';
+import { safeURL } from '../lib/model.js';
+import { localFileURL } from '../lib/tab-policy.js';
 function showError(message) {
   $('#loading').hidden = true;
   $('#description').textContent = message;
@@ -17,6 +19,12 @@ async function start() {
     return;
   }
   document.title = parkedTitle(record);
+  if (!safeURL(record.url)) {
+    showError(localFileURL(record.url)
+      ? "LeoTabs can't reopen local files. Open the file from your device."
+      : "This saved URL isn't supported");
+    return;
+  }
   // Read the browser's local favicon cache; never wake the destination website for its icon.
   const faviconURL = new URL(chrome.runtime.getURL('_favicon/'));
   faviconURL.searchParams.set('pageUrl', record.url);

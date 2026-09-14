@@ -3,7 +3,7 @@ import {suffixes} from './public-suffixes.js';
 const suffixRules=new Set(suffixes.split('\n'));
 const aliases={'github.com':'GitHub','gitlab.com':'GitLab','chatgpt.com':'ChatGPT','gemini.google.com':'Gemini','mail.google.com':'Gmail','docs.google.com':'Google Docs','drive.google.com':'Google Drive','webstore.google.com':'Chrome Web Store','microsoftedge.microsoft.com':'Edge Add-ons','youtube.com':'YouTube','stackoverflow.com':'Stack Overflow'};
 export function website(url) {
-  let host;try {const u=new URL(url);if(!['http:','https:','file:'].includes(u.protocol))return null;if(u.protocol==='file:')return {key:'site:file',name:'Local files'};host=u.hostname.toLowerCase().replace(/^www\./,'');}catch{return null;}
+  let host;try {const u=new URL(url);if(!['http:','https:'].includes(u.protocol))return null;host=u.hostname.toLowerCase().replace(/^www\./,'');}catch{return null;}
   if(/^[\d.]+$/.test(host)||host.includes(':')||!host.includes('.'))return {key:'site:'+host,name:host};
   const labels=host.split('.');let size=1;
   for(let i=0;i<labels.length;i++) {

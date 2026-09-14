@@ -45,6 +45,8 @@ To import bookmarks directly from this browser, choose **Import browser bookmark
 
 The library supports up to 2,000 collections and 50,000 saved links. An import that would exceed either limit is rejected.
 
+Local-file links in older backups are skipped. Web links, notes and their groups are imported normally.
+
 API keys and website permissions are not transferred. Reconnect integrations on the destination. Automatic preview capture stays off when importing preferences until you enable it in Settings.
 
 ## Moving to another browser or the store version
