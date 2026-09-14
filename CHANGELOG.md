@@ -1,10 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.15.2 — 14 September 2026
 
 - Coalesce frequent Auto-update changes, retain collection versions without full-library snapshots, and preserve unchanged collection cards and thumbnails.
 - Queue switcher refreshes during loading, retry busy checkpoints, and refresh after syncing finishes so closed or regrouped tabs do not leave stale results.
-
 - Treat local-file tabs as utility pages: exclude them from saving, Auto-update and reopening. Skip local-file links in older backups and stop unsupported parked pages from spinning or repeatedly reloading.
 
 ## 0.15.1 — 10 September 2026
