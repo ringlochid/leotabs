@@ -14,6 +14,7 @@ const titles=new Set(),descriptions=new Set(),expectedSitemap=new Set();
 const decode=text=>text.replace(/&(?:amp|lt|gt|quot|#39);/g,value=>({'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'"}[value]));
 for(const file of pages){
   const full=path.join(root,file),html=await fs.readFile(full,'utf8');
+  if(html.includes('\r'))throw Error('Generated HTML must use consistent LF newlines: '+file);
   const slug=file==='index.html'?'':file.slice(0,-'/index.html'.length);
   const titleTags=[...html.matchAll(/<title>(.*?)<\/title>/g)],descriptionTags=[...html.matchAll(/<meta name="description" content="([^"]*)">/g)];
   if(titleTags.length!==1 || descriptionTags.length!==1)throw Error('Expected one title and description: '+file);

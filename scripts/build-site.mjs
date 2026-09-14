@@ -53,6 +53,8 @@ for(const [slug,title] of pages){
     return url;
   };
   let body=guide?renderGuide(guide.markdown,guideLink):slug==='privacy'?article:await fs.readFile('website/pages/'+(slug||'index')+'.html','utf8');
+  // Keep published bytes identical across Windows checkouts and Linux Pages builds.
+  body=body.replace(/\r\n/g,'\n');
   if(guide && slug!=='docs'){
     const headings=[...body.matchAll(/<h2 id="([^"]+)">([\s\S]*?)<\/h2>/g)];
     if(headings.length>3){
