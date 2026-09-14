@@ -14,6 +14,8 @@ Open **Timeline** in the sidebar to find recorded sessions and browsing-work eve
 
 A collection's **Version history** menu shows earlier snapshots. Use **Restore this version** for the snapshot you want. Read the action shown in the dialog: restoring a version and reopening a group of browser tabs are different operations.
 
+Auto-update keeps its earlier saved contents here. It does not add a separate full-library Undo action for every page-title change.
+
 If you need a separate copy rather than changing the current collection, use the recovery option that creates/restores a copy when available. Keep a backup before combining several recovery actions.
 
 ## Interrupted operations

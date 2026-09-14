@@ -72,6 +72,12 @@ function fixture() {
   const db = {
     getState: async () => ({ collections,settings }),
     mutate: async (_, transform) => transform({ collections }),
+    mutateCollection: async (_, collectionId, transform) => {
+      const c = collections.find(c => c.id === collectionId);
+      const next = c && transform(structuredClone(c));
+      if (next) { if(fail)throw Error('disk'); Object.assign(c,next); }
+      return {changed:!!next};
+    },
     all: async () => [...timeline.values()],
     write: async (_, r) => {
       if (fail) throw Error('disk');

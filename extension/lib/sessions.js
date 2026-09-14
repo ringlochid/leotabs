@@ -31,7 +31,7 @@ export function sessionManager({ browser, db, ops }) {
     for (const r of Object.values(s.parked)) if (await holding(r)) ids.push(r.windowId);
     return ids;
   }
-  async function capture(windowId, { reason = 'Tab session', force = false, sync = true } = {}) {
+  async function capture(windowId, { reason = 'Tab session', force = false, sync = true, onChange = () => {} } = {}) {
     if ((await hiddenWindows()).includes(windowId)) return;
     const tabs = (await ops.live()).filter((t) => t.windowId === windowId && !t.pinned);
     const s = await state(),
@@ -41,16 +41,14 @@ export function sessionManager({ browser, db, ops }) {
     const snapshot = snapshotTabs(tabs, groups);
     // Multiple windows must not overwrite each other's version of a collection.
     const owners = Object.values(s.active).filter((x) => x.collectionId === current?.collectionId && x.tracking !== false);
+    let mirrored = false;
     if (sync && current && current.tracking !== false && owners.length === 1) {
-      await db.mutate('Automatic collection update', (library) => {
-        const c = library.collections.find((x) => x.id === current.collectionId);
-        if (!c || c.autoUpdate === false) return { unchanged: true };
+      const result = await db.mutateCollection('Automatic collection update', current.collectionId, c => {
+        if (c.autoUpdate === false) return null;
         const next = mirrorCollection(c, snapshot);
-        if (collectionContentKey(c) === collectionContentKey(next)) return { unchanged: true };
-        const beforeCollection = structuredClone(c);
-        Object.assign(c, next, { updatedAt: Date.now() });
-        return { beforeCollection, versionWindowId: windowId };
-      });
+        return collectionContentKey(c) === collectionContentKey(next) ? null : {...next, updatedAt:Date.now()};
+      }, windowId);
+      mirrored = result.changed;
     }
     const fingerprint = JSON.stringify([
       tabs.map((t) => [t.resourceUrl || t.pendingUrl || t.url, t.groupId, t.title]),
@@ -58,9 +56,9 @@ export function sessionManager({ browser, db, ops }) {
     ]);
     const rows = (await db.all('timeline')).sort((a, b) => b.at - a.at);
     const previous = rows.find(
-      (r) => r.windowId === windowId && r.collectionId === (current?.collectionId || null),
+      (r) => !r.version && r.windowId === windowId && r.collectionId === (current?.collectionId || null),
     );
-    if (!force && previous?.fingerprint === fingerprint) return previous;
+    if (!force && previous?.fingerprint === fingerprint) { if(mirrored)onChange(); return previous; }
     const row = {
       id: uid(),
       at: Date.now(),
@@ -75,6 +73,7 @@ export function sessionManager({ browser, db, ops }) {
     for (const old of [row, ...rows].slice(200)) await db.remove('timeline', old.id);
     for (const old of rows.filter((r) => r.at < Date.now() - 30 * 86400000))
       await db.remove('timeline', old.id);
+    onChange();
     return row;
   }
   async function move(tabs, windowId) {

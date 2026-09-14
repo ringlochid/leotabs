@@ -1,5 +1,6 @@
 import {colorHex} from '../lib/colors.js';
 import { operationFeedback } from '../lib/messages.js';
+import { createRefreshQueue } from './refresh-queue.js';
 // SPDX-License-Identifier: MPL-2.0
 import {
   $,
@@ -49,7 +50,7 @@ export async function startQuick() {
     tiles = new Map(),
     previews = new Map(),
     previewLoads = new Map(),
-    observers = new Set();
+    observers = new Map();
   theme(data.state.settings.theme);
   const close = () =>
     globalThis.__neoCloseOverlay ? globalThis.__neoCloseOverlay() : window.close();
@@ -352,14 +353,14 @@ export async function startQuick() {
       if (op.continued) { close(); return; }
       selected.clear();
       if (groupId !== null && !allTabs().some(t => t.groupId === groupId && !unpinned.includes(t.id))) groupId = null;
-      await refresh({settle:true});
+      await refresh();
       const feedback = operationFeedback(op, 'close');
       if (!disposed && feedback) toast(feedback.message, {
         error: feedback.error,
         details: feedback.details,
         undo: op.closed?.length ? task(async () => {
           await rpc('undo-action', { id: op.id, windowId: win });
-          await refresh({settle:true});
+          await refresh();
           focusFirstTab();
         }) : undefined,
       });
@@ -630,7 +631,7 @@ export async function startQuick() {
         if (!disposed) frame.replaceChildren(canvas);
         previewLoads.delete(frame);
         observer.disconnect();
-        observers.delete(observer);
+        observers.delete(frame);
       } catch {
         previews.delete(url);
       }
@@ -645,7 +646,7 @@ export async function startQuick() {
       { root: results },
     );
     observer.observe(frame);
-    observers.add(observer);
+    observers.set(frame, observer);
     return frame;
   }
   function groupPreview(members) {
@@ -853,9 +854,13 @@ export async function startQuick() {
     // Reconcile instead of replacing unchanged tile/image DOM every 2.5 seconds.
     const wanted = new Set(nodes);
     for (const child of [...results.children]) if (!wanted.has(child)) child.remove();
+    for (const [key, entry] of tiles) if (!wanted.has(entry.node)) tiles.delete(key);
     nodes.forEach((node, i) => {
       if (results.children[i] !== node) results.insertBefore(node, results.children[i] || null);
     });
+    for (const [frame, observer] of observers) if (!frame.isConnected) {
+      observer.disconnect(); observers.delete(frame); previewLoads.delete(frame);
+    }
     tools.update();
     updateSelection();
   }
@@ -1036,49 +1041,32 @@ export async function startQuick() {
   root.addEventListener('keyup', containKeys);
   const onResize = () => controller.render();
   window.addEventListener('resize', onResize);
-  let generation = 0,
-    lastData = JSON.stringify(data), settlingRefresh = false, loadingRefresh = false, layoutBusyAt = 0;
-  async function refresh({settle = false} = {}) {
-    if ((settlingRefresh || loadingRefresh) && !settle) return;
-    if (settle) settlingRefresh = true;
-    loadingRefresh = true;
-    const g = ++generation;
-    try {
-    for (const [frame, load] of previewLoads) {
-      if (!frame.isConnected) previewLoads.delete(frame);
-      else load();
-    }
-    let next;
-    // Close/Undo must refresh the result list before restoring keyboard focus.
-    // Background checkpoints can briefly report a busy layout after the mutation.
-    for (let attempt = 0; attempt < 40; attempt++) {
-      next = await loadSnapshot({includeTimeline:false,allowBusy:!settle});
-      if (!settle || !next.layoutBusy || disposed) break;
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    if (disposed || g !== generation) return;
-    if (next.layoutBusy) {
-      layoutBusyAt ||= Date.now();
-      if (Date.now() - layoutBusyAt >= 8000) throw new Error('Tabs are still changing. Try again.');
-      return;
-    }
-    layoutBusyAt = 0;
-    const nextKey = JSON.stringify(next);
-    if (lastData === nextKey) { loadError.hidden=true; return; }
-    data = next;
-    theme(data.state.settings.theme);
-    controller.update();
-    renderDock();
-    tools.update();
-    updateSelection();
-    lastData = nextKey;
-    loadError.hidden=true;
-    } catch (error) {
-      if (!disposed && g===generation) { loadError.hidden=false; loadError.title=error.message; }
+  let lastData = JSON.stringify(data);
+  const refreshQueue = createRefreshQueue({
+    load: () => loadSnapshot({includeTimeline:false,allowBusy:true}),
+    apply(next) {
+      for (const [frame, load] of previewLoads) {
+        if (!frame.isConnected) previewLoads.delete(frame);
+        else load();
+      }
+      const nextKey = JSON.stringify(next);
+      if (lastData !== nextKey) {
+        data = next;
+        theme(data.state.settings.theme);
+        controller.update();
+        renderDock();
+        tools.update();
+        updateSelection();
+        lastData = nextKey;
+      }
+      loadError.hidden = true;
+    },
+  });
+  async function refresh(options) {
+    try { await refreshQueue.request(options); }
+    catch (error) {
+      if (!disposed) { loadError.hidden=false; loadError.title=error.message; }
       throw error;
-    } finally {
-      if (g===generation) loadingRefresh = false;
-      if (settle) settlingRefresh = false;
     }
   }
   const onMessage = (m) => {
@@ -1086,10 +1074,11 @@ export async function startQuick() {
   };
   globalThis.chrome.runtime.onMessage.addListener(onMessage);
   // Content scripts don't receive runtime broadcasts. Reconcile periodically too.
-  const timer = setInterval(() => refresh().catch(() => {}), 2500);
+  const timer = setInterval(() => refresh({passive:true}).catch(() => {}), 2500);
   if (continuation) await closeTabs(continuation.tabIds, null, continuation.focusIndex);
   return () => {
     disposed = true;
+    refreshQueue.dispose();
     removeAltGuard();
     clearInterval(timer);
     controller.destroy();

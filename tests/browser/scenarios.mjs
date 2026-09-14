@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 export const scenarios = {
+  "auto-update-refresh": {
+    "file": "auto-update-refresh", "run": "checkAutoUpdateRefresh",
+    "description": "Coalesced syncing, retained collection DOM, atomic history and queued switcher refresh",
+    "localServices": true
+  },
   "local-files": {
     "file": "local-files", "run": "checkLocalFiles",
     "description": "Local documents stay manageable but are excluded from saving and reopening"

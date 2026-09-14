@@ -152,7 +152,7 @@ const serial = (fn) => {
 // defer background reconciliation until the completed UI has painted.
 const arrangeSerial=async fn=>{
   layoutMutation++;layoutEpoch++;clearTimeout(checkpointTimer);checkpointTimer=null;
-  try{return await serial(fn);}finally{layoutMutation--;layoutEpoch++;if(!layoutMutation&&checkpointDirty&&!checkpointTimer)checkpointTimer=setTimeout(checkpointAll,500);}
+  try{return await serial(fn);}finally{layoutMutation--;layoutEpoch++;if(!layoutMutation&&checkpointDirty&&!checkpointTimer){checkpointDue=Date.now()+500;checkpointTimer=setTimeout(checkpointAll,500);}}
 };
 let identityTimer;
 let identityQueue=Promise.resolve();
@@ -1305,40 +1305,65 @@ scheduleIdentity();
 // Alarms also survive service-worker suspension; IDs are held in storage.session.
 let checkpointTimer;
 let checkpointRunning = false;
+let checkpointQueued = false;
 let checkpointDirty = false;
-function scheduleCheckpoint() {
+let checkpointDue = 0, checkpointEveryWindow = false;
+const checkpointWindows = new Map();
+function scheduleCheckpoint(windowId, titleOnly = false) {
   checkpointDirty = true;
-  if (layoutMutation || checkpointTimer || checkpointRunning) return;
-  checkpointTimer = setTimeout(checkpointAll, 120);
+  if (Number.isInteger(windowId) && windowId >= 0)
+    checkpointWindows.set(windowId, titleOnly && checkpointWindows.get(windowId) !== false);
+  else checkpointEveryWindow = true;
+  if (layoutMutation || checkpointQueued) return;
+  const delay = titleOnly ? 1000 : 120;
+  const due = Date.now() + delay;
+  if (checkpointTimer && checkpointDue <= due) return;
+  clearTimeout(checkpointTimer);
+  checkpointDue = due;
+  checkpointTimer = setTimeout(checkpointAll, delay);
 }
 async function checkpointAll() {
   clearTimeout(checkpointTimer);checkpointTimer=null;
   if(layoutMutation){checkpointDirty=true;return;}
-  if (checkpointRunning) { checkpointDirty = true; return; }
-  clearTimeout(checkpointTimer);
-  checkpointTimer = null;
-  checkpointRunning = true;layoutEpoch++;
+  if (checkpointQueued) return;
+  checkpointQueued = true;
+  const everyWindow = checkpointEveryWindow, targets = new Map(checkpointWindows);
+  checkpointEveryWindow = false; checkpointWindows.clear();
   checkpointDirty = false;
+  let notify = false;
   try {
     await serial(async () => {
-      if(layoutMutation)return;
-      for (const w of await chrome.windows.getAll({ windowTypes: ['normal'] }))
-        if (!w.incognito) { if(Date.now()>=draggingUntil)await nativeOrganiser.run(w.id); await sessions.capture(w.id); }
+      if(layoutMutation){checkpointEveryWindow=true;checkpointDirty=true;return;}
+      checkpointRunning = true;layoutEpoch++;
+      try {
+        for (const w of await chrome.windows.getAll({ windowTypes: ['normal'] })) {
+          if (w.incognito || (!everyWindow && !targets.has(w.id))) continue;
+          if (targets.has(w.id)) notify = true;
+          if ((everyWindow || !targets.get(w.id)) && Date.now()>=draggingUntil) await nativeOrganiser.run(w.id);
+          await sessions.capture(w.id, {onChange:()=>{notify=true;}});
+        }
+      } finally { checkpointRunning = false;layoutEpoch++; }
     });
-    await changed();
   } catch {
     // A later tab event or the durable alarm retries a failed checkpoint.
   } finally {
-    checkpointRunning = false;layoutEpoch++;
-    if (checkpointDirty) scheduleCheckpoint();
+    checkpointQueued = false;
+    if (checkpointDirty && !layoutMutation && !checkpointTimer) {
+      const titleOnly = !checkpointEveryWindow && [...checkpointWindows.values()].every(Boolean);
+      checkpointDue = Date.now() + (titleOnly ? 1000 : 120);
+      checkpointTimer = setTimeout(checkpointAll, titleOnly ? 1000 : 120);
+    }
   }
+  // A change notification must never advertise a checkpoint still marked busy.
+  if (notify) await changed();
 }
 chrome.windows.onRemoved.addListener((id) =>
   serial(() => sessions.forgetWindow(id)).catch(() => {}),
 );
-chrome.tabs.onCreated.addListener(scheduleCheckpoint);
-chrome.tabs.onRemoved.addListener(scheduleCheckpoint);
-chrome.tabs.onUpdated.addListener((_id, change) => {
+chrome.tabs.onCreated.addListener(tab => scheduleCheckpoint(tab.windowId));
+chrome.tabs.onRemoved.addListener((_id, info) => scheduleCheckpoint(info.windowId));
+chrome.tabs.onUpdated.addListener((_id, change, tab) => {
+  if (tab.url?.startsWith(own) && !tab.url.startsWith(own+'parked.html?')) return;
   if (
     change.url ||
     change.title ||
@@ -1346,14 +1371,14 @@ chrome.tabs.onUpdated.addListener((_id, change) => {
     change.groupId !== undefined ||
     change.status === 'complete'
   )
-    scheduleCheckpoint();
+    scheduleCheckpoint(tab.windowId, Object.keys(change).every(key => ['title','favIconUrl'].includes(key)));
 });
-chrome.tabs.onMoved.addListener(scheduleCheckpoint);
-chrome.tabs.onAttached.addListener(scheduleCheckpoint);
-chrome.tabs.onDetached.addListener(scheduleCheckpoint);
-chrome.tabGroups.onUpdated.addListener(scheduleCheckpoint);
+chrome.tabs.onMoved.addListener((_id, info) => scheduleCheckpoint(info.windowId));
+chrome.tabs.onAttached.addListener((_id, info) => scheduleCheckpoint(info.newWindowId));
+chrome.tabs.onDetached.addListener((_id, info) => scheduleCheckpoint(info.oldWindowId));
+chrome.tabGroups.onUpdated.addListener(group => scheduleCheckpoint(group.windowId));
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'neo-session-checkpoint') checkpointAll();
+  if (alarm.name === 'neo-session-checkpoint') scheduleCheckpoint();
 });
 chrome.alarms.create('neo-session-checkpoint', { periodInMinutes: 1 });
 scheduleCheckpoint();

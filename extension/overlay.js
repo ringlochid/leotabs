@@ -111,6 +111,63 @@
     return message || "Couldn't complete this action. Try again.";
   }
 
+  // extension/ui/refresh-queue.js
+  function createRefreshQueue({ load, apply, pause = (ms) => new Promise((r) => setTimeout(r, ms)), now = Date.now, timeout = 8e3 }) {
+    let version = 0, running = false, disposed = false;
+    let waiters = [];
+    const finish = (error) => {
+      const current = waiters;
+      waiters = [];
+      for (const waiter of current) error ? waiter.reject(error) : waiter.resolve();
+    };
+    async function drain() {
+      if (running || disposed) return;
+      running = true;
+      let busySince;
+      try {
+        while (waiters.length && !disposed) {
+          const requested = version;
+          let next;
+          try {
+            next = await load();
+          } catch (error) {
+            if (requested !== version) continue;
+            throw error;
+          }
+          if (disposed) break;
+          if (next.layoutBusy) {
+            busySince ??= now();
+            if (now() - busySince >= timeout) throw Error("Tabs are still changing. Try again.");
+            await pause(80);
+            continue;
+          }
+          if (requested !== version) continue;
+          busySince = void 0;
+          apply(next);
+          if (requested === version) finish();
+        }
+      } catch (error) {
+        finish(error);
+      } finally {
+        running = false;
+        if (waiters.length && !disposed) drain();
+      }
+    }
+    return {
+      request({ passive = false } = {}) {
+        if (disposed) return Promise.resolve();
+        if (!passive || !running) version++;
+        const result = new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+        drain();
+        return result;
+      },
+      dispose() {
+        disposed = true;
+        finish();
+      }
+    };
+  }
+
   // extension/lib/collection-order.js
   var collectionItemKey = (item) => `${item.type}:${item.id}`;
   function orderCollectionItems(items, order) {
@@ -3307,7 +3364,7 @@
     let browseMode = continuation?.browseMode === "all" ? "all" : "window", audioOnly = continuation?.audioOnly === true;
     let list = continuation?.list === true, selecting = false, controller, disposed = false, busy = false;
     const root = surface(), mount = globalThis.__neoSurface || document.body;
-    const selected = /* @__PURE__ */ new Set(), tiles = /* @__PURE__ */ new Map(), previews = /* @__PURE__ */ new Map(), previewLoads = /* @__PURE__ */ new Map(), observers = /* @__PURE__ */ new Set();
+    const selected = /* @__PURE__ */ new Set(), tiles = /* @__PURE__ */ new Map(), previews = /* @__PURE__ */ new Map(), previewLoads = /* @__PURE__ */ new Map(), observers = /* @__PURE__ */ new Map();
     theme(data.state.settings.theme);
     const close = () => globalThis.__neoCloseOverlay ? globalThis.__neoCloseOverlay() : window.close();
     const search = el("input", { id: "quick-search", type: "search", "aria-label": "Search tabs", "aria-keyshortcuts": "/", title: "Press / to search" });
@@ -3604,14 +3661,14 @@
         }
         selected.clear();
         if (groupId !== null && !allTabs().some((t) => t.groupId === groupId && !unpinned.includes(t.id))) groupId = null;
-        await refresh({ settle: true });
+        await refresh();
         const feedback = operationFeedback(op, "close");
         if (!disposed && feedback) toast(feedback.message, {
           error: feedback.error,
           details: feedback.details,
           undo: op.closed?.length ? task(async () => {
             await rpc("undo-action", { id: op.id, windowId: win });
-            await refresh({ settle: true });
+            await refresh();
             focusFirstTab();
           }) : void 0
         });
@@ -3859,7 +3916,7 @@
           if (!disposed) frame.replaceChildren(canvas);
           previewLoads.delete(frame);
           observer.disconnect();
-          observers.delete(observer);
+          observers.delete(frame);
         } catch {
           previews.delete(url);
         }
@@ -3874,7 +3931,7 @@
         { root: results }
       );
       observer.observe(frame);
-      observers.add(observer);
+      observers.set(frame, observer);
       return frame;
     }
     function groupPreview(members) {
@@ -4039,9 +4096,15 @@
       );
       const wanted = new Set(nodes);
       for (const child of [...results.children]) if (!wanted.has(child)) child.remove();
+      for (const [key, entry] of tiles) if (!wanted.has(entry.node)) tiles.delete(key);
       nodes.forEach((node, i) => {
         if (results.children[i] !== node) results.insertBefore(node, results.children[i] || null);
       });
+      for (const [frame, observer] of observers) if (!frame.isConnected) {
+        observer.disconnect();
+        observers.delete(frame);
+        previewLoads.delete(frame);
+      }
       tools.update();
       updateSelection();
     }
@@ -4203,52 +4266,36 @@
     root.addEventListener("keyup", containKeys);
     const onResize = () => controller.render();
     window.addEventListener("resize", onResize);
-    let generation = 0, lastData = JSON.stringify(data), settlingRefresh = false, loadingRefresh = false, layoutBusyAt = 0;
-    async function refresh({ settle = false } = {}) {
-      if ((settlingRefresh || loadingRefresh) && !settle) return;
-      if (settle) settlingRefresh = true;
-      loadingRefresh = true;
-      const g = ++generation;
-      try {
+    let lastData = JSON.stringify(data);
+    const refreshQueue = createRefreshQueue({
+      load: () => loadSnapshot({ includeTimeline: false, allowBusy: true }),
+      apply(next) {
         for (const [frame, load] of previewLoads) {
           if (!frame.isConnected) previewLoads.delete(frame);
           else load();
         }
-        let next;
-        for (let attempt = 0; attempt < 40; attempt++) {
-          next = await loadSnapshot({ includeTimeline: false, allowBusy: !settle });
-          if (!settle || !next.layoutBusy || disposed) break;
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        if (disposed || g !== generation) return;
-        if (next.layoutBusy) {
-          layoutBusyAt ||= Date.now();
-          if (Date.now() - layoutBusyAt >= 8e3) throw new Error("Tabs are still changing. Try again.");
-          return;
-        }
-        layoutBusyAt = 0;
         const nextKey = JSON.stringify(next);
-        if (lastData === nextKey) {
-          loadError.hidden = true;
-          return;
+        if (lastData !== nextKey) {
+          data = next;
+          theme(data.state.settings.theme);
+          controller.update();
+          renderDock();
+          tools.update();
+          updateSelection();
+          lastData = nextKey;
         }
-        data = next;
-        theme(data.state.settings.theme);
-        controller.update();
-        renderDock();
-        tools.update();
-        updateSelection();
-        lastData = nextKey;
         loadError.hidden = true;
+      }
+    });
+    async function refresh(options) {
+      try {
+        await refreshQueue.request(options);
       } catch (error) {
-        if (!disposed && g === generation) {
+        if (!disposed) {
           loadError.hidden = false;
           loadError.title = error.message;
         }
         throw error;
-      } finally {
-        if (g === generation) loadingRefresh = false;
-        if (settle) settlingRefresh = false;
       }
     }
     const onMessage = (m) => {
@@ -4256,11 +4303,12 @@
       });
     };
     globalThis.chrome.runtime.onMessage.addListener(onMessage);
-    const timer = setInterval(() => refresh().catch(() => {
+    const timer = setInterval(() => refresh({ passive: true }).catch(() => {
     }), 2500);
     if (continuation) await closeTabs(continuation.tabIds, null, continuation.focusIndex);
     return () => {
       disposed = true;
+      refreshQueue.dispose();
       removeAltGuard();
       clearInterval(timer);
       controller.destroy();

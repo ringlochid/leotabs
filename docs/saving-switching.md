@@ -44,6 +44,8 @@ Pinned browser tabs stay open. Local files, browser-internal and other extension
 
 The current collection's **Auto-update** switch controls whether changes to this window update its saved links and layout. Pause it to keep the saved collection fixed while you browse elsewhere.
 
+Frequent title changes are combined into short updates. Auto-update records earlier collection versions without creating a full-library Undo snapshot for each change.
+
 Resuming Auto-update immediately updates the saved collection from the window's current tabs, then follows later changes. Check the open tabs before resuming. If the same collection is already tracking another window, switch to that window instead of expecting two windows to update it at once.
 
 **Settings → Auto-update all collections** changes this preference globally for existing, open and new collections. Auto-update and **Auto-group new tabs** are independent: one updates saved work, the other organises live tabs.

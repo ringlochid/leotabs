@@ -141,6 +141,46 @@ export async function writeIf(store, value, allowed) {
 export async function getState() {
   return migrate((await read('state', 'library'))?.value);
 }
+// Automatic mirroring keeps a collection version, not a full-library Undo
+// snapshot on every page-title change. Recheck inside the write transaction so
+// a concurrent edit or pause cannot be overwritten by the read-only probe.
+export async function mutateCollection(label, collectionId, transform, windowId) {
+  const current = (await getState()).collections.find(c => c.id === collectionId);
+  if (!current || !transform(clone(current))) return {changed:false};
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['state', 'timeline'], 'readwrite', {durability:'strict'});
+    let changed = false;
+    tx.oncomplete = () => resolve({changed});
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || Error('Save interrupted. Try again.'));
+    const request = tx.objectStore('state').get('library');
+    request.onsuccess = () => {
+      try {
+        const state = migrate(request.result?.value);
+        const index = state.collections.findIndex(c => c.id === collectionId);
+        if (index < 0) return;
+        const before = state.collections[index], next = transform(clone(before));
+        if (!next) return;
+        if (next.then) throw Error('Collection transforms must be synchronous.');
+        state.collections[index] = next;
+        if (state.collections.reduce((n,c)=>n+c.links.length,0)>50000)
+          throw Error('Library limit reached: 50,000 links.');
+        state.revision++;
+        const history = tx.objectStore('timeline');
+        history.put({id:uid(),at:stamp(),windowId,collectionId,name:before.name,reason:label,snapshot:before,version:true});
+        const rows = history.getAll();
+        rows.onsuccess = () => {
+          rows.result.sort((a,b)=>b.at-a.at).forEach((row,index)=>{
+            if(index>=200 || row.at<stamp()-30*86400000) history.delete(row.id);
+          });
+        };
+        tx.objectStore('state').put({id:'library',value:state});
+        changed = true;
+      } catch (error) { reject(error); tx.abort(); }
+    };
+  });
+}
 // One read-write transaction atomically commits the library and its recovery record.
 export async function mutate(label, transform) {
   const db = await openDB();

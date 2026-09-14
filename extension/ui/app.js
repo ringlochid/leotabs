@@ -240,7 +240,7 @@ async function refresh() {
   theme(data.state.settings.theme);
   onboarding.syncTheme();
   if(tabsChanged) renderTabs();
-  if (boardChanged) renderBoard();
+  if (boardChanged) renderBoard({reuseCards:!renderInvalid});
   if(recentChanged) renderRecent();
   if (boardChanged) renderCurrentCollection();
   const closeAll=$('#current-collection .close-all-tabs');
@@ -1251,25 +1251,29 @@ function renderSpaces() {
 function collectionStyle(c) {
   return `--color:var(--${PALETTE.includes(c.color) ? c.color : 'blue'})`;
 }
-function renderBoard() {
+let boardCards = new Map(), boardContext;
+function renderBoard({reuseCards = false} = {}) {
   if (dragActive || draggingCollection) { refreshAfterDrag = true; return; }
   const restoreScroll = retainScroll();
   rendering++;
   try {
-    renderBoardContent();
+    renderBoardContent(reuseCards);
     highlightMatches($('#board'), libraryQuery());
   } finally {
     rendering--;
     restoreScroll();
   }
 }
-function renderBoardContent() {
+function renderBoardContent(reuseCards = false) {
   renderSpaces();
   const restoreFocus = retainFocus($('#board'));
   if (activeCollection && !findCollection()) activeCollection = null;
   const board = $('#board');
   const query = libraryQuery();
   const detail = !query && activeCollection;
+  const context = JSON.stringify([query,activeSpace,activeCollection,revealedCollection,data.state.settings,data.sessionState?.active]);
+  reuseCards &&= context === boardContext;
+  boardContext = context;
   board.className = detail
     ? 'detail'
     : data.state.settings.view === 'list'
@@ -1332,12 +1336,14 @@ function renderBoardContent() {
     );
   }
   if (!collections.length && query) {
+    boardCards.clear();
     board.replaceChildren(el('p', {class:'hint'}, 'No matching collections'));
     board.ondragover = board.ondrop = null;
     restoreFocus();
     return;
   }
   if (!collections.length) {
+    boardCards.clear();
     board.style.display = '';
     board.replaceChildren(
       newCollectionDropTarget(),
@@ -1353,18 +1359,28 @@ function renderBoardContent() {
   board.style.display = '';
   board.ondragover = e=>{if(draggingCollection){e.preventDefault();e.dataTransfer.dropEffect=markCollectionAtPoint({x:e.clientX,y:e.clientY})?'move':'none';}};
   board.ondrop = act(async e=>{if(!draggingCollection)return;e.preventDefault();const id=draggingCollection,slot=markCollectionAtPoint({x:e.clientX,y:e.clientY});clearCollectionDrag();if(slot)await change('edit',{kind:'move-collection',collectionId:id,beforeId:slot.beforeId,label:'Move collection'});});
-  board.replaceChildren(...collections.map(collectionCard));
+  const previous = boardCards;
+  boardCards = new Map();
+  const nodes = collections.map(c => {
+    const key = JSON.stringify(c), old = previous.get(c.id);
+    const node = reuseCards && old?.key === key && old.node.isConnected ? old.node : collectionCard(c);
+    boardCards.set(c.id,{key,node});
+    return node;
+  });
   if (!detail && !query)
-    board.append(
-      newCollectionDropTarget(),
-    );
+    nodes.push(reuseCards && board.querySelector(':scope > .add-collection') || newCollectionDropTarget());
   if (!detail && matchingCollections.length > collectionLimit)
-    board.append(
+    nodes.push(
       button('Show more collections', () => {
         collectionLimit += 60;
         renderBoard();
       }),
     );
+  const wanted = new Set(nodes);
+  for (const child of [...board.children]) if (!wanted.has(child)) child.remove();
+  nodes.forEach((node, index) => {
+    if (board.children[index] !== node) board.insertBefore(node, board.children[index] || null);
+  });
   restoreFocus();
 }
 function revealSearchedCollection(c) {
@@ -1458,10 +1474,13 @@ function newCollectionDropTarget() {
   });
   return target;
 }
+let currentCollectionKey;
 function renderCurrentCollection() {
   const host=$('#current-collection'); if(!host)return;
   const active=data.sessionState?.active?.[win];
   const c=data.state.collections.find(c=>c.id===active?.collectionId);
+  const key=JSON.stringify([c?.id,c?.name,c?.color,c?.autoUpdate,c?.spaceId,active?.tracking]);
+  if(currentCollectionKey===key)return;
   host.replaceChildren();
   if(c) {
     host.style.setProperty('--current-color',colorHex(c.color));
@@ -1486,6 +1505,7 @@ function renderCurrentCollection() {
     host.append(button('Close all currently open tabs',act(()=>actions.closeWindow()),{className:'close-all-tabs',title:'Close all unpinned tabs in this window. Pinned tabs stay open.',disabled:!data.tabs.some(t=>t.windowId===win&&!t.pinned)}));
   }
   updatePageIdentity(document,c);
+  currentCollectionKey=key;
 }
 
 function collectionCard(c) {

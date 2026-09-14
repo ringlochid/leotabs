@@ -1,6 +1,7 @@
 {
   "lib/colors.js": "b1c34369dd79ffe032ea5b219a46322f9987ef2107edf4c2d93f1f83c77b4638",
   "lib/messages.js": "550efd373ec611309f7315329f875157441f2c589d29459dbc2d4b4ba4392e84",
+  "ui/refresh-queue.js": "e449747acf45a246b5c0326a86ed73c16ce465e26f1bd2570affecb29b604b09",
   "lib/collection-order.js": "3d02e1f9f6ec91c9686905638745602688bbcbf0831a6ebad83171c1d2a1f6bb",
   "lib/tab-policy.js": "4bcd715033b108c4e9b19d8e711fc20e9d4f07b9bb9ff26ff6524ea31fd06427",
   "lib/organisation.js": "2c2731524d142307471d6aa2c90e3c131325e7fe73fa66d71e00f49b52ced27b",
@@ -21,8 +22,8 @@
   "ui/session-list.js": "b426dab59e0487c09eaa9d7c1fe51a114193dad6833457875db89d7e36d6646e",
   "ui/tab-tools.js": "5bfc5f155d9cf86b81ebe835071ef13a866957f311de64157c397c960114a07a",
   "ui/alt-key.js": "6cc9284dcb560df1a8c36e2b05aed1426d498e04aa8741060db657fa94cac373",
-  "ui/quick.js": "857f340c3b5e2d9f55060e46c89488c81b6be6d0e98b19783e24f3aaf4d585ca",
+  "ui/quick.js": "8de868f642cc8dab171f61922fdb0f9d65142bc36e6bffce1c65ef4c9be2579f",
   "ui/styles.css": "6ad0177f19fd3ef658b0d72010048cee358a765a350d77a3697fe46840e24245",
   "ui/overlay-entry.js": "15e3401063de55c550eb23ee7d50e7c848a50bdc92fef9df5dd358d24388c338",
-  "overlay.js": "83b0232fdc15dbd14f6c0f71aa101d9629f9ec2067cb4ac43eb6fe5ea1c84c58"
+  "overlay.js": "bccc6bceeccdb3626286f3f0b5be3095fd780710e1211aa98c5e449220ef6a07"
 }
