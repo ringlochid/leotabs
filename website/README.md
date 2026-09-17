@@ -8,6 +8,8 @@ Run `npm run site:build` then `npm run site:check`. Preview **only** `output/sit
 
 The website and repository README share the user-approved screenshots in `website/assets/`. `library.png` comes from `Screenshot 2026-09-08 194704.png`; `switcher.png` comes from `Screenshot 2026-09-08 194818.png`. Both are unchanged 1920 × 1200 captures. Preserve their proportions and update the alt text when replacing them. Use captures approved for publication, and check visible content before adding new images.
 
+The homepage uses Product Hunt's official static Follow badge, saved unchanged as `website/assets/product-hunt-follow.svg` from `https://api.producthunt.com/widgets/embed-image/v1/follow.svg?product_id=1317603&theme=light`. Serving it locally keeps the site's local-asset CSP and avoids a third-party request before a visitor chooses the link. The badge links to LeoTabs's launch/product page and remains accurate before and after launch; it is not a vote-count or award badge.
+
 ## Before website publication
 
 The public URL is configured as `https://ringlochid.me/leotabs/`, hosted by GitHub Pages. The `origin` field is the complete website base URL, including its trailing slash and any subpath. Run `node scripts/build-site.mjs --release` then `npm run site:check`; the checker verifies every page's canonical URL, including the permissions alias. Setting `origin` to null produces a noindex preview. You can also run `node scripts/build-site.mjs --preview` and `node scripts/check-site.mjs --preview` without changing the saved configuration; rebuild in release mode before publication. Keep the hosting disclosure in `extension/privacy.html` accurate.

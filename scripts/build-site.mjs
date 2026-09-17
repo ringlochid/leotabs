@@ -30,7 +30,7 @@ await fs.copyFile('LICENSE',out+'/LICENSE.txt');
 await fs.copyFile('website/assets/octicons-LICENSE.txt',out+'/assets/octicons-LICENSE.txt');
 // Keep the Search Console ownership file unchanged in every published build.
 await fs.copyFile('website/verification/google345c4ce523429af8.html',out+'/google345c4ce523429af8.html');
-for(const name of ['library.png','switcher.png'])
+for(const name of ['library.png','switcher.png','product-hunt-follow.svg'])
   await fs.copyFile('website/assets/'+name,out+'/assets/'+name);
 const guides=await guidePages(fs);
 const pages=[['','Home'],['privacy','Privacy'],['permissions','Permissions'],['support','Support'],['changelog','Changelog'],['uninstalled','Help me improve LeoTabs'],...guides.map(g=>[g.slug,g.title])];

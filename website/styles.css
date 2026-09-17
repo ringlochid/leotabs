@@ -53,6 +53,7 @@ p{margin:0 0 18px}
 .hero h1{max-width:850px;margin-inline:auto}
 .hero .intro{max-width:590px;font-size:19px;line-height:1.65;margin:24px auto;color:var(--muted);text-wrap:pretty}
 .hero-actions{display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap;margin:28px 0 18px}
+.product-hunt-link{display:inline-block;max-width:100%;border-radius:10px}
 .button{display:inline-flex;align-items:center;justify-content:center;gap:16px;min-height:44px;padding:10px 20px;border:1px solid var(--ink);border-radius:6px;background:var(--ink);color:var(--paper);text-decoration:none;font-size:14px;font-weight:600}
 .button:hover{color:var(--paper);opacity:.85}
 .button.secondary{border-color:var(--control);background:var(--paper);color:var(--ink)}
